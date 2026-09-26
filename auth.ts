@@ -39,19 +39,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     authorized({ request, auth }) {
       // Belt-and-suspenders: middleware.ts's matcher is meant to keep this
-      // callback from ever running on /api/auth/* in the first place, but
+      // callback from ever running on these paths in the first place, but
       // Turbopack's build has been observed to compile that matcher down to
       // a catch-all (see middleware.ts) - without this check, a broken
       // matcher makes NextAuth's own csrf/callback endpoints unreachable
       // (this callback returning false redirects them to the sign-in page,
       // which can never get a session to redirect from), breaking login
-      // entirely rather than just weakening the gate.
-      if (
-        request.nextUrl.pathname.startsWith("/api") ||
-        request.nextUrl.pathname === "/signin"
-      ) {
-        return true;
-      }
+      // entirely rather than just weakening the gate. Static assets need
+      // the same exclusion: an unauthenticated request for the page's own
+      // CSS/JS chunks was getting redirected too (307 instead of 200),
+      // which is why /signin rendered with zero styling - the browser
+      // never got real CSS back, just another redirect.
+      const { pathname } = request.nextUrl;
+      const isPublicPath =
+        pathname.startsWith("/api") ||
+        pathname === "/signin" ||
+        pathname.startsWith("/_next/static") ||
+        pathname.startsWith("/_next/image") ||
+        pathname === "/favicon.ico";
+      if (isPublicPath) return true;
       return !!auth;
     },
   },

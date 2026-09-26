@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { LogOut } from "lucide-react";
+import { signOut } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AccentPicker } from "@/components/accent-picker";
+import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/grid", label: "Budget" },
@@ -29,6 +32,16 @@ export function AppHeader() {
         </nav>
         <AccentPicker />
         <ThemeToggle />
+        <form
+          action={async () => {
+            "use server";
+            await signOut({ redirectTo: "/signin" });
+          }}
+        >
+          <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
+            <LogOut className="size-4" />
+          </Button>
+        </form>
       </div>
     </header>
   );
