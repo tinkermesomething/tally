@@ -6,6 +6,7 @@ import { StatCard } from "@/components/grid/stat-card";
 import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { IncomeTable } from "@/components/grid/income-table";
+import { MonthlySummaryTable } from "@/components/grid/monthly-summary-table";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthPager } from "@/components/grid/month-pager";
 import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
@@ -65,14 +66,6 @@ export default async function GridPage({
     showAverage: boolean;
   }[] = [
     { label: "SUBTOTAL", values: data.subtotalByMonth, total: data.yearTotal.subtotal, showAverage: true },
-    { label: "WAGES", values: data.wagesByMonth, total: data.yearTotal.wages, showAverage: true },
-    { label: "AVAILABLE", values: data.availableByMonth, total: data.yearTotal.available, showAverage: true },
-    {
-      label: "Remaining this month",
-      values: data.remainingByMonth,
-      total: data.remainingByMonth.reduce((a, b) => a + b, 0),
-      showAverage: false,
-    },
   ];
 
   return (
@@ -171,14 +164,7 @@ export default async function GridPage({
               <tr key={row.label} className="border-t border-border bg-secondary font-medium">
                 <td className="sticky left-0 z-10 bg-secondary px-3 py-2">{row.label}</td>
                 {row.values.map((value, i) => (
-                  <td
-                    key={i}
-                    className={cn(
-                      "px-3 py-2 text-right tabular-nums",
-                      row.label === "AVAILABLE" &&
-                        (value < 0 ? "text-status-critical" : "text-status-good")
-                    )}
-                  >
+                  <td key={i} className="px-3 py-2 text-right tabular-nums">
                     {formatPence(value)}
                   </td>
                 ))}
@@ -199,6 +185,18 @@ export default async function GridPage({
           </tfoot>
         </table>
       </ScrollFade>
+
+      <div className="hidden md:block">
+        <MonthlySummaryTable
+          wagesByMonth={data.wagesByMonth}
+          availableByMonth={data.availableByMonth}
+          remainingByMonth={data.remainingByMonth}
+          yearTotal={{ wages: data.yearTotal.wages, available: data.yearTotal.available }}
+          categoryColWidth={CATEGORY_COL_WIDTH}
+          monthColWidth={MONTH_COL_WIDTH}
+          summaryColWidth={SUMMARY_COL_WIDTH}
+        />
+      </div>
 
       <div className="hidden md:block">
         <IncomeTable
