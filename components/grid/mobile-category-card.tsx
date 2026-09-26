@@ -1,0 +1,87 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronRight, CalendarClock } from "lucide-react";
+import { CategoryMonthCell } from "@/components/grid/category-row";
+import { InlineEditText } from "@/components/inline-edit-text";
+import { EditableGroupTag } from "@/components/grid/editable-group-tag";
+import { cn } from "@/lib/utils";
+import type { GridCategory } from "@/lib/db/queries";
+import { renameCategory } from "@/app/grid/actions";
+
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+export function MobileCategoryCard({
+  category,
+  year,
+  month,
+  groupColor,
+  existingGroups,
+}: {
+  category: GridCategory;
+  year: number;
+  month: number;
+  groupColor: string;
+  existingGroups: string[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasChildren = category.children.length > 0;
+
+  return (
+    <div className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-label={expanded ? "Collapse" : "Expand"}
+              className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent"
+            >
+              <ChevronRight className={cn("size-3.5 transition-transform", expanded && "rotate-90")} />
+            </button>
+          ) : (
+            <span className="w-[18px] shrink-0" />
+          )}
+          <InlineEditText
+            value={category.name}
+            onCommit={(next) => renameCategory(category.id, next)}
+            className="font-medium uppercase"
+          />
+        </div>
+        <CategoryMonthCell category={category} year={year} month={month} />
+      </div>
+      <div className="flex items-center gap-1 pl-[18px]">
+        <EditableGroupTag
+          categoryId={category.id}
+          groupName={category.groupName}
+          color={groupColor}
+          existingGroups={existingGroups}
+        />
+        {category.isAnnual && (
+          <span className="inline-flex items-center gap-0.5 text-[0.65rem] text-muted-foreground">
+            <CalendarClock className="size-3" />
+            {category.annualMonth ? MONTH_NAMES[category.annualMonth - 1] : "Yearly"}
+          </span>
+        )}
+      </div>
+      {expanded && hasChildren && (
+        <div className="mt-2 ml-[18px] space-y-2 border-l border-border pl-3">
+          {category.children.map((child) => (
+            <div key={child.id} className="flex items-center justify-between gap-2">
+              <InlineEditText
+                value={child.name}
+                onCommit={(next) => renameCategory(child.id, next)}
+                className="min-w-0 text-sm text-muted-foreground uppercase"
+              />
+              <CategoryMonthCell category={child} year={year} month={month} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -83,6 +83,7 @@ export const incomeEntries = sqliteTable(
 export const people = sqliteTable("people", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
 });
 
 export const debtLedgerEntries = sqliteTable("debt_ledger_entries", {

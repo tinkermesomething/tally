@@ -7,6 +7,10 @@ import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { IncomeTable } from "@/components/grid/income-table";
 import { YearSwitcher } from "@/components/grid/year-switcher";
+import { MonthPager } from "@/components/grid/month-pager";
+import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
+import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
+import { MobileSummaryBar } from "@/components/grid/mobile-summary-bar";
 import { ScrollFade } from "@/components/scroll-fade";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
@@ -29,9 +33,9 @@ const TABLE_WIDTH =
 export default async function GridPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string }>;
+  searchParams: Promise<{ year?: string; month?: string }>;
 }) {
-  const { year: yearParam } = await searchParams;
+  const { year: yearParam, month: monthParam } = await searchParams;
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
   const [data, years] = await Promise.all([getGridData(year), getAvailableYears()]);
   const groupColors = buildGroupColorMap(data.categories);
@@ -46,6 +50,13 @@ export default async function GridPage({
   const wagesNow = data.wagesByMonth[currentMonthIndex];
   const availableNow = data.availableByMonth[currentMonthIndex];
   const remainingNow = data.remainingByMonth[currentMonthIndex];
+
+  // Mobile month pager - independent of the "now" stat cards above, since
+  // browsing a different month on a phone shouldn't move those.
+  const selectedMonth = monthParam
+    ? parseInt(monthParam, 10)
+    : currentMonthIndex + 1;
+  const selectedMonthIndex = selectedMonth - 1;
 
   const footerRows: {
     label: string;
@@ -66,12 +77,12 @@ export default async function GridPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">Budget</h1>
           <YearSwitcher year={year} years={years} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <AddCategoryDialog
             topLevelCategories={data.categories.map((c) => ({ id: c.id, name: c.name }))}
             existingGroups={existingGroups}
@@ -103,7 +114,7 @@ export default async function GridPage({
       </div>
 
       <ScrollFade
-        className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm"
+        className="hidden overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm md:block"
         leftInset={CATEGORY_COL_WIDTH}
         rightInset={SUMMARY_COL_WIDTH * 2}
       >
@@ -189,14 +200,53 @@ export default async function GridPage({
         </table>
       </ScrollFade>
 
-      <IncomeTable
-        sources={data.incomeSources}
-        year={year}
-        totalByMonth={data.wagesByMonth}
-        categoryColWidth={CATEGORY_COL_WIDTH}
-        monthColWidth={MONTH_COL_WIDTH}
-        summaryColWidth={SUMMARY_COL_WIDTH}
-      />
+      <div className="hidden md:block">
+        <IncomeTable
+          sources={data.incomeSources}
+          year={year}
+          totalByMonth={data.wagesByMonth}
+          categoryColWidth={CATEGORY_COL_WIDTH}
+          monthColWidth={MONTH_COL_WIDTH}
+          summaryColWidth={SUMMARY_COL_WIDTH}
+        />
+      </div>
+
+      <div className="space-y-3 pb-4 md:hidden">
+        <div className="flex justify-center">
+          <MonthPager year={year} month={selectedMonth} />
+        </div>
+
+        <div className="space-y-2">
+          {data.categories.map((category) => (
+            <MobileCategoryCard
+              key={category.id}
+              category={category}
+              year={year}
+              month={selectedMonth}
+              groupColor={groupColors.get(category.groupName ?? UNGROUPED)!}
+              existingGroups={existingGroups}
+            />
+          ))}
+        </div>
+
+        <div className="space-y-2 pt-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Income</h2>
+          {data.incomeSources.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No income sources yet.</p>
+          ) : (
+            data.incomeSources.map((source) => (
+              <MobileIncomeCard key={source.id} source={source} year={year} month={selectedMonth} />
+            ))
+          )}
+        </div>
+
+        <MobileSummaryBar
+          subtotal={data.subtotalByMonth[selectedMonthIndex]}
+          wages={data.wagesByMonth[selectedMonthIndex]}
+          available={data.availableByMonth[selectedMonthIndex]}
+          remaining={data.remainingByMonth[selectedMonthIndex]}
+        />
+      </div>
     </div>
   );
 }

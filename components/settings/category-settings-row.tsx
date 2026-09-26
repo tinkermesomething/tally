@@ -1,0 +1,74 @@
+"use client";
+
+import { useTransition } from "react";
+import { Archive } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { InlineEditText } from "@/components/inline-edit-text";
+import { EditableGroupTag } from "@/components/grid/editable-group-tag";
+import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
+import { renameCategory, archiveCategory } from "@/app/grid/actions";
+import type { CategoryTreeNode } from "@/lib/db/queries";
+
+export function CategorySettingsRow({
+  category,
+  color,
+  existingGroups,
+}: {
+  category: CategoryTreeNode;
+  color: string;
+  existingGroups: string[];
+}) {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+        <InlineEditText
+          value={category.name}
+          onCommit={(next) => renameCategory(category.id, next)}
+          className="font-medium"
+        />
+        <EditableGroupTag
+          categoryId={category.id}
+          groupName={category.groupName}
+          color={color}
+          existingGroups={existingGroups}
+        />
+        <AddSubcategoryDialog parentId={category.id} parentName={category.name} />
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          disabled={pending}
+          title="Archive"
+          onClick={() => startTransition(() => archiveCategory(category.id))}
+        >
+          <Archive className="size-3.5" />
+        </Button>
+      </div>
+      {category.children.length > 0 && (
+        <div className="ml-5 space-y-1.5 border-l border-border pl-3">
+          {category.children.map((child) => (
+            <div
+              key={child.id}
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5"
+            >
+              <InlineEditText
+                value={child.name}
+                onCommit={(next) => renameCategory(child.id, next)}
+              />
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                disabled={pending}
+                title="Archive"
+                onClick={() => startTransition(() => archiveCategory(child.id))}
+              >
+                <Archive className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

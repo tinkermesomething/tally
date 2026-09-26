@@ -4,9 +4,13 @@ import { revalidatePath } from "next/cache";
 import {
   addCategory as addCategoryQuery,
   addIncomeSource as addIncomeSourceQuery,
+  archiveCategory as archiveCategoryQuery,
+  archiveIncomeSource as archiveIncomeSourceQuery,
   logExpense as logExpenseQuery,
   renameCategory as renameCategoryQuery,
   setCategoryEntryPaid,
+  unarchiveCategory as unarchiveCategoryQuery,
+  unarchiveIncomeSource as unarchiveIncomeSourceQuery,
   updateCategoryGroup as updateCategoryGroupQuery,
   upsertCategoryEntry,
   upsertIncomeEntry,
@@ -103,4 +107,30 @@ export async function updateCategoryGroup(categoryId: number, groupName: string)
   await updateCategoryGroupQuery(categoryId, groupName.trim() || null);
   revalidatePath("/grid");
   revalidatePath("/reports");
+}
+
+export async function archiveCategory(categoryId: number) {
+  await archiveCategoryQuery(categoryId);
+  revalidatePath("/grid");
+  revalidatePath("/reports");
+  revalidatePath("/settings");
+}
+
+export async function archiveIncomeSource(id: number) {
+  await archiveIncomeSourceQuery(id);
+  revalidatePath("/grid");
+  revalidatePath("/settings");
+}
+
+export async function unarchiveCategory(categoryId: number) {
+  await unarchiveCategoryQuery(categoryId);
+  revalidatePath("/grid");
+  revalidatePath("/reports");
+  revalidatePath("/settings");
+}
+
+export async function unarchiveIncomeSource(id: number) {
+  await unarchiveIncomeSourceQuery(id);
+  revalidatePath("/grid");
+  revalidatePath("/settings");
 }

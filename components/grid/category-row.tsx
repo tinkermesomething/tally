@@ -60,7 +60,7 @@ function ComputedCell({
   );
 }
 
-function CategoryMonthCell({
+export function CategoryMonthCell({
   category,
   year,
   month,

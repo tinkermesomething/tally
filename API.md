@@ -51,6 +51,11 @@ Rename and/or move to a different group.
 ```
 Both fields optional; only send what you want to change.
 
+### `DELETE /categories/:id`
+Archives the category (and, if it has any, its children too). Soft-delete -
+all its history/entries are preserved, it just disappears from the grid and
+Reports going forward.
+
 ### `PUT /categories/:id/entries`
 Set the planned amount for one month.
 ```json
@@ -75,6 +80,9 @@ planned amount - shows as "£X left" in the UI).
 ```json
 { "name": "Side gig" }
 ```
+
+### `DELETE /income/sources/:id`
+Archives the source. Past entries are preserved.
 
 ### `PUT /income/entries`
 ```json
@@ -102,11 +110,16 @@ with a running balance.
 `direction` is `"loan"` (increases what you owe) or `"repayment"` (decreases
 it).
 
+### `DELETE /debt/people/:id`
+Archives the person. Their ledger history is preserved, just hidden from the
+Debt page going forward.
+
 ## Notes for an agent using this API
 
 - All money in requests is **pounds** (decimal, e.g. `23.50`), not pence -
   the API converts internally. Responses use **pence** (integers) to match
   the UI's own data layer exactly, so sum/compare without float rounding.
-- Nothing here is destructive - there's no delete/archive endpoint yet.
-  Categories, income sources and people can only be created and edited.
+- Every `DELETE` is a soft-delete (an `archived` flag) - nothing is ever
+  actually destroyed. There's no way to un-archive via the API yet; that's
+  only in the Settings UI.
 - `entryDate` is always an ISO date string (`YYYY-MM-DD`).

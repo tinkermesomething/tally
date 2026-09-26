@@ -323,6 +323,48 @@ export async function getAvailableYears(): Promise<number[]> {
   return Array.from(years).sort((a, b) => a - b);
 }
 
+export type CategoryTreeNode = {
+  id: number;
+  name: string;
+  groupName: string | null;
+  isAnnual: boolean;
+  annualMonth: number | null;
+  children: CategoryTreeNode[];
+};
+
+/** Lightweight structural view of categories (no months/amounts) for the
+ * Settings page - just the tree shape, for rename/regroup/archive. */
+export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
+  const cats = await db.query.categories.findMany({
+    where: eq(categories.archived, false),
+    orderBy: (c, { asc }) => [asc(c.sortOrder)],
+  });
+  const childrenByParent = new Map<number, typeof cats>();
+  for (const c of cats) {
+    if (c.parentId === null) continue;
+    const list = childrenByParent.get(c.parentId) ?? [];
+    list.push(c);
+    childrenByParent.set(c.parentId, list);
+  }
+  return cats
+    .filter((c) => c.parentId === null)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      groupName: c.groupName,
+      isAnnual: c.isAnnual,
+      annualMonth: c.annualMonth,
+      children: (childrenByParent.get(c.id) ?? []).map((child) => ({
+        id: child.id,
+        name: child.name,
+        groupName: child.groupName,
+        isAnnual: child.isAnnual,
+        annualMonth: child.annualMonth,
+        children: [],
+      })),
+    }));
+}
+
 export async function upsertCategoryEntry(input: {
   categoryId: number;
   year: number;
@@ -450,4 +492,48 @@ export async function addIncomeSource(name: string) {
     .values({ name, sortOrder: (maxRow?.max ?? -1) + 1 })
     .returning();
   return created;
+}
+
+export async function archiveIncomeSource(id: number) {
+  await db.update(incomeSources).set({ archived: true }).where(eq(incomeSources.id, id));
+}
+
+export async function unarchiveIncomeSource(id: number) {
+  await db.update(incomeSources).set({ archived: false }).where(eq(incomeSources.id, id));
+}
+
+export async function getArchivedIncomeSources() {
+  return db.query.incomeSources.findMany({
+    where: eq(incomeSources.archived, true),
+    orderBy: (s, { asc }) => [asc(s.name)],
+  });
+}
+
+/** Soft-delete - archived categories (and their entries/history) are never
+ * actually removed, just hidden from the grid. Archiving a parent cascades
+ * to its children: a child left behind under an archived, invisible parent
+ * would still exist in the DB but be unreachable from any screen. */
+export async function archiveCategory(id: number) {
+  await db.update(categories).set({ archived: true }).where(eq(categories.id, id));
+  await db.update(categories).set({ archived: true }).where(eq(categories.parentId, id));
+}
+
+export async function unarchiveCategory(id: number) {
+  await db.update(categories).set({ archived: false }).where(eq(categories.id, id));
+  await db.update(categories).set({ archived: false }).where(eq(categories.parentId, id));
+}
+
+export async function getArchivedCategories() {
+  return db.query.categories.findMany({
+    where: eq(categories.archived, true),
+    orderBy: (c, { asc }) => [asc(c.name)],
+  });
+}
+
+/** Lightweight active income source list (no months/amounts) for Settings. */
+export async function getIncomeSourceList(): Promise<{ id: number; name: string }[]> {
+  return db.query.incomeSources.findMany({
+    where: eq(incomeSources.archived, false),
+    orderBy: (s, { asc }) => [asc(s.sortOrder)],
+  });
 }

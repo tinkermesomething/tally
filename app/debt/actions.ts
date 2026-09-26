@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import {
   addDebtEntry,
   addPerson as addPersonQuery,
-  deletePerson as deletePersonQuery,
+  archivePerson as archivePersonQuery,
+  unarchivePerson as unarchivePersonQuery,
 } from "@/lib/db/debt";
 import { poundsToPence } from "@/lib/money";
 
@@ -17,8 +18,15 @@ export async function createPerson(name: string) {
 }
 
 export async function removePerson(personId: number) {
-  await deletePersonQuery(personId);
+  await archivePersonQuery(personId);
   revalidatePath("/debt");
+  revalidatePath("/settings");
+}
+
+export async function restorePerson(personId: number) {
+  await unarchivePersonQuery(personId);
+  revalidatePath("/debt");
+  revalidatePath("/settings");
 }
 
 export async function addLedgerEntry(input: {

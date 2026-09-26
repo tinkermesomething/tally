@@ -23,7 +23,7 @@ function signedAmount(direction: "loan" | "repayment", amountPence: number) {
 }
 
 export async function getPeopleWithBalances(): Promise<PersonWithBalance[]> {
-  const allPeople = await db.select().from(people);
+  const allPeople = await db.select().from(people).where(eq(people.archived, false));
   const allEntries = await db.select().from(debtLedgerEntries);
 
   return allPeople.map((person) => {
@@ -97,7 +97,20 @@ export async function addDebtEntry(input: {
   });
 }
 
-export async function deletePerson(personId: number) {
-  await db.delete(debtLedgerEntries).where(eq(debtLedgerEntries.personId, personId));
-  await db.delete(people).where(eq(people.id, personId));
+/** Soft-delete - keeps the ledger history intact (it's financial history,
+ * shouldn't vanish just because you stop tracking someone going forward),
+ * just hides them from the Debt page. */
+export async function archivePerson(personId: number) {
+  await db.update(people).set({ archived: true }).where(eq(people.id, personId));
+}
+
+export async function unarchivePerson(personId: number) {
+  await db.update(people).set({ archived: false }).where(eq(people.id, personId));
+}
+
+export async function getArchivedPeople() {
+  return db.query.people.findMany({
+    where: eq(people.archived, true),
+    orderBy: (p, { asc }) => [asc(p.name)],
+  });
 }
