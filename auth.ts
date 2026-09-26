@@ -23,6 +23,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   ],
   session: { strategy: "jwt" },
+  pages: {
+    // Custom page instead of Auth.js's auto-generated one, which guesses a
+    // provider icon from its own external CDN - there's no entry there for
+    // pocket-id (not a bundled provider), so it rendered as a broken image.
+    signIn: "/signin",
+  },
   callbacks: {
     // This is a single-user app - reject anyone whose pocket-id account isn't
     // the one explicit allowed address, even if pocket-id is later reconfigured
@@ -40,7 +46,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // (this callback returning false redirects them to the sign-in page,
       // which can never get a session to redirect from), breaking login
       // entirely rather than just weakening the gate.
-      if (request.nextUrl.pathname.startsWith("/api")) return true;
+      if (
+        request.nextUrl.pathname.startsWith("/api") ||
+        request.nextUrl.pathname === "/signin"
+      ) {
+        return true;
+      }
       return !!auth;
     },
   },
