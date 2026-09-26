@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local sqlite db file - never committed, generated at runtime
+/config
+
+# seed script has real personal data - lives in GITEA/docker/tally/seed.ts
+# instead (private Gitea only), never in this repo. Safety net in case a
+# local copy gets recreated here for quick testing.
+/scripts/seed.ts
