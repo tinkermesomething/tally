@@ -11,6 +11,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       issuer: process.env.OIDC_ISSUER,
       clientId: process.env.OIDC_CLIENT_ID,
       clientSecret: process.env.OIDC_CLIENT_SECRET,
+      // Auth.js's default checks for a generic "oidc" provider omit the
+      // OAuth `state` param (relying on PKCE alone for CSRF protection,
+      // which is spec-legal). pocket-id's OAuth2 library (ory/fosite)
+      // hard-requires `state` regardless - every authorize request came
+      // back "invalid_state" until this was added, confirmed by reading
+      // fosite's own source (authorize_request_handler.go: rejects any
+      // request where len(state) is below its minimum entropy, and an
+      // absent state has length 0).
+      checks: ["pkce", "state"],
     },
   ],
   session: { strategy: "jwt" },
