@@ -17,17 +17,33 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-and-push:
-    name: Build and push image to GHCR
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            # Native arm64 runner - no QEMU emulation. Two consecutive
+            # workflow_dispatch runs hung indefinitely (one for ~2 hours)
+            # inside QEMU emulating the arm64 build, specifically compiling
+            # better-sqlite3's native addon under emulation - a documented
+            # failure mode (syscall-heavy native compiles under QEMU
+            # user-mode emulation can hang or crash rather than just run
+            # slowly). Building natively per-arch removes QEMU from the
+            # pipeline entirely instead of just bounding how long it's
+            # allowed to hang.
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Prepare image name (lowercase)
-        id: prep
+      - name: Prepare image name (lowercase) + platform pair
         run: |
           REPO_LC="${GITHUB_REPOSITORY,,}"
           echo "IMAGE=ghcr.io/${REPO_LC}" >> $GITHUB_ENV
@@ -36,20 +52,14 @@ jobs:
           else
             echo "RELEASE_VERSION=${{ github.event.inputs.release_tag }}" >> $GITHUB_ENV
           fi
+          platform="${{ matrix.platform }}"
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
 
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          tags: |
-            type=raw,value=${{ env.RELEASE_VERSION }}
-
-      - name: Add "latest" tag for any non-prerelease release
-        run: echo "EXTRA_TAGS=${{ env.IMAGE }}:latest" >> $GITHUB_ENV
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -61,24 +71,82 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
-        # A successful build has taken ~32 min; two consecutive runs hung
-        # indefinitely inside this exact step (arm64 QEMU emulation is the
-        # likely culprit) and needed a human to notice after nearly 2 hours.
-        # 45 min gives real builds headroom while bounding a hang to a fixed,
-        # visible failure instead of silence.
-        timeout-minutes: 45
+      - name: Build and push by digest
+        id: build
+        timeout-minutes: 25
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ steps.meta.outputs.tags }}
-            ${{ env.EXTRA_TAGS }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             RELEASE_VERSION=${{ env.RELEASE_VERSION }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Merge manifest and push
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Prepare image name (lowercase) + version
+        run: |
+          REPO_LC="${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=ghcr.io/${REPO_LC}" >> $GITHUB_ENV
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "RELEASE_VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+          else
+            echo "RELEASE_VERSION=${{ github.event.inputs.release_tag }}" >> $GITHUB_ENV
+          fi
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ env.RELEASE_VERSION }}
+            type=raw,value=latest
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ env.RELEASE_VERSION }}
