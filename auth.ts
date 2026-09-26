@@ -22,7 +22,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!allowedEmail) return true; // no allow-list configured (local dev)
       return profile?.email === allowedEmail;
     },
-    authorized({ auth }) {
+    authorized({ request, auth }) {
+      // Belt-and-suspenders: middleware.ts's matcher is meant to keep this
+      // callback from ever running on /api/auth/* in the first place, but
+      // Turbopack's build has been observed to compile that matcher down to
+      // a catch-all (see middleware.ts) - without this check, a broken
+      // matcher makes NextAuth's own csrf/callback endpoints unreachable
+      // (this callback returning false redirects them to the sign-in page,
+      // which can never get a session to redirect from), breaking login
+      // entirely rather than just weakening the gate.
+      if (request.nextUrl.pathname.startsWith("/api")) return true;
       return !!auth;
     },
   },
