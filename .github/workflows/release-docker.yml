@@ -62,6 +62,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        # A successful build has taken ~32 min; two consecutive runs hung
+        # indefinitely inside this exact step (arm64 QEMU emulation is the
+        # likely culprit) and needed a human to notice after nearly 2 hours.
+        # 45 min gives real builds headroom while bounding a hang to a fixed,
+        # visible failure instead of silence.
+        timeout-minutes: 45
         uses: docker/build-push-action@v6
         with:
           context: .
