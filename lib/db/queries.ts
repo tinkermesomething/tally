@@ -256,8 +256,17 @@ export async function getGridData(year: number): Promise<GridData> {
     for (let month = 1; month <= 12; month++) {
       const cell = months[month];
       if (!cell) continue;
-      subtotalByMonth[month - 1] += cell.amountPence ?? 0;
-      if (!cell.paid) remainingByMonth[month - 1] += cell.amountPence ?? 0;
+      // Once paid, the real amount is known - use it instead of the plan,
+      // so overspend eats into AVAILABLE and underspend gives it back,
+      // rather than the confirmed figure only ever showing per-cell.
+      // Not yet paid, use whichever is bigger: an expense logged ahead of
+      // marking paid still shouldn't let a known overspend hide behind a
+      // smaller allocated figure.
+      const effectivePence = cell.paid
+        ? cell.spentPence
+        : Math.max(cell.amountPence ?? 0, cell.spentPence);
+      subtotalByMonth[month - 1] += effectivePence;
+      if (!cell.paid) remainingByMonth[month - 1] += effectivePence;
     }
 
     return {

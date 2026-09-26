@@ -9,7 +9,7 @@ import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
-import { renameCategory, updateAmount, togglePaid } from "@/app/grid/actions";
+import { renameCategory, updateAmount, togglePaid, confirmPayment } from "@/app/grid/actions";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MONTH_NAMES = [
@@ -40,21 +40,13 @@ function ComputedCell({
   amountPence: number | undefined;
   spentPence: number;
 }) {
-  const remainingPence = spentPence > 0 ? (amountPence ?? 0) - spentPence : null;
   return (
     <div className="flex flex-col items-end gap-0.5 px-1.5 py-1">
       <span className="text-[0.925rem] tabular-nums text-foreground">
         {amountPence !== undefined ? formatPence(amountPence) : "—"}
       </span>
-      {remainingPence !== null && (
-        <span
-          className={cn(
-            "text-xs tabular-nums",
-            remainingPence < 0 ? "text-status-critical" : "text-muted-foreground"
-          )}
-        >
-          {formatPence(remainingPence)} left
-        </span>
+      {spentPence > 0 && (
+        <span className="text-xs tabular-nums text-primary">Paid {formatPence(spentPence)}</span>
       )}
     </div>
   );
@@ -81,6 +73,7 @@ export function CategoryMonthCell({
       previousAmountPence={cell?.previousAmountPence}
       onCommitAmount={(pounds) => updateAmount({ categoryId: category.id, year, month, pounds })}
       onTogglePaid={(paid) => togglePaid({ categoryId: category.id, year, month, paid })}
+      onConfirmPayment={(pounds) => confirmPayment({ categoryId: category.id, year, month, pounds })}
     />
   );
 }

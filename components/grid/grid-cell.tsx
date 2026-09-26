@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Undo2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatPence } from "@/lib/money";
 
@@ -14,6 +15,7 @@ export function GridCell({
   showPaidToggle = true,
   onCommitAmount,
   onTogglePaid,
+  onConfirmPayment,
 }: {
   amountPence: number | undefined;
   paid: boolean;
@@ -22,11 +24,30 @@ export function GridCell({
   showPaidToggle?: boolean;
   onCommitAmount: (pounds: number) => void;
   onTogglePaid?: (paid: boolean) => void;
+  /** Called instead of onTogglePaid when checking (not unchecking) the paid
+   * box, once the user confirms the actual amount in the popover - the
+   * moment it's ticked is also the moment the real figure is known, which
+   * may differ from what was allocated. */
+  onConfirmPayment?: (pounds: number) => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(
     amountPence !== undefined ? (amountPence / 100).toFixed(2) : ""
   );
+  const [confirming, setConfirming] = useState(false);
+  const [confirmValue, setConfirmValue] = useState("");
+  const confirmRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (!confirming) return;
+    function handlePointerDown(e: PointerEvent) {
+      if (confirmRef.current && !confirmRef.current.contains(e.target as Node)) {
+        setConfirming(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [confirming]);
 
   function commit(pounds: number) {
     if (Number.isNaN(pounds)) {
@@ -37,11 +58,21 @@ export function GridCell({
     startTransition(() => onCommitAmount(pounds));
   }
 
-  const remainingPence =
-    spentPence > 0 ? (amountPence ?? 0) - spentPence : null;
+  function openConfirm() {
+    setConfirmValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
+    setConfirming(true);
+  }
+
+  function submitConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    const pounds = parseFloat(confirmValue);
+    if (Number.isNaN(pounds) || pounds <= 0) return;
+    setConfirming(false);
+    startTransition(() => onConfirmPayment?.(pounds));
+  }
 
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <div className="relative flex flex-col items-end gap-0.5">
       <div className="flex items-center justify-end gap-1.5">
         <input
           inputMode="decimal"
@@ -63,22 +94,46 @@ export function GridCell({
           <Checkbox
             checked={paid}
             disabled={amountPence === undefined}
-            onCheckedChange={(checked) =>
-              onTogglePaid && startTransition(() => onTogglePaid(checked === true))
-            }
+            onCheckedChange={(checked) => {
+              if (checked === true) {
+                if (onConfirmPayment) openConfirm();
+                else onTogglePaid && startTransition(() => onTogglePaid(true));
+              } else {
+                onTogglePaid && startTransition(() => onTogglePaid(false));
+              }
+            }}
             aria-label={paid ? "Mark unpaid" : "Mark paid"}
             className="shrink-0"
           />
         )}
       </div>
-      {remainingPence !== null && (
-        <span
-          className={cn(
-            "pr-7 text-xs tabular-nums",
-            remainingPence < 0 ? "text-status-critical" : "text-muted-foreground"
-          )}
+      {confirming && (
+        <form
+          ref={confirmRef}
+          onSubmit={submitConfirm}
+          className="absolute top-full right-0 z-20 mt-1 flex items-center gap-1.5 rounded-lg border border-border bg-card p-2 shadow-md"
         >
-          {formatPence(remainingPence)} left
+          <span className="text-xs text-muted-foreground">Paid</span>
+          <span className="text-xs text-muted-foreground">£</span>
+          <input
+            autoFocus
+            inputMode="decimal"
+            value={confirmValue}
+            onChange={(e) => setConfirmValue(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setConfirming(false);
+            }}
+            className="w-16 rounded-md border border-input bg-background px-1.5 py-1 text-right text-sm tabular-nums outline-none"
+          />
+          <Button type="submit" size="sm">
+            Confirm
+          </Button>
+        </form>
+      )}
+      {spentPence > 0 && (
+        <span className="pr-7 text-xs tabular-nums text-primary">
+          Paid {formatPence(spentPence)}
         </span>
       )}
       {amountPence === undefined && previousAmountPence !== undefined && (

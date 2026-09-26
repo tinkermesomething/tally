@@ -42,6 +42,34 @@ export async function togglePaid(input: {
   revalidatePath("/grid");
 }
 
+/** Ticking "paid" is also the moment the actual amount is known, which may
+ * differ from what was allocated - so it both marks the entry paid and logs
+ * an expense for the confirmed amount in one action, instead of requiring a
+ * separate trip through the Log Expense dialog. */
+export async function confirmPayment(input: {
+  categoryId: number;
+  year: number;
+  month: number;
+  pounds: number;
+}) {
+  if (!(input.pounds > 0)) {
+    throw new Error("Amount must be greater than zero.");
+  }
+  const entryDate = new Date().toISOString().slice(0, 10);
+  await setCategoryEntryPaid({
+    categoryId: input.categoryId,
+    year: input.year,
+    month: input.month,
+    paid: true,
+  });
+  await logExpenseQuery({
+    categoryId: input.categoryId,
+    amountPence: poundsToPence(input.pounds),
+    entryDate,
+  });
+  revalidatePath("/grid");
+}
+
 export async function logExpense(input: {
   categoryId: number;
   pounds: number;
