@@ -67,7 +67,9 @@ export const incomeSources = sqliteTable("income_sources", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  // Null = active. Same year-relative treatment as categories.archivedAt -
+  // archiving a source must not rewrite what a past year's WAGES said.
+  archivedAt: integer("archived_at", { mode: "timestamp" }),
 });
 
 export const incomeEntries = sqliteTable(

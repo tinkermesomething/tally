@@ -206,8 +206,9 @@ export async function getGridData(year: number): Promise<GridData> {
     .from(incomeEntries)
     .where(eq(incomeEntries.year, year));
 
+  // Same year-relative visibility as categories - see the comment on cats above.
   const sources = await db.query.incomeSources.findMany({
-    where: eq(incomeSources.archived, false),
+    where: or(isNull(incomeSources.archivedAt), gte(incomeSources.archivedAt, startOfNextYear)),
     orderBy: (s, { asc }) => [asc(s.sortOrder)],
   });
 
@@ -622,16 +623,16 @@ export async function addIncomeSource(name: string) {
 }
 
 export async function archiveIncomeSource(id: number) {
-  await db.update(incomeSources).set({ archived: true }).where(eq(incomeSources.id, id));
+  await db.update(incomeSources).set({ archivedAt: new Date() }).where(eq(incomeSources.id, id));
 }
 
 export async function unarchiveIncomeSource(id: number) {
-  await db.update(incomeSources).set({ archived: false }).where(eq(incomeSources.id, id));
+  await db.update(incomeSources).set({ archivedAt: null }).where(eq(incomeSources.id, id));
 }
 
 export async function getArchivedIncomeSources() {
   return db.query.incomeSources.findMany({
-    where: eq(incomeSources.archived, true),
+    where: (s, { isNotNull }) => isNotNull(s.archivedAt),
     orderBy: (s, { asc }) => [asc(s.name)],
   });
 }
@@ -661,7 +662,7 @@ export async function getArchivedCategories() {
 /** Lightweight active income source list (no months/amounts) for Settings. */
 export async function getIncomeSourceList(): Promise<{ id: number; name: string }[]> {
   return db.query.incomeSources.findMany({
-    where: eq(incomeSources.archived, false),
+    where: (s, { isNull }) => isNull(s.archivedAt),
     orderBy: (s, { asc }) => [asc(s.sortOrder)],
   });
 }

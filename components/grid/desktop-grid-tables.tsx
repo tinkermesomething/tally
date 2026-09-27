@@ -189,6 +189,19 @@ export function DesktopGridTables({
       </ScrollFade>
 
       <div className="hidden md:block">
+        <IncomeTable
+          sources={incomeSources}
+          year={year}
+          totalByMonth={wagesByMonth}
+          categoryColWidth={CATEGORY_COL_WIDTH}
+          monthColWidth={MONTH_COL_WIDTH}
+          summaryColWidth={SUMMARY_COL_WIDTH}
+          containerRef={incomeRef}
+          onScroll={mirrorScroll}
+        />
+      </div>
+
+      <div className="hidden md:block">
         <MonthlySummaryTable
           wagesByMonth={wagesByMonth}
           availableByMonth={availableByMonth}
@@ -198,19 +211,6 @@ export function DesktopGridTables({
           monthColWidth={MONTH_COL_WIDTH}
           summaryColWidth={SUMMARY_COL_WIDTH}
           containerRef={summaryRef}
-          onScroll={mirrorScroll}
-        />
-      </div>
-
-      <div className="hidden md:block">
-        <IncomeTable
-          sources={incomeSources}
-          year={year}
-          totalByMonth={wagesByMonth}
-          categoryColWidth={CATEGORY_COL_WIDTH}
-          monthColWidth={MONTH_COL_WIDTH}
-          summaryColWidth={SUMMARY_COL_WIDTH}
-          containerRef={incomeRef}
           onScroll={mirrorScroll}
         />
       </div>
