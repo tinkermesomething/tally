@@ -15,7 +15,12 @@ export const categories = sqliteTable("categories", {
   isAnnual: integer("is_annual", { mode: "boolean" }).notNull().default(false),
   annualMonth: integer("annual_month"),
   dueDay: integer("due_day"), // 1-31, day of the month this is due
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  // Null = active. Set = hidden from the grid/rollups for any year AFTER the
+  // one archivedAt falls in, but still visible and counted for that year and
+  // every year before it - archiving something today must not rewrite what a
+  // past year's SUBTOTAL/AVAILABLE said. A plain boolean can't express that;
+  // see getGridData's `visibleForYear`.
+  archivedAt: integer("archived_at", { mode: "timestamp" }),
 });
 
 export const categoryEntries = sqliteTable(

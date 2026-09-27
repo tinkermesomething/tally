@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   categories,
@@ -180,8 +180,14 @@ function summarize(months: Record<number, MonthCell>) {
 }
 
 export async function getGridData(year: number): Promise<GridData> {
+  // A category archived sometime in year X disappears starting year X (this
+  // is when you noticed it stopped applying) but stays visible/counted for
+  // every year before that - archiving something today must never change
+  // what a past year's SUBTOTAL/AVAILABLE said. So `year` is visible when
+  // archivedAt is null, or falls in a *later* calendar year than `year`.
+  const startOfNextYear = new Date(year + 1, 0, 1);
   const cats = await db.query.categories.findMany({
-    where: eq(categories.archived, false),
+    where: or(isNull(categories.archivedAt), gte(categories.archivedAt, startOfNextYear)),
     orderBy: (c, { asc }) => [asc(c.sortOrder)],
   });
 
@@ -399,7 +405,7 @@ export type CategoryTreeNode = {
  * Settings page - just the tree shape, for rename/regroup/archive. */
 export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
   const cats = await db.query.categories.findMany({
-    where: eq(categories.archived, false),
+    where: isNull(categories.archivedAt),
     orderBy: (c, { asc }) => [asc(c.sortOrder)],
   });
   const childrenByParent = new Map<number, typeof cats>();
@@ -635,18 +641,19 @@ export async function getArchivedIncomeSources() {
  * to its children: a child left behind under an archived, invisible parent
  * would still exist in the DB but be unreachable from any screen. */
 export async function archiveCategory(id: number) {
-  await db.update(categories).set({ archived: true }).where(eq(categories.id, id));
-  await db.update(categories).set({ archived: true }).where(eq(categories.parentId, id));
+  const now = new Date();
+  await db.update(categories).set({ archivedAt: now }).where(eq(categories.id, id));
+  await db.update(categories).set({ archivedAt: now }).where(eq(categories.parentId, id));
 }
 
 export async function unarchiveCategory(id: number) {
-  await db.update(categories).set({ archived: false }).where(eq(categories.id, id));
-  await db.update(categories).set({ archived: false }).where(eq(categories.parentId, id));
+  await db.update(categories).set({ archivedAt: null }).where(eq(categories.id, id));
+  await db.update(categories).set({ archivedAt: null }).where(eq(categories.parentId, id));
 }
 
 export async function getArchivedCategories() {
   return db.query.categories.findMany({
-    where: eq(categories.archived, true),
+    where: (c, { isNotNull }) => isNotNull(c.archivedAt),
     orderBy: (c, { asc }) => [asc(c.name)],
   });
 }
