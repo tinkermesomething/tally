@@ -5,7 +5,7 @@ import { formatPence } from "@/lib/money";
 import { ScrollFade } from "@/components/scroll-fade";
 import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 import type { IncomeSourceRow } from "@/lib/db/queries";
-import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
+import { cn, FLOATING_PANEL_EDGE, STICKY_HEADER_ROW, floatingPanelFill } from "@/lib/utils";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -59,23 +59,23 @@ export function IncomeTable({
           </colgroup>
           <thead>
             <tr className="bg-muted">
-              <th className="sticky left-0 z-10 bg-muted px-3 py-2 text-left font-medium">
+              <th className={cn(STICKY_HEADER_ROW, "left-0 bg-muted px-3 py-2 text-left font-medium")}>
                 Source
               </th>
               {MONTHS.map((m) => (
-                <th key={m} className="px-3 py-2 text-right font-medium">
+                <th key={m} className={cn(STICKY_HEADER_ROW, "bg-muted px-3 py-2 text-right font-medium")}>
                   {m}
                 </th>
               ))}
               <th
                 style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--muted") }}
-                className={cn("sticky z-10 px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
+                className={cn(STICKY_HEADER_ROW, "px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
               >
                 Year Total
               </th>
               <th
                 style={{ right: 0, backgroundColor: floatingPanelFill("--muted") }}
-                className="sticky z-10 px-3 py-2 text-right font-medium"
+                className={cn(STICKY_HEADER_ROW, "px-3 py-2 text-right font-medium")}
               >
                 Monthly avg
               </th>
