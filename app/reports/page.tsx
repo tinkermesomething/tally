@@ -8,7 +8,7 @@ import {
 } from "@/components/reports/category-pie-chart";
 import { AddReportPanelButton } from "@/components/reports/report-panel-dialog";
 import { ReportPanelCard } from "@/components/reports/report-panel-card";
-import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
+import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
 
 export default async function ReportsPage({
   searchParams,
@@ -79,25 +79,33 @@ export default async function ReportsPage({
   }
 
   function resolvePanelSlices(panel: ReportPanel): GroupSlice[] {
+    // Each pick is its own slice here, regardless of which underlying group
+    // a category belongs to - colorByGroup would give two picks from the
+    // same group the same color (e.g. picking both Rent and Council Tax,
+    // both under Housing), making a panel with several picks unreadable.
+    // A panel gets its own independent categorical color assignment instead.
     const resolved: GroupSlice[] = [];
+    let colorIndex = 0;
     for (const pick of panel.selection) {
+      const color = GROUP_PALETTE[colorIndex % GROUP_PALETTE.length];
+      colorIndex++;
       if (pick.type === "group") {
         const group = pick.value;
         resolved.push({
           group,
           amountPence: totalsByGroup.get(group) ?? 0,
-          color: colorByGroup.get(group) ?? colorByGroup.get(UNGROUPED)!,
+          color,
           categories: categoriesByGroup.get(group) ?? [],
         });
       } else {
         const found = findCategoryById(pick.value);
         if (!found) continue;
-        const { category, parentGroup } = found;
+        const { category } = found;
         const amount = amountFor(category);
         resolved.push({
           group: category.name,
           amountPence: amount,
-          color: colorByGroup.get(parentGroup) ?? colorByGroup.get(UNGROUPED)!,
+          color,
           categories: [
             {
               name: category.name,

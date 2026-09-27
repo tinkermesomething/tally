@@ -67,6 +67,34 @@ export function ScrollFade({
       <div ref={ref} className={className}>
         {children}
       </div>
+      {/* Shadow cast by the sticky columns onto whatever's scrolling
+          underneath them - only shown while there's actually content
+          hidden there, so it disappears at the true start/end of the
+          table where nothing is underneath to cast a shadow from. */}
+      <div
+        aria-hidden
+        style={{
+          left: leftInset,
+          width: 14,
+          background: "linear-gradient(to right, rgba(0,0,0,0.3), transparent)",
+        }}
+        className={cn(
+          "pointer-events-none absolute inset-y-0 z-[15] transition-opacity duration-200",
+          canScrollLeft ? "opacity-100" : "opacity-0"
+        )}
+      />
+      <div
+        aria-hidden
+        style={{
+          right: rightInset,
+          width: 14,
+          background: "linear-gradient(to left, rgba(0,0,0,0.3), transparent)",
+        }}
+        className={cn(
+          "pointer-events-none absolute inset-y-0 z-[15] transition-opacity duration-200",
+          canScrollRight ? "opacity-100" : "opacity-0"
+        )}
+      />
       {/* Anchored near the header row rather than centered on the whole
           (often very tall) table, so it's visible as soon as the table is,
           not just when scrolled to its vertical midpoint. */}
