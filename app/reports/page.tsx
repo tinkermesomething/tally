@@ -124,25 +124,22 @@ export default async function ReportsPage({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
-          <p className="text-sm text-muted-foreground">
-            Where {formatPence(total)} is allocated, by broad category.
-          </p>
-        </div>
+        <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
         <MonthSelect year={year} month={month} />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <p className="mb-2 text-sm text-muted-foreground">
+          Where {formatPence(total)} is allocated, by broad category.
+        </p>
         <CategoryPieChart slices={slices} />
       </div>
 
-      <div className="flex items-center justify-between pt-2">
-        <h2 className="text-sm font-medium text-muted-foreground">Custom reports</h2>
-        {panels.length < MAX_REPORT_PANELS && (
+      {panels.length < MAX_REPORT_PANELS && (
+        <div className="flex justify-end pt-2">
           <AddReportPanelButton existingGroups={existingGroups} categories={flatCategories} />
-        )}
-      </div>
+        </div>
+      )}
 
       {panels.map((panel) => (
         <ReportPanelCard

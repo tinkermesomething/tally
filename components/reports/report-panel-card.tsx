@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CategoryPieChart, type GroupSlice } from "@/components/reports/category-pie-chart";
 import { ReportPanelDialog } from "@/components/reports/report-panel-dialog";
 import { deleteReportPanel } from "@/app/reports/actions";
+import { formatPence } from "@/lib/money";
 import type { ReportPanel } from "@/lib/db/queries";
 
 export function ReportPanelCard({
@@ -20,11 +21,15 @@ export function ReportPanelCard({
   categories: { id: number; name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
+  const total = slices.reduce((sum, s) => sum + s.amountPence, 0);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-medium">{panel.name}</h2>
+        <div>
+          <h2 className="font-medium">{panel.name}</h2>
+          <p className="text-sm text-muted-foreground">Where {formatPence(total)} is allocated.</p>
+        </div>
         <div className="flex items-center gap-1">
           <ReportPanelDialog
             panel={panel}
