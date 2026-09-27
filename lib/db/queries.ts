@@ -118,7 +118,13 @@ function applyOverdueFlags(
   for (let month = 1; month <= 12; month++) {
     const cell = months[month];
     if (!cell || cell.paid || cell.amountPence === undefined) continue;
-    const dueDate = new Date(year, month - 1, dueDay);
+    // A day that doesn't exist in this month (31st in February, 30-day
+    // months, etc.) clamps to the real last day instead of letting JS's
+    // Date silently overflow into the next month - new Date(year, m, 31)
+    // for February would otherwise resolve to March 3rd, pushing the
+    // overdue flag days later than it should trigger.
+    const lastDayOfMonth = new Date(year, month, 0).getDate();
+    const dueDate = new Date(year, month - 1, Math.min(dueDay, lastDayOfMonth));
     cell.overdue = dueDate < today;
   }
 }
