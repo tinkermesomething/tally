@@ -26,18 +26,26 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+const NONE = "none";
+
 export function AddEntryDialog({
   personId,
   personName,
+  incomeSources,
+  categories,
 }: {
   personId: number;
   personName: string;
+  incomeSources: { id: number; name: string }[];
+  categories: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [direction, setDirection] = useState<"loan" | "repayment">("loan");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState("");
+  const [incomeSourceId, setIncomeSourceId] = useState(NONE);
+  const [categoryId, setCategoryId] = useState(NONE);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -46,6 +54,8 @@ export function AddEntryDialog({
     setAmount("");
     setDate(todayIso());
     setNote("");
+    setIncomeSourceId(NONE);
+    setCategoryId(NONE);
     setError(null);
   }
 
@@ -64,6 +74,10 @@ export function AddEntryDialog({
         entryDate: date,
         direction,
         note: note.trim() || undefined,
+        incomeSourceId:
+          direction === "loan" && incomeSourceId !== NONE ? parseInt(incomeSourceId, 10) : undefined,
+        categoryId:
+          direction === "repayment" && categoryId !== NONE ? parseInt(categoryId, 10) : undefined,
       });
       reset();
       setOpen(false);
@@ -108,6 +122,60 @@ export function AddEntryDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {direction === "loan" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="entry-income-source">
+                Also count as income this month (optional)
+              </Label>
+              <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? NONE)}>
+                <SelectTrigger id="entry-income-source" className="w-full">
+                  <SelectValue>
+                    {(value: string) =>
+                      value === NONE
+                        ? "Don't count toward income"
+                        : (incomeSources.find((s) => String(s.id) === value)?.name ?? value)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Don&apos;t count toward income</SelectItem>
+                  {incomeSources.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {direction === "repayment" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="entry-category">
+                Also log as an expense this month (optional)
+              </Label>
+              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? NONE)}>
+                <SelectTrigger id="entry-category" className="w-full">
+                  <SelectValue>
+                    {(value: string) =>
+                      value === NONE
+                        ? "Don't count toward a category"
+                        : (categories.find((c) => String(c.id) === value)?.name ?? value)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Don&apos;t count toward a category</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getPersonLedger } from "@/lib/db/debt";
+import { getCategoryTree, getIncomeSourceList } from "@/lib/db/queries";
 import { formatPence } from "@/lib/money";
 import { AddEntryDialog } from "@/components/debt/add-entry-dialog";
 import { cn } from "@/lib/utils";
@@ -13,9 +14,18 @@ export default async function PersonLedgerPage({
 }) {
   const { personId } = await params;
   const id = parseInt(personId, 10);
-  const { person, entries, balancePence } = await getPersonLedger(id);
+  const [{ person, entries, balancePence }, incomeSources, categoryTree] = await Promise.all([
+    getPersonLedger(id),
+    getIncomeSourceList(),
+    getCategoryTree(),
+  ]);
 
   if (!person) notFound();
+
+  const categories = categoryTree.flatMap((c) => [
+    { id: c.id, name: c.name },
+    ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
+  ]);
 
   const newestFirst = [...entries].reverse();
 
@@ -47,7 +57,12 @@ export default async function PersonLedgerPage({
             </p>
           )}
         </div>
-        <AddEntryDialog personId={person.id} personName={person.name} />
+        <AddEntryDialog
+          personId={person.id}
+          personName={person.name}
+          incomeSources={incomeSources}
+          categories={categories}
+        />
       </div>
 
       <div className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm">

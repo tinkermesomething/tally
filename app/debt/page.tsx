@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { Users, Scale } from "lucide-react";
 import { getPeopleWithBalances } from "@/lib/db/debt";
 import { formatPence } from "@/lib/money";
 import { AddPersonDialog } from "@/components/debt/add-person-dialog";
+import { StatCard } from "@/components/grid/stat-card";
 import { cn } from "@/lib/utils";
 
 // Always reflects live data - never statically prerendered (which would also
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DebtPage() {
   const people = await getPeopleWithBalances();
+  const netBalancePence = people.reduce((sum, p) => sum + p.balancePence, 0);
 
   return (
     <div className="space-y-4">
@@ -18,6 +20,15 @@ export default async function DebtPage() {
         <h1 className="text-xl font-semibold tracking-tight">Debt</h1>
         <AddPersonDialog />
       </div>
+
+      {people.length > 0 && netBalancePence !== 0 && (
+        <StatCard
+          label={netBalancePence > 0 ? "Net: you owe" : "Net: owed to you"}
+          value={formatPence(Math.abs(netBalancePence))}
+          icon={Scale}
+          tone={netBalancePence > 0 ? "critical" : "good"}
+        />
+      )}
 
       {people.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
