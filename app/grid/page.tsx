@@ -4,6 +4,8 @@ import { formatPence } from "@/lib/money";
 import { StatCard } from "@/components/grid/stat-card";
 import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
+import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
+import { CopyPreviousMonthButton } from "@/components/grid/copy-previous-month-button";
 import { DesktopGridTables } from "@/components/grid/desktop-grid-tables";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthPager } from "@/components/grid/month-pager";
@@ -64,6 +66,8 @@ export default async function GridPage({
               ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
             ])}
           />
+          <AddIncomeSourceDialog />
+          <CopyPreviousMonthButton year={year} month={currentMonthIndex + 1} />
         </div>
       </div>
 

@@ -6,11 +6,15 @@ import {
   addIncomeSource as addIncomeSourceQuery,
   archiveCategory as archiveCategoryQuery,
   archiveIncomeSource as archiveIncomeSourceQuery,
+  deleteCategoryEntry,
+  deleteIncomeEntry,
+  getGridData,
   logExpense as logExpenseQuery,
   renameCategory as renameCategoryQuery,
   setCategoryEntryPaid,
   unarchiveCategory as unarchiveCategoryQuery,
   unarchiveIncomeSource as unarchiveIncomeSourceQuery,
+  updateCategoryDueDay as updateCategoryDueDayQuery,
   updateCategoryGroup as updateCategoryGroupQuery,
   upsertCategoryEntry,
   upsertIncomeEntry,
@@ -29,6 +33,55 @@ export async function updateAmount(input: {
     month: input.month,
     amountPence: poundsToPence(input.pounds),
   });
+  revalidatePath("/grid");
+}
+
+export async function clearAmount(input: { categoryId: number; year: number; month: number }) {
+  await deleteCategoryEntry(input);
+  revalidatePath("/grid");
+}
+
+export async function clearIncomeAmount(input: {
+  incomeSourceId: number;
+  year: number;
+  month: number;
+}) {
+  await deleteIncomeEntry(input);
+  revalidatePath("/grid");
+}
+
+/** Bulk version of the per-cell "use last month's value" hint - only fills
+ * genuinely blank cells (categories and income sources both), never
+ * overwrites an existing entry, same as the per-cell hint it's built from. */
+export async function copyPreviousMonthValues(input: { year: number; month: number }) {
+  const data = await getGridData(input.year);
+
+  const allCategories = data.categories.flatMap((c) => [c, ...c.children]);
+  for (const category of allCategories) {
+    const cell = category.months[input.month];
+    if (cell?.computed) continue;
+    if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
+      await upsertCategoryEntry({
+        categoryId: category.id,
+        year: input.year,
+        month: input.month,
+        amountPence: cell.previousAmountPence,
+      });
+    }
+  }
+
+  for (const source of data.incomeSources) {
+    const cell = source.months[input.month];
+    if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
+      await upsertIncomeEntry({
+        incomeSourceId: source.id,
+        year: input.year,
+        month: input.month,
+        amountPence: cell.previousAmountPence,
+      });
+    }
+  }
+
   revalidatePath("/grid");
 }
 
@@ -135,6 +188,15 @@ export async function updateCategoryGroup(categoryId: number, groupName: string)
   await updateCategoryGroupQuery(categoryId, groupName.trim() || null);
   revalidatePath("/grid");
   revalidatePath("/reports");
+}
+
+export async function updateCategoryDueDay(categoryId: number, dueDay: number | null) {
+  if (dueDay !== null && (dueDay < 1 || dueDay > 31)) {
+    throw new Error("Due day must be between 1 and 31.");
+  }
+  await updateCategoryDueDayQuery(categoryId, dueDay);
+  revalidatePath("/grid");
+  revalidatePath("/settings");
 }
 
 export async function archiveCategory(categoryId: number) {

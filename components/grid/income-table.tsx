@@ -3,8 +3,7 @@
 import { GridCell } from "@/components/grid/grid-cell";
 import { formatPence } from "@/lib/money";
 import { ScrollFade } from "@/components/scroll-fade";
-import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
-import { updateIncomeAmount } from "@/app/grid/actions";
+import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 import type { IncomeSourceRow } from "@/lib/db/queries";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 
@@ -38,10 +37,7 @@ export function IncomeTable({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Income</h2>
-        <AddIncomeSourceDialog />
-      </div>
+      <h2 className="text-sm font-medium text-muted-foreground">Income</h2>
       <ScrollFade
         className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm"
         leftInset={categoryColWidth}
@@ -109,6 +105,9 @@ export function IncomeTable({
                           showPaidToggle={false}
                           onCommitAmount={(pounds) =>
                             updateIncomeAmount({ incomeSourceId: source.id, year, month, pounds })
+                          }
+                          onClearAmount={() =>
+                            clearIncomeAmount({ incomeSourceId: source.id, year, month })
                           }
                         />
                       </td>

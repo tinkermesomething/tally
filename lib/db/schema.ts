@@ -14,6 +14,7 @@ export const categories = sqliteTable("categories", {
   sortOrder: integer("sort_order").notNull().default(0),
   isAnnual: integer("is_annual", { mode: "boolean" }).notNull().default(false),
   annualMonth: integer("annual_month"),
+  dueDay: integer("due_day"), // 1-31, day of the month this is due
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
 });
 
@@ -48,6 +49,10 @@ export const expenseEntries = sqliteTable("expense_entries", {
   amountPence: integer("amount_pence").notNull(),
   note: text("note"),
   entryDate: text("entry_date").notNull(), // ISO date, when the money actually left
+  // Set when this expense is *also* a debt repayment - e.g. paying Roberto
+  // back logged under Misc. Purely for traceability; the actual ledger
+  // effect is a separate debt_ledger_entries row created alongside it.
+  debtPersonId: integer("debt_person_id").references(() => people.id),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),

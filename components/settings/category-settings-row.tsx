@@ -5,6 +5,7 @@ import { Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
+import { EditableDueDay } from "@/components/grid/editable-due-day";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
 import type { CategoryTreeNode } from "@/lib/db/queries";
@@ -34,6 +35,7 @@ export function CategorySettingsRow({
           color={color}
           existingGroups={existingGroups}
         />
+        <EditableDueDay categoryId={category.id} dueDay={category.dueDay} />
         <AddSubcategoryDialog parentId={category.id} parentName={category.name} />
         <Button
           size="icon-xs"
@@ -56,6 +58,7 @@ export function CategorySettingsRow({
                 value={child.name}
                 onCommit={(next) => renameCategory(child.id, next)}
               />
+              <EditableDueDay categoryId={child.id} dueDay={child.dueDay} />
               <Button
                 size="icon-xs"
                 variant="ghost"

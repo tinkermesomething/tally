@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Undo2 } from "lucide-react";
+import { Undo2, AlertCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,9 @@ export function GridCell({
   spentPence = 0,
   previousAmountPence,
   showPaidToggle = true,
+  overdue = false,
   onCommitAmount,
+  onClearAmount,
   onTogglePaid,
   onConfirmPayment,
 }: {
@@ -22,7 +24,11 @@ export function GridCell({
   spentPence?: number;
   previousAmountPence?: number;
   showPaidToggle?: boolean;
+  overdue?: boolean;
   onCommitAmount: (pounds: number) => void;
+  /** Blank is a real, distinct state from "0" - clearing a cell deletes the
+   * entry rather than reverting to whatever it was before. */
+  onClearAmount?: () => void;
   onTogglePaid?: (paid: boolean) => void;
   /** Called instead of onTogglePaid when checking (not unchecking) the paid
    * box, once the user confirms the actual amount in the popover - the
@@ -49,7 +55,13 @@ export function GridCell({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [confirming]);
 
-  function commit(pounds: number) {
+  function commit(raw: string) {
+    if (raw.trim() === "") {
+      if (amountPence === undefined) return; // already blank
+      if (onClearAmount) startTransition(() => onClearAmount());
+      return;
+    }
+    const pounds = parseFloat(raw);
     if (Number.isNaN(pounds)) {
       setValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
       return;
@@ -74,11 +86,16 @@ export function GridCell({
   return (
     <div className="relative flex flex-col items-end gap-0.5">
       <div className="flex items-center justify-end gap-1.5">
+        {overdue && (
+          <span title="Overdue">
+            <AlertCircle className="size-3.5 shrink-0 text-status-critical" aria-label="Overdue" />
+          </span>
+        )}
         <input
           inputMode="decimal"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onBlur={() => commit(parseFloat(value))}
+          onBlur={() => commit(value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
           }}
@@ -140,8 +157,9 @@ export function GridCell({
         <button
           type="button"
           onClick={() => {
-            setValue((previousAmountPence / 100).toFixed(2));
-            commit(previousAmountPence / 100);
+            const text = (previousAmountPence / 100).toFixed(2);
+            setValue(text);
+            commit(text);
           }}
           className="flex items-center gap-1 pr-7 text-xs text-muted-foreground hover:text-foreground"
           title="Use last month's amount"

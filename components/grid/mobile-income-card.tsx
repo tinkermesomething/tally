@@ -2,7 +2,7 @@
 
 import { GridCell } from "@/components/grid/grid-cell";
 import type { IncomeSourceRow } from "@/lib/db/queries";
-import { updateIncomeAmount } from "@/app/grid/actions";
+import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 
 export function MobileIncomeCard({
   source,
@@ -23,6 +23,7 @@ export function MobileIncomeCard({
         previousAmountPence={cell?.previousAmountPence}
         showPaidToggle={false}
         onCommitAmount={(pounds) => updateIncomeAmount({ incomeSourceId: source.id, year, month, pounds })}
+        onClearAmount={() => clearIncomeAmount({ incomeSourceId: source.id, year, month })}
       />
     </div>
   );

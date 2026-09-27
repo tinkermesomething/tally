@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, CalendarClock } from "lucide-react";
+import { ChevronRight, CalendarClock, AlertCircle } from "lucide-react";
 import { GridCell } from "@/components/grid/grid-cell";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
@@ -9,7 +9,7 @@ import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
-import { renameCategory, updateAmount, togglePaid, confirmPayment } from "@/app/grid/actions";
+import { renameCategory, updateAmount, clearAmount, togglePaid, confirmPayment } from "@/app/grid/actions";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MONTH_NAMES = [
@@ -36,15 +36,24 @@ function AnnualBadge({ annualMonth }: { annualMonth: number | null }) {
 function ComputedCell({
   amountPence,
   spentPence,
+  overdue,
 }: {
   amountPence: number | undefined;
   spentPence: number;
+  overdue: boolean;
 }) {
   return (
     <div className="flex flex-col items-end gap-0.5 px-1.5 py-1">
-      <span className="text-[0.925rem] tabular-nums text-foreground">
-        {amountPence !== undefined ? formatPence(amountPence) : "—"}
-      </span>
+      <div className="flex items-center gap-1">
+        {overdue && (
+          <span title="Overdue">
+            <AlertCircle className="size-3.5 shrink-0 text-status-critical" aria-label="Overdue" />
+          </span>
+        )}
+        <span className="text-[0.925rem] tabular-nums text-foreground">
+          {amountPence !== undefined ? formatPence(amountPence) : "—"}
+        </span>
+      </div>
       {spentPence > 0 && (
         <span className="text-xs tabular-nums text-primary">Paid {formatPence(spentPence)}</span>
       )}
@@ -63,7 +72,13 @@ export function CategoryMonthCell({
 }) {
   const cell = category.months[month];
   if (cell?.computed) {
-    return <ComputedCell amountPence={cell.amountPence} spentPence={cell.spentPence} />;
+    return (
+      <ComputedCell
+        amountPence={cell.amountPence}
+        spentPence={cell.spentPence}
+        overdue={cell.overdue}
+      />
+    );
   }
   return (
     <GridCell
@@ -71,7 +86,9 @@ export function CategoryMonthCell({
       paid={cell?.paid ?? false}
       spentPence={cell?.spentPence ?? 0}
       previousAmountPence={cell?.previousAmountPence}
+      overdue={cell?.overdue ?? false}
       onCommitAmount={(pounds) => updateAmount({ categoryId: category.id, year, month, pounds })}
+      onClearAmount={() => clearAmount({ categoryId: category.id, year, month })}
       onTogglePaid={(paid) => togglePaid({ categoryId: category.id, year, month, paid })}
       onConfirmPayment={(pounds) => confirmPayment({ categoryId: category.id, year, month, pounds })}
     />

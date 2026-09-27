@@ -19,6 +19,10 @@ export type MonthCell = {
    * boundary for January) - lets the UI offer a one-click "use last month's
    * value" instead of forcing a fresh number every month. */
   previousAmountPence?: number;
+  /** True once today's date has passed the category's due day for this
+   * month and it's still unpaid. Never true for a blank cell (nothing's
+   * actually due if nothing was planned) or once paid. */
+  overdue: boolean;
 };
 
 export type GridCategory = {
@@ -27,6 +31,7 @@ export type GridCategory = {
   groupName: string | null;
   isAnnual: boolean;
   annualMonth: number | null;
+  dueDay: number | null;
   months: Record<number, MonthCell>;
   yearTotalPence: number;
   monthlyAveragePence: number;
@@ -76,6 +81,7 @@ function buildDirectMonths(
       paid: entry.paid,
       spentPence: 0,
       computed: false,
+      overdue: false,
     };
   }
 
@@ -89,11 +95,31 @@ function buildDirectMonths(
         paid: false,
         spentPence: expense.amountPence,
         computed: false,
+        overdue: false,
       };
     }
   }
 
   return months;
+}
+
+/** Flags each unpaid, planned cell as overdue once today's date has passed
+ * the category's due day for that cell's month - run after a category's
+ * months map is otherwise complete. A blank cell (nothing planned) or a
+ * paid one is never overdue. */
+function applyOverdueFlags(
+  months: Record<number, MonthCell>,
+  dueDay: number | null,
+  year: number,
+  today: Date
+) {
+  if (dueDay == null) return;
+  for (let month = 1; month <= 12; month++) {
+    const cell = months[month];
+    if (!cell || cell.paid || cell.amountPence === undefined) continue;
+    const dueDate = new Date(year, month - 1, dueDay);
+    cell.overdue = dueDate < today;
+  }
 }
 
 /** For every blank month, attach a hint of what the previous month's amount
@@ -113,6 +139,7 @@ function attachPreviousMonthHints(
       paid: false,
       spentPence: months[month]?.spentPence ?? 0,
       computed: false,
+      overdue: false,
       previousAmountPence: previousAmount,
     };
   }
@@ -179,6 +206,9 @@ export async function getGridData(year: number): Promise<GridData> {
     prevDecIncomeEntries.map((e) => [e.incomeSourceId, e.amountPence])
   );
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   const subtotalByMonth = Array(12).fill(0);
   const remainingByMonth = Array(12).fill(0);
   const wagesByMonth = Array(12).fill(0);
@@ -201,12 +231,14 @@ export async function getGridData(year: number): Promise<GridData> {
     const children: GridCategory[] = childCats.map((child) => {
       const childMonths = buildDirectMonths(child.id, entries, expenses);
       attachPreviousMonthHints(childMonths, prevDecByCategory.get(child.id));
+      applyOverdueFlags(childMonths, child.dueDay, year, today);
       return {
         id: child.id,
         name: child.name,
         groupName: child.groupName,
         isAnnual: child.isAnnual,
         annualMonth: child.annualMonth,
+        dueDay: child.dueDay,
         months: childMonths,
         children: [],
         ...summarize(childMonths),
@@ -215,6 +247,7 @@ export async function getGridData(year: number): Promise<GridData> {
 
     const directMonths = buildDirectMonths(category.id, entries, expenses);
     attachPreviousMonthHints(directMonths, prevDecByCategory.get(category.id));
+    applyOverdueFlags(directMonths, category.dueDay, year, today);
     const months: Record<number, MonthCell> = {};
 
     // Annual children (e.g. a once-a-year subscription) are expected to be
@@ -247,7 +280,8 @@ export async function getGridData(year: number): Promise<GridData> {
           0
         );
         const paid = allChildCellsThisMonth.every((c) => c.paid);
-        months[month] = { amountPence, paid, spentPence, computed: true };
+        const overdue = allChildCellsThisMonth.some((c) => c.overdue);
+        months[month] = { amountPence, paid, spentPence, computed: true, overdue };
       } else if (directMonths[month]) {
         months[month] = directMonths[month];
       }
@@ -275,6 +309,7 @@ export async function getGridData(year: number): Promise<GridData> {
       groupName: category.groupName,
       isAnnual: category.isAnnual,
       annualMonth: category.annualMonth,
+      dueDay: category.dueDay,
       months,
       children,
       ...summarize(months),
@@ -289,6 +324,7 @@ export async function getGridData(year: number): Promise<GridData> {
         paid: true,
         spentPence: 0,
         computed: false,
+        overdue: false,
       };
     }
     attachPreviousMonthHints(months, prevDecByIncomeSource.get(source.id));
@@ -338,6 +374,7 @@ export type CategoryTreeNode = {
   groupName: string | null;
   isAnnual: boolean;
   annualMonth: number | null;
+  dueDay: number | null;
   children: CategoryTreeNode[];
 };
 
@@ -363,15 +400,21 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
       groupName: c.groupName,
       isAnnual: c.isAnnual,
       annualMonth: c.annualMonth,
+      dueDay: c.dueDay,
       children: (childrenByParent.get(c.id) ?? []).map((child) => ({
         id: child.id,
         name: child.name,
         groupName: child.groupName,
         isAnnual: child.isAnnual,
         annualMonth: child.annualMonth,
+        dueDay: child.dueDay,
         children: [],
       })),
     }));
+}
+
+export async function updateCategoryDueDay(categoryId: number, dueDay: number | null) {
+  await db.update(categories).set({ dueDay }).where(eq(categories.id, categoryId));
 }
 
 export async function upsertCategoryEntry(input: {
@@ -396,6 +439,28 @@ export async function upsertCategoryEntry(input: {
   } else {
     await db.insert(categoryEntries).values({ ...input, paid: false });
   }
+}
+
+/** Clearing a cell back to blank is a real, distinct state from "0" - it
+ * means "nothing planned here", not "planned nothing". Deletes the row
+ * outright rather than storing a 0, so the cell reverts to the same blank
+ * state (and same "use last month" hint) it'd have if no one had ever
+ * entered anything. Logged expenses (spentPence) are a separate table and
+ * untouched - clearing the plan doesn't erase real transaction history. */
+export async function deleteCategoryEntry(input: {
+  categoryId: number;
+  year: number;
+  month: number;
+}) {
+  await db
+    .delete(categoryEntries)
+    .where(
+      and(
+        eq(categoryEntries.categoryId, input.categoryId),
+        eq(categoryEntries.year, input.year),
+        eq(categoryEntries.month, input.month)
+      )
+    );
 }
 
 export async function setCategoryEntryPaid(input: {
@@ -432,6 +497,9 @@ export async function logExpense(input: {
   amountPence: number;
   entryDate: string; // ISO date, e.g. "2026-09-26"
   note?: string;
+  /** Set when this expense is also a debt repayment - purely for
+   * traceability; the actual ledger effect is a separate row. */
+  debtPersonId?: number;
 }) {
   const [year, month] = input.entryDate.split("-").map(Number);
   await db.insert(expenseEntries).values({
@@ -441,6 +509,7 @@ export async function logExpense(input: {
     amountPence: input.amountPence,
     entryDate: input.entryDate,
     note: input.note || null,
+    debtPersonId: input.debtPersonId,
   });
 }
 
@@ -466,6 +535,50 @@ export async function upsertIncomeEntry(input: {
   } else {
     await db.insert(incomeEntries).values(input);
   }
+}
+
+/** Adds to whatever's already there for that source/month instead of
+ * replacing it - a one-off event (e.g. a friend's loan landing the same
+ * month as regular income already logged) shouldn't clobber the rest of
+ * that month's figure. */
+export async function incrementIncomeEntry(input: {
+  incomeSourceId: number;
+  year: number;
+  month: number;
+  amountPence: number;
+}) {
+  const existing = await db.query.incomeEntries.findFirst({
+    where: and(
+      eq(incomeEntries.incomeSourceId, input.incomeSourceId),
+      eq(incomeEntries.year, input.year),
+      eq(incomeEntries.month, input.month)
+    ),
+  });
+
+  if (existing) {
+    await db
+      .update(incomeEntries)
+      .set({ amountPence: existing.amountPence + input.amountPence })
+      .where(eq(incomeEntries.id, existing.id));
+  } else {
+    await db.insert(incomeEntries).values(input);
+  }
+}
+
+export async function deleteIncomeEntry(input: {
+  incomeSourceId: number;
+  year: number;
+  month: number;
+}) {
+  await db
+    .delete(incomeEntries)
+    .where(
+      and(
+        eq(incomeEntries.incomeSourceId, input.incomeSourceId),
+        eq(incomeEntries.year, input.year),
+        eq(incomeEntries.month, input.month)
+      )
+    );
 }
 
 export async function addCategory(input: {
