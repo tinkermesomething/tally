@@ -6,6 +6,7 @@ import {
   expenseEntries,
   incomeEntries,
   incomeSources,
+  reportPanels,
 } from "./schema";
 
 export type MonthCell = {
@@ -658,4 +659,60 @@ export async function getIncomeSourceList(): Promise<{ id: number; name: string 
     where: eq(incomeSources.archived, false),
     orderBy: (s, { asc }) => [asc(s.sortOrder)],
   });
+}
+
+export type ReportPanelPick = { type: "group"; value: string } | { type: "category"; value: number };
+
+export type ReportPanel = {
+  id: number;
+  name: string;
+  selection: ReportPanelPick[];
+  sortOrder: number;
+};
+
+export const MAX_REPORT_PANELS = 3;
+
+export async function getReportPanels(): Promise<ReportPanel[]> {
+  const rows = await db.query.reportPanels.findMany({
+    orderBy: (p, { asc }) => [asc(p.sortOrder)],
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    selection: JSON.parse(r.selection) as ReportPanelPick[],
+    sortOrder: r.sortOrder,
+  }));
+}
+
+export async function createReportPanel(name: string, selection: ReportPanelPick[]) {
+  const existing = await db.select({ id: reportPanels.id }).from(reportPanels);
+  if (existing.length >= MAX_REPORT_PANELS) {
+    throw new Error(`You can only have ${MAX_REPORT_PANELS} custom report panels.`);
+  }
+  const [maxRow] = await db
+    .select({ max: sql<number>`max(${reportPanels.sortOrder})` })
+    .from(reportPanels);
+  const [created] = await db
+    .insert(reportPanels)
+    .values({
+      name,
+      selection: JSON.stringify(selection),
+      sortOrder: (maxRow?.max ?? -1) + 1,
+    })
+    .returning();
+  return created;
+}
+
+export async function updateReportPanel(
+  id: number,
+  input: { name?: string; selection?: ReportPanelPick[] }
+) {
+  const set: { name?: string; selection?: string } = {};
+  if (input.name !== undefined) set.name = input.name;
+  if (input.selection !== undefined) set.selection = JSON.stringify(input.selection);
+  await db.update(reportPanels).set(set).where(eq(reportPanels.id, id));
+}
+
+export async function deleteReportPanel(id: number) {
+  await db.delete(reportPanels).where(eq(reportPanels.id, id));
 }

@@ -91,6 +91,14 @@ export const people = sqliteTable("people", {
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
 });
 
+export const reportPanels = sqliteTable("report_panels", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  // JSON array of { type: "group", value: string } | { type: "category", value: number }
+  selection: text("selection").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 export const debtLedgerEntries = sqliteTable("debt_ledger_entries", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   personId: integer("person_id")
