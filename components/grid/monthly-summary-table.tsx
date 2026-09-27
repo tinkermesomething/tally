@@ -1,5 +1,8 @@
+"use client";
+
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
+import { ScrollFade } from "@/components/scroll-fade";
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -24,6 +27,8 @@ export function MonthlySummaryTable({
   categoryColWidth,
   monthColWidth,
   summaryColWidth,
+  containerRef,
+  onScroll,
 }: {
   wagesByMonth: number[];
   availableByMonth: number[];
@@ -32,6 +37,8 @@ export function MonthlySummaryTable({
   categoryColWidth: number;
   monthColWidth: number;
   summaryColWidth: number;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: (el: HTMLDivElement) => void;
 }) {
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
 
@@ -47,7 +54,13 @@ export function MonthlySummaryTable({
   ];
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm">
+    <ScrollFade
+      className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm"
+      leftInset={categoryColWidth}
+      rightInset={summaryColWidth * 2}
+      containerRef={containerRef}
+      onScroll={onScroll}
+    >
       <table
         className="border-collapse text-sm"
         style={{ tableLayout: "fixed", width: tableWidth }}
@@ -116,6 +129,6 @@ export function MonthlySummaryTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollFade>
   );
 }

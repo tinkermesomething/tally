@@ -21,6 +21,8 @@ export function IncomeTable({
   categoryColWidth,
   monthColWidth,
   summaryColWidth,
+  containerRef,
+  onScroll,
 }: {
   sources: IncomeSourceRow[];
   year: number;
@@ -28,6 +30,8 @@ export function IncomeTable({
   categoryColWidth: number;
   monthColWidth: number;
   summaryColWidth: number;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: (el: HTMLDivElement) => void;
 }) {
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
   const yearTotal = totalByMonth.reduce((a, b) => a + b, 0);
@@ -42,6 +46,8 @@ export function IncomeTable({
         className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm"
         leftInset={categoryColWidth}
         rightInset={summaryColWidth * 2}
+        containerRef={containerRef}
+        onScroll={onScroll}
       >
         <table
           className="border-collapse text-sm"

@@ -17,14 +17,22 @@ export function ScrollFade({
   className,
   leftInset = 0,
   rightInset = 0,
+  containerRef: externalRef,
+  onScroll,
 }: {
   children: React.ReactNode;
   className?: string;
   /** Bubbles sit just past a sticky column, not on top of it. */
   leftInset?: number;
   rightInset?: number;
+  /** Lets a parent share/control the scroll element directly (e.g. to sync
+   * scroll position across several tables) instead of ScrollFade owning an
+   * internal ref nothing outside it can reach. */
+  containerRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: (el: HTMLDivElement) => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const internalRef = useRef<HTMLDivElement>(null);
+  const ref = externalRef ?? internalRef;
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -36,6 +44,7 @@ export function ScrollFade({
       if (!el) return;
       setCanScrollLeft(el.scrollLeft > 4);
       setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+      onScroll?.(el);
     }
 
     update();
@@ -46,6 +55,7 @@ export function ScrollFade({
       el.removeEventListener("scroll", update);
       ro.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function scrollBy(delta: number) {
