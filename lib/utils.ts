@@ -14,14 +14,11 @@ export function floatingPanelFill(baseVar: string) {
   return `color-mix(in oklab, var(--primary) 7%, var(${baseVar}))`
 }
 
-// Freezes a table's header row below the app nav bar while its body
+// Freezes a table's header row at the top of the viewport while its body
 // scrolls past (Excel/Sheets' "freeze top row") - the page scrolls
-// vertically, not these tables themselves, so this sticks relative to the
-// viewport, not the table's own (non-scrolling) wrapper. Offset by top-14
-// to clear AppHeader (h-14, also sticky top-0 z-30) - without it, both
-// would pin to the same y=0 and this would land underneath the nav bar
-// instead of appearing as its own row beneath it. z-20 keeps it above
-// both the body's sticky columns (z-10) and the horizontal-scroll shadow
-// overlay (z-15), but below the nav bar's z-30.
-export const STICKY_HEADER_ROW = "sticky top-14 z-20"
+// vertically, not these tables themselves, so `top-0` sticks relative to
+// the viewport, not the table's own (non-scrolling) wrapper. z-20 keeps it
+// above both the body's sticky columns (z-10) and the horizontal-scroll
+// shadow overlay (z-15).
+export const STICKY_HEADER_ROW = "sticky top-0 z-20"
 
