@@ -152,6 +152,16 @@ function attachPreviousMonthHints(
   }
 }
 
+/** The real amount a cell counts as, for SUBTOTAL/AVAILABLE/Remaining: what
+ * was actually spent if anything's been logged against it, otherwise the
+ * plan. Deliberately not keyed on `paid` - a cell can be marked paid with
+ * no expense ever logged against it (older data, or paid via a path that
+ * doesn't log one), and treating "paid" as "we know the real number"
+ * silently zeroed out the plan for every cell like that. */
+function effectiveAmountPence(cell: MonthCell): number {
+  return cell.spentPence > 0 ? cell.spentPence : (cell.amountPence ?? 0);
+}
+
 function summarize(months: Record<number, MonthCell>) {
   let yearTotalPence = 0;
   let monthsWithData = 0;
@@ -297,15 +307,7 @@ export async function getGridData(year: number): Promise<GridData> {
     for (let month = 1; month <= 12; month++) {
       const cell = months[month];
       if (!cell) continue;
-      // Once paid, the real amount is known - use it instead of the plan,
-      // so overspend eats into AVAILABLE and underspend gives it back,
-      // rather than the confirmed figure only ever showing per-cell.
-      // Not yet paid, use whichever is bigger: an expense logged ahead of
-      // marking paid still shouldn't let a known overspend hide behind a
-      // smaller allocated figure.
-      const effectivePence = cell.paid
-        ? cell.spentPence
-        : Math.max(cell.amountPence ?? 0, cell.spentPence);
+      const effectivePence = effectiveAmountPence(cell);
       subtotalByMonth[month - 1] += effectivePence;
       if (!cell.paid) remainingByMonth[month - 1] += effectivePence;
     }
@@ -424,6 +426,22 @@ export async function updateCategoryDueDay(categoryId: number, dueDay: number | 
   await db.update(categories).set({ dueDay }).where(eq(categories.id, categoryId));
 }
 
+function categoryEntryMatch(categoryId: number, year: number, month: number) {
+  return and(
+    eq(categoryEntries.categoryId, categoryId),
+    eq(categoryEntries.year, year),
+    eq(categoryEntries.month, month)
+  );
+}
+
+function incomeEntryMatch(incomeSourceId: number, year: number, month: number) {
+  return and(
+    eq(incomeEntries.incomeSourceId, incomeSourceId),
+    eq(incomeEntries.year, year),
+    eq(incomeEntries.month, month)
+  );
+}
+
 export async function upsertCategoryEntry(input: {
   categoryId: number;
   year: number;
@@ -431,11 +449,7 @@ export async function upsertCategoryEntry(input: {
   amountPence: number;
 }) {
   const existing = await db.query.categoryEntries.findFirst({
-    where: and(
-      eq(categoryEntries.categoryId, input.categoryId),
-      eq(categoryEntries.year, input.year),
-      eq(categoryEntries.month, input.month)
-    ),
+    where: categoryEntryMatch(input.categoryId, input.year, input.month),
   });
 
   if (existing) {
@@ -459,15 +473,7 @@ export async function deleteCategoryEntry(input: {
   year: number;
   month: number;
 }) {
-  await db
-    .delete(categoryEntries)
-    .where(
-      and(
-        eq(categoryEntries.categoryId, input.categoryId),
-        eq(categoryEntries.year, input.year),
-        eq(categoryEntries.month, input.month)
-      )
-    );
+  await db.delete(categoryEntries).where(categoryEntryMatch(input.categoryId, input.year, input.month));
 }
 
 export async function setCategoryEntryPaid(input: {
@@ -479,13 +485,7 @@ export async function setCategoryEntryPaid(input: {
   await db
     .update(categoryEntries)
     .set({ paid: input.paid })
-    .where(
-      and(
-        eq(categoryEntries.categoryId, input.categoryId),
-        eq(categoryEntries.year, input.year),
-        eq(categoryEntries.month, input.month)
-      )
-    );
+    .where(categoryEntryMatch(input.categoryId, input.year, input.month));
 }
 
 export async function renameCategory(categoryId: number, name: string) {
@@ -527,11 +527,7 @@ export async function upsertIncomeEntry(input: {
   amountPence: number;
 }) {
   const existing = await db.query.incomeEntries.findFirst({
-    where: and(
-      eq(incomeEntries.incomeSourceId, input.incomeSourceId),
-      eq(incomeEntries.year, input.year),
-      eq(incomeEntries.month, input.month)
-    ),
+    where: incomeEntryMatch(input.incomeSourceId, input.year, input.month),
   });
 
   if (existing) {
@@ -555,11 +551,7 @@ export async function incrementIncomeEntry(input: {
   amountPence: number;
 }) {
   const existing = await db.query.incomeEntries.findFirst({
-    where: and(
-      eq(incomeEntries.incomeSourceId, input.incomeSourceId),
-      eq(incomeEntries.year, input.year),
-      eq(incomeEntries.month, input.month)
-    ),
+    where: incomeEntryMatch(input.incomeSourceId, input.year, input.month),
   });
 
   if (existing) {
@@ -577,15 +569,7 @@ export async function deleteIncomeEntry(input: {
   year: number;
   month: number;
 }) {
-  await db
-    .delete(incomeEntries)
-    .where(
-      and(
-        eq(incomeEntries.incomeSourceId, input.incomeSourceId),
-        eq(incomeEntries.year, input.year),
-        eq(incomeEntries.month, input.month)
-      )
-    );
+  await db.delete(incomeEntries).where(incomeEntryMatch(input.incomeSourceId, input.year, input.month));
 }
 
 export async function addCategory(input: {
