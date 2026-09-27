@@ -137,9 +137,14 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
+          # `latest` only moves on a real published GitHub Release, never
+          # on a workflow_dispatch test build - Komodo's auto_update
+          # pulls `latest` automatically, so a mid-session, not-yet-
+          # reviewed build must never be able to reach it. workflow_dispatch
+          # builds still get their own explicit version tag, just not this.
           tags: |
             type=raw,value=${{ env.RELEASE_VERSION }}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
