@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LogOut } from "lucide-react";
-import { signOut } from "@/auth";
+import { auth, signOut } from "@/auth";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AccentPicker } from "@/components/accent-picker";
 import { Button } from "@/components/ui/button";
@@ -12,36 +12,42 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Settings" },
 ] as const;
 
-export function AppHeader() {
+export async function AppHeader() {
+  const session = await auth();
+
   return (
     <header className="sticky top-0 z-30 bg-background/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
         <Link href="/grid" className="font-semibold tracking-tight">
           Tally
         </Link>
-        <nav className="flex flex-1 items-center gap-1 text-sm">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        {session && (
+          <>
+            <nav className="flex flex-1 items-center gap-1 text-sm">
+              {NAV_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <AccentPicker />
+            <ThemeToggle />
+            <form
+              action={async () => {
+                "use server";
+                await signOut({ redirectTo: "/signin" });
+              }}
             >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <AccentPicker />
-        <ThemeToggle />
-        <form
-          action={async () => {
-            "use server";
-            await signOut({ redirectTo: "/signin" });
-          }}
-        >
-          <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
-            <LogOut className="size-4" />
-          </Button>
-        </form>
+              <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
+                <LogOut className="size-4" />
+              </Button>
+            </form>
+          </>
+        )}
       </div>
     </header>
   );

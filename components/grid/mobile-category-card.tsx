@@ -5,6 +5,7 @@ import { ChevronRight, CalendarClock } from "lucide-react";
 import { CategoryMonthCell } from "@/components/grid/category-row";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
+import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { cn } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
 import { renameCategory } from "@/app/grid/actions";
@@ -67,6 +68,7 @@ export function MobileCategoryCard({
             {category.annualMonth ? MONTH_NAMES[category.annualMonth - 1] : "Yearly"}
           </span>
         )}
+        <AddSubcategoryDialog parentId={category.id} parentName={category.name} />
       </div>
       {expanded && hasChildren && (
         <div className="mt-2 ml-[18px] space-y-2 border-l border-border pl-3">
