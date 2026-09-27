@@ -1,6 +1,7 @@
-import { getGridData, getReportPanels, MAX_REPORT_PANELS, type ReportPanel } from "@/lib/db/queries";
+import { getAvailableYears, getGridData, getReportPanels, MAX_REPORT_PANELS, type ReportPanel } from "@/lib/db/queries";
 import { formatPence } from "@/lib/money";
 import { MonthSelect } from "@/components/reports/month-select";
+import { YearSwitcher } from "@/components/grid/year-switcher";
 import {
   CategoryPieChart,
   type GroupSlice,
@@ -18,7 +19,7 @@ export default async function ReportsPage({
   const { year: yearParam, month: monthParam } = await searchParams;
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
   const month = monthParam ?? "all";
-  const [data, panels] = await Promise.all([getGridData(year), getReportPanels()]);
+  const [data, panels, years] = await Promise.all([getGridData(year), getReportPanels(), getAvailableYears()]);
 
   // Stable group -> color assignment, derived from the full category list
   // (not the filtered view), shared with the /grid tags so a group is
@@ -125,7 +126,10 @@ export default async function ReportsPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
-        <MonthSelect year={year} month={month} />
+        <div className="flex items-center gap-2">
+          <YearSwitcher year={year} years={years} basePath="/reports" extraParams={{ month }} />
+          <MonthSelect year={year} month={month} />
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">

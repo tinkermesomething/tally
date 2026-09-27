@@ -9,7 +9,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export function YearSwitcher({ year, years }: { year: number; years: number[] }) {
+export function YearSwitcher({
+  year,
+  years,
+  basePath = "/grid",
+  extraParams = {},
+}: {
+  year: number;
+  years: number[];
+  /** Lets other pages (e.g. Reports) reuse this same switcher instead of
+   * duplicating it - the grid page's own usage is unaffected by the defaults. */
+  basePath?: string;
+  extraParams?: Record<string, string>;
+}) {
   const router = useRouter();
 
   return (
@@ -17,7 +29,8 @@ export function YearSwitcher({ year, years }: { year: number; years: number[] })
       value={String(year)}
       onValueChange={(value) => {
         if (!value) return;
-        router.push(`/grid?year=${value}`);
+        const params = new URLSearchParams({ year: value, ...extraParams });
+        router.push(`${basePath}?${params.toString()}`);
       }}
     >
       <SelectTrigger className="w-28">
