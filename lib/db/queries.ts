@@ -365,6 +365,13 @@ export async function getGridData(year: number): Promise<GridData> {
   };
 }
 
+// How far ahead of the current year to always offer, even with no data
+// yet - a future year can't have any category_entries rows until someone
+// actually visits it and enters something, so it has to be offered
+// proactively rather than discovered from existing data (unlike past
+// years, which show up on their own via the query below).
+const YEARS_AHEAD_ALWAYS_OFFERED = 5;
+
 export async function getAvailableYears(): Promise<number[]> {
   const currentYear = new Date().getFullYear();
   const rows = await db
@@ -372,8 +379,9 @@ export async function getAvailableYears(): Promise<number[]> {
     .from(categoryEntries)
     .groupBy(categoryEntries.year);
   const years = new Set(rows.map((r) => r.year));
-  years.add(currentYear);
-  years.add(currentYear + 1);
+  for (let y = currentYear; y <= currentYear + YEARS_AHEAD_ALWAYS_OFFERED; y++) {
+    years.add(y);
+  }
   return Array.from(years).sort((a, b) => a - b);
 }
 
