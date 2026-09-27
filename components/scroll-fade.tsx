@@ -15,6 +15,7 @@ const SCROLL_STEP = 360;
 export function ScrollFade({
   children,
   className,
+  style,
   leftInset = 0,
   rightInset = 0,
   containerRef: externalRef,
@@ -22,6 +23,9 @@ export function ScrollFade({
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Merged onto the scrolling element itself - e.g. a JS-measured
+   * max-height, so a table can cap its own height and scroll internally. */
+  style?: React.CSSProperties;
   /** Bubbles sit just past a sticky column, not on top of it. */
   leftInset?: number;
   rightInset?: number;
@@ -64,7 +68,7 @@ export function ScrollFade({
 
   return (
     <div className="relative">
-      <div ref={ref} className={className}>
+      <div ref={ref} className={className} style={style}>
         {children}
       </div>
       {/* Shadow cast by the sticky columns onto whatever's scrolling

@@ -9,6 +9,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# The release workflow already passes this as a build-arg (from the git tag
+# or workflow_dispatch input) - NEXT_PUBLIC_ vars must be set before `next
+# build` since Next.js inlines them into the client bundle at build time,
+# not read at runtime.
+ARG RELEASE_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$RELEASE_VERSION
 # `next build` collects page data by actually loading each route's server
 # module, which opens the sqlite file at import time (see lib/db/index.ts) -
 # give it a directory to create a throwaway build-time db file in.

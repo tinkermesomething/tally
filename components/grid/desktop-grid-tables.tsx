@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CategoryRow } from "@/components/grid/category-row";
 import { IncomeTable } from "@/components/grid/income-table";
 import { MonthlySummaryTable } from "@/components/grid/monthly-summary-table";
@@ -54,6 +54,7 @@ export function DesktopGridTables({
   const summaryRef = useRef<HTMLDivElement>(null);
   const incomeRef = useRef<HTMLDivElement>(null);
   const isSyncingRef = useRef(false);
+  const [expenseMaxHeight, setExpenseMaxHeight] = useState<number>();
 
   function mirrorScroll(source: HTMLDivElement) {
     if (isSyncingRef.current) return;
@@ -86,10 +87,29 @@ export function DesktopGridTables({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Cap the expense table's height to whatever's left below it in the
+  // viewport - measured, not guessed, since a hardcoded offset breaks the
+  // moment the toolbar row above it wraps to a second line. Only this table
+  // scrolls internally; the summary bar and income table are short enough to
+  // just stay in normal page flow beneath it.
+  useEffect(() => {
+    function recompute() {
+      const el = expenseRef.current;
+      if (!el) return;
+      const BOTTOM_MARGIN = 16;
+      const top = el.getBoundingClientRect().top;
+      setExpenseMaxHeight(Math.max(200, window.innerHeight - top - BOTTOM_MARGIN));
+    }
+    recompute();
+    window.addEventListener("resize", recompute);
+    return () => window.removeEventListener("resize", recompute);
+  }, []);
+
   return (
     <>
       <ScrollFade
-        className="hidden overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm md:block"
+        className="hidden max-h-[calc(100dvh-260px)] overflow-x-auto overflow-y-auto rounded-xl border border-border/60 bg-card shadow-sm md:block"
+        style={expenseMaxHeight ? { maxHeight: expenseMaxHeight } : undefined}
         leftInset={CATEGORY_COL_WIDTH}
         rightInset={SUMMARY_COL_WIDTH * 2}
         containerRef={expenseRef}
@@ -109,23 +129,23 @@ export function DesktopGridTables({
           </colgroup>
           <thead>
             <tr className="bg-muted">
-              <th className="sticky left-0 z-10 bg-muted px-3 py-2 text-left font-medium">
+              <th className="sticky left-0 top-0 z-20 bg-muted px-3 py-2 text-left font-medium">
                 Category
               </th>
               {MONTHS.map((m) => (
-                <th key={m} className="px-3 py-2 text-right font-medium">
+                <th key={m} className="sticky top-0 z-20 bg-muted px-3 py-2 text-right font-medium">
                   {m}
                 </th>
               ))}
               <th
                 style={{ right: SUMMARY_COL_WIDTH, backgroundColor: floatingPanelFill("--muted") }}
-                className={cn("sticky z-10 px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
+                className={cn("sticky top-0 z-20 px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
               >
                 Year Total
               </th>
               <th
                 style={{ right: 0, backgroundColor: floatingPanelFill("--muted") }}
-                className="sticky z-10 px-3 py-2 text-right font-medium"
+                className="sticky top-0 z-20 px-3 py-2 text-right font-medium"
               >
                 Monthly avg
               </th>
