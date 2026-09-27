@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { MinusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Click-to-edit text: plain (wrapping) text until clicked, then an input
@@ -9,10 +10,15 @@ import { cn } from "@/lib/utils";
 export function InlineEditText({
   value,
   onCommit,
+  onDelete,
   className,
 }: {
   value: string;
   onCommit: (next: string) => void;
+  /** Shows a small archive icon to the left of the input, only while
+   * editing - a quicker path than Settings for archiving right from the
+   * grid, without cluttering the row the rest of the time. */
+  onDelete?: () => void;
   className?: string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -32,24 +38,36 @@ export function InlineEditText({
 
   if (editing) {
     return (
-      <input
-        autoFocus
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            setText(value);
-            setEditing(false);
-          }
-        }}
-        className={cn(
-          "min-w-0 flex-1 rounded-md border border-input bg-card px-1 py-0.5 outline-none",
-          className
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        {onDelete && (
+          <button
+            type="button"
+            title="Archive"
+            onClick={onDelete}
+            className="shrink-0 text-status-critical hover:opacity-70"
+          >
+            <MinusCircle className="size-3.5" />
+          </button>
         )}
-      />
+        <input
+          autoFocus
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setText(value);
+              setEditing(false);
+            }
+          }}
+          className={cn(
+            "min-w-0 flex-1 rounded-md border border-input bg-card px-1 py-0.5 outline-none",
+            className
+          )}
+        />
+      </div>
     );
   }
 

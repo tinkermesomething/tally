@@ -8,7 +8,7 @@ import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { cn } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
-import { renameCategory } from "@/app/grid/actions";
+import { renameCategory, archiveCategory } from "@/app/grid/actions";
 
 const MONTH_NAMES = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -50,6 +50,7 @@ export function MobileCategoryCard({
           <InlineEditText
             value={category.name}
             onCommit={(next) => renameCategory(category.id, next)}
+            onDelete={() => archiveCategory(category.id)}
             className="font-medium uppercase"
           />
         </div>
@@ -77,6 +78,7 @@ export function MobileCategoryCard({
               <InlineEditText
                 value={child.name}
                 onCommit={(next) => renameCategory(child.id, next)}
+                onDelete={() => archiveCategory(child.id)}
                 className="min-w-0 text-sm text-muted-foreground uppercase"
               />
               <CategoryMonthCell category={child} year={year} month={month} />

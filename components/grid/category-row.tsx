@@ -9,7 +9,14 @@ import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
-import { renameCategory, updateAmount, clearAmount, togglePaid, confirmPayment } from "@/app/grid/actions";
+import {
+  renameCategory,
+  archiveCategory,
+  updateAmount,
+  clearAmount,
+  togglePaid,
+  confirmPayment,
+} from "@/app/grid/actions";
 
 const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MONTH_NAMES = [
@@ -106,6 +113,7 @@ function ChildRowCells({ category, year }: { category: GridCategory; year: numbe
           <InlineEditText
             value={category.name}
             onCommit={(next) => renameCategory(category.id, next)}
+            onDelete={() => archiveCategory(category.id)}
             className="text-muted-foreground uppercase"
           />
           {category.isAnnual && <AnnualBadge annualMonth={category.annualMonth} />}
@@ -158,6 +166,7 @@ export function CategoryRow({
             <InlineEditText
               value={category.name}
               onCommit={(next) => renameCategory(category.id, next)}
+              onDelete={() => archiveCategory(category.id)}
               className="font-medium uppercase"
             />
           </div>
