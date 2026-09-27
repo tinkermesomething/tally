@@ -1,8 +1,19 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { CalendarClock } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { updateCategoryDueDay } from "@/app/grid/actions";
+
+const NONE = "none";
+const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
 function ordinalSuffix(day: number) {
   if (day % 100 >= 11 && day % 100 <= 13) return "th";
@@ -25,65 +36,47 @@ export function EditableDueDay({
   categoryId: number;
   dueDay: number | null;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(dueDay !== null ? String(dueDay) : "");
   const [, startTransition] = useTransition();
 
-  function commit() {
-    setEditing(false);
-    const trimmed = value.trim();
-    const next = trimmed === "" ? null : parseInt(trimmed, 10);
-    if (next !== null && (Number.isNaN(next) || next < 1 || next > 31)) {
-      setValue(dueDay !== null ? String(dueDay) : "");
-      return;
-    }
+  function handleChange(value: string | null) {
+    const next = !value || value === NONE ? null : parseInt(value, 10);
     if (next === dueDay) return;
     startTransition(() => updateCategoryDueDay(categoryId, next));
   }
 
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        inputMode="numeric"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "Escape") {
-            setValue(dueDay !== null ? String(dueDay) : "");
-            setEditing(false);
-          }
-        }}
-        placeholder="Day…"
-        className="w-14 shrink-0 rounded-full border border-input bg-card px-1.5 py-0.5 text-[0.65rem] outline-none"
-      />
-    );
-  }
-
-  if (dueDay === null) {
-    return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="shrink-0 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground hover:border-muted-foreground"
-      >
-        + due day
-      </button>
-    );
-  }
-
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[0.65rem] text-muted-foreground hover:bg-accent"
-      title="Click to change due day"
-    >
-      <CalendarClock className="size-3" />
-      Due {dueDay}
-      {ordinalSuffix(dueDay)}
-    </button>
+    <Select value={dueDay !== null ? String(dueDay) : NONE} onValueChange={handleChange}>
+      <SelectTrigger
+        size="sm"
+        className={cn(
+          "h-auto w-auto gap-1 rounded-full border-0 bg-transparent px-1.5 py-0.5 text-[0.65rem]",
+          dueDay === null
+            ? "border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground"
+            : "text-muted-foreground hover:bg-accent"
+        )}
+      >
+        <SelectValue>
+          {(value: string) =>
+            value === NONE ? (
+              "+ due day"
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                <CalendarClock className="size-3" />
+                {`Due ${value}${ordinalSuffix(parseInt(value, 10))}`}
+              </span>
+            )
+          }
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NONE}>No due day</SelectItem>
+        {DAYS.map((day) => (
+          <SelectItem key={day} value={String(day)}>
+            {day}
+            {ordinalSuffix(day)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
