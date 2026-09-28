@@ -1,8 +1,10 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { GridCell } from "@/components/grid/grid-cell";
 import { formatPence } from "@/lib/money";
 import { ScrollFade } from "@/components/scroll-fade";
+import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
 import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 import type { IncomeSourceRow } from "@/lib/db/queries";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
@@ -58,7 +60,20 @@ export function IncomeTable({
         <thead>
           <tr className="bg-muted">
             <th className="sticky left-0 z-10 bg-muted px-3 py-2 text-left font-medium">
-              Income Source
+              <div className="flex items-center gap-1">
+                Income Source
+                <AddIncomeSourceDialog
+                  trigger={
+                    <button
+                      type="button"
+                      title="Add income source"
+                      className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <Plus className="size-3.5" />
+                    </button>
+                  }
+                />
+              </div>
             </th>
             {MONTHS.map((m) => (
               <th key={m} className="px-3 py-2 text-right font-medium">

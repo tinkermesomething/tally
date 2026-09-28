@@ -11,6 +11,7 @@ import {
   deleteIncomeEntry,
   getExpenseEntriesForCell,
   getGridData,
+  incrementIncomeEntry,
   logExpense as logExpenseQuery,
   renameCategory as renameCategoryQuery,
   setCategoryEntryPaid,
@@ -22,6 +23,7 @@ import {
   upsertCategoryEntry,
   upsertIncomeEntry,
 } from "@/lib/db/queries";
+import { addDebtEntry } from "@/lib/db/debt";
 import { poundsToPence } from "@/lib/money";
 
 export async function updateAmount(input: {
@@ -168,6 +170,36 @@ export async function removeExpenseEntry(id: number) {
   await deleteExpenseEntryQuery(id);
   revalidatePath("/grid");
   revalidatePath("/entries");
+}
+
+/** Logs an actual income transaction (additive - matches how logExpense
+ * accumulates rather than replaces) against an existing source. Optionally
+ * also links it to a debt person as a "loan" - e.g. money someone lent you,
+ * as opposed to a gift or wages, which don't touch the debt ledger. Mirrors
+ * addLedgerEntry's own loan+incomeSourceId branch (app/debt/actions.ts),
+ * just entered from the income side instead of the debt side. */
+export async function logIncome(input: {
+  incomeSourceId: number;
+  pounds: number;
+  entryDate: string;
+  debtPersonId?: number;
+}) {
+  if (!(input.pounds > 0)) {
+    throw new Error("Amount must be greater than zero.");
+  }
+  const amountPence = poundsToPence(input.pounds);
+  const [year, month] = input.entryDate.split("-").map(Number);
+  await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+  if (input.debtPersonId) {
+    await addDebtEntry({
+      personId: input.debtPersonId,
+      entryDate: input.entryDate,
+      amountPence,
+      direction: "loan",
+    });
+  }
+  revalidatePath("/grid");
+  revalidatePath("/debt");
 }
 
 export async function updateIncomeAmount(input: {

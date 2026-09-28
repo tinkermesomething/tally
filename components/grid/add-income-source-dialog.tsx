@@ -15,7 +15,18 @@ import {
 } from "@/components/ui/dialog";
 import { createIncomeSource } from "@/app/grid/actions";
 
-export function AddIncomeSourceDialog() {
+const DEFAULT_TRIGGER = (
+  <Button size="sm" variant="outline">
+    <Plus className="size-4" />
+    Add income source
+  </Button>
+);
+
+export function AddIncomeSourceDialog({
+  trigger = DEFAULT_TRIGGER,
+}: {
+  trigger?: React.ReactElement;
+} = {}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,14 +57,7 @@ export function AddIncomeSourceDialog() {
         }
       }}
     >
-      <DialogTrigger
-        render={
-          <Button size="sm" variant="outline">
-            <Plus className="size-4" />
-            Add income source
-          </Button>
-        }
-      />
+      <DialogTrigger render={trigger} />
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New income source</DialogTitle>

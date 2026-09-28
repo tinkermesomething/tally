@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Plus } from "lucide-react";
 import { CategoryRow } from "@/components/grid/category-row";
 import { IncomeTable } from "@/components/grid/income-table";
 import { MonthlySummaryTable } from "@/components/grid/monthly-summary-table";
+import { CopyPreviousMonthButton } from "@/components/grid/copy-previous-month-button";
+import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { ScrollFade } from "@/components/scroll-fade";
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
@@ -40,11 +43,13 @@ export function DesktopGridTables({
   yearTotalLeftToSpend,
   incomeSources,
   currentMonthIndex,
+  topLevelCategories,
 }: {
   categories: GridCategory[];
   year: number;
   groupColors: Record<string, string>;
   existingGroups: string[];
+  topLevelCategories: { id: number; name: string }[];
   subtotalByMonth: number[];
   yearTotalSubtotal: number;
   plannedByMonth: number[];
@@ -139,23 +144,44 @@ export function DesktopGridTables({
           </colgroup>
           <thead>
             <tr className="bg-muted">
-              <th className="sticky left-0 top-0 z-20 bg-muted px-3 py-2 text-left font-medium">
-                Category
+              <th className="sticky left-0 top-0 z-30 bg-muted px-3 py-2 text-left font-medium">
+                <div className="flex items-center gap-1">
+                  Category
+                  <AddCategoryDialog
+                    topLevelCategories={topLevelCategories}
+                    existingGroups={existingGroups}
+                    trigger={
+                      <button
+                        type="button"
+                        title="Add category"
+                        className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <Plus className="size-3.5" />
+                      </button>
+                    }
+                  />
+                </div>
               </th>
-              {MONTHS.map((m) => (
-                <th key={m} className="sticky top-0 z-20 bg-muted px-3 py-2 text-right font-medium">
-                  {m}
+              {MONTHS.map((m, i) => (
+                <th
+                  key={m}
+                  className="group sticky top-0 z-20 bg-muted px-3 py-2 text-right font-medium"
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    <CopyPreviousMonthButton year={year} month={i + 1} compact />
+                    {m}
+                  </div>
                 </th>
               ))}
               <th
                 style={{ right: SUMMARY_COL_WIDTH, backgroundColor: floatingPanelFill("--muted") }}
-                className={cn("sticky top-0 z-20 px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
+                className={cn("sticky top-0 z-30 px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
               >
                 Year Total
               </th>
               <th
                 style={{ right: 0, backgroundColor: floatingPanelFill("--muted") }}
-                className="sticky top-0 z-20 px-3 py-2 text-right font-medium"
+                className="sticky top-0 z-30 px-3 py-2 text-right font-medium"
               >
                 Monthly avg
               </th>

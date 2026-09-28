@@ -5,7 +5,7 @@ import { people, debtLedgerEntries } from "./schema";
 export type PersonWithBalance = {
   id: number;
   name: string;
-  balancePence: number; // positive = they owe you, negative = you owe them
+  balancePence: number; // positive = you owe them, negative = they owe you
   entryCount: number;
 };
 

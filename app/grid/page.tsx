@@ -1,11 +1,10 @@
 import { Wallet, Banknote, PiggyBank, ReceiptText } from "lucide-react";
 import { getAvailableYears, getGridData } from "@/lib/db/queries";
+import { getPeopleWithBalances } from "@/lib/db/debt";
 import { formatPence } from "@/lib/money";
 import { StatCard } from "@/components/grid/stat-card";
 import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
-import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
-import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
-import { CopyPreviousMonthButton } from "@/components/grid/copy-previous-month-button";
+import { AddIncomeDialog } from "@/components/grid/add-income-dialog";
 import { DesktopGridTables } from "@/components/grid/desktop-grid-tables";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthPager } from "@/components/grid/month-pager";
@@ -26,7 +25,11 @@ export default async function GridPage({
 }) {
   const { year: yearParam, month: monthParam } = await searchParams;
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-  const [data, years] = await Promise.all([getGridData(year), getAvailableYears()]);
+  const [data, years, people] = await Promise.all([
+    getGridData(year),
+    getAvailableYears(),
+    getPeopleWithBalances(),
+  ]);
   const groupColors = buildGroupColorMap(data.categories);
   const groupColorsObj = Object.fromEntries(groupColors);
   const existingGroups = Array.from(
@@ -56,18 +59,16 @@ export default async function GridPage({
           <YearSwitcher year={year} years={years} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <AddCategoryDialog
-            topLevelCategories={data.categories.map((c) => ({ id: c.id, name: c.name }))}
-            existingGroups={existingGroups}
-          />
           <LogExpenseDialog
             categories={data.categories.flatMap((c) => [
               { id: c.id, name: c.name },
               ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
             ])}
           />
-          <AddIncomeSourceDialog />
-          <CopyPreviousMonthButton year={year} month={currentMonthIndex + 1} />
+          <AddIncomeDialog
+            incomeSources={data.incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+            people={people.map((p) => ({ id: p.id, name: p.name }))}
+          />
         </div>
       </div>
 
@@ -93,6 +94,7 @@ export default async function GridPage({
         year={year}
         groupColors={groupColorsObj}
         existingGroups={existingGroups}
+        topLevelCategories={data.categories.map((c) => ({ id: c.id, name: c.name }))}
         subtotalByMonth={data.subtotalByMonth}
         yearTotalSubtotal={data.yearTotal.subtotal}
         plannedByMonth={data.plannedByMonth}

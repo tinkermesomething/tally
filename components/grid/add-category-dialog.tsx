@@ -29,12 +29,21 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+const DEFAULT_TRIGGER = (
+  <Button size="sm" variant="outline">
+    <Plus className="size-4" />
+    Add category
+  </Button>
+);
+
 export function AddCategoryDialog({
   topLevelCategories,
   existingGroups,
+  trigger = DEFAULT_TRIGGER,
 }: {
   topLevelCategories: { id: number; name: string }[];
   existingGroups: string[];
+  trigger?: React.ReactElement;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -82,14 +91,7 @@ export function AddCategoryDialog({
         if (!next) reset();
       }}
     >
-      <DialogTrigger
-        render={
-          <Button size="sm" variant="outline">
-            <Plus className="size-4" />
-            Add category
-          </Button>
-        }
-      />
+      <DialogTrigger render={trigger} />
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New category</DialogTitle>

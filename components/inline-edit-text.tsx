@@ -43,6 +43,12 @@ export function InlineEditText({
           <button
             type="button"
             title="Archive"
+            // The input's onBlur fires (and commits/exits edit mode) before
+            // this button's own click would - by the time click fired, this
+            // button had already been unmounted, so the click never landed.
+            // Blocking the blur-causing mousedown keeps the button mounted
+            // long enough for its click to actually fire.
+            onMouseDown={(e) => e.preventDefault()}
             onClick={onDelete}
             className="shrink-0 text-status-critical hover:opacity-70"
           >
