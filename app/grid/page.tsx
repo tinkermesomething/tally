@@ -64,6 +64,7 @@ export default async function GridPage({
               { id: c.id, name: c.name },
               ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
             ])}
+            people={people.map((p) => ({ id: p.id, name: p.name }))}
           />
           <AddIncomeDialog
             incomeSources={data.incomeSources.map((s) => ({ id: s.id, name: s.name }))}

@@ -133,17 +133,33 @@ export async function logExpense(input: {
   pounds: number;
   entryDate: string;
   note?: string;
+  /** Set when this expense is also paying someone back - creates the real
+   * debt-ledger "repayment" entry too (mirrors addLedgerEntry's own
+   * repayment+categoryId branch, just entered from the expense side). */
+  debtPersonId?: number;
 }) {
   if (!(input.pounds > 0)) {
     throw new Error("Expense amount must be greater than zero.");
   }
+  const amountPence = poundsToPence(input.pounds);
   await logExpenseQuery({
     categoryId: input.categoryId,
-    amountPence: poundsToPence(input.pounds),
+    amountPence,
     entryDate: input.entryDate,
     note: input.note,
+    debtPersonId: input.debtPersonId,
   });
+  if (input.debtPersonId) {
+    await addDebtEntry({
+      personId: input.debtPersonId,
+      entryDate: input.entryDate,
+      amountPence,
+      direction: "repayment",
+      note: input.note,
+    });
+  }
   revalidatePath("/grid");
+  revalidatePath("/debt");
 }
 
 export async function listExpenseEntries(categoryId: number, year: number, month: number) {

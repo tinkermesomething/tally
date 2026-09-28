@@ -97,6 +97,33 @@ export async function addDebtEntry(input: {
   });
 }
 
+/** Edits a ledger entry's own fields (amount/direction/date/note) - doesn't
+ * touch whatever expense/income entry a "log as expense"/"count as income"
+ * link might have created alongside it at creation time (there's no stored
+ * reference back to that row, mirroring how logExpense itself works). */
+export async function updateDebtEntry(
+  id: number,
+  input: {
+    amountPence?: number;
+    direction?: "loan" | "repayment";
+    entryDate?: string;
+    note?: string | null;
+  }
+) {
+  const set: Partial<typeof debtLedgerEntries.$inferInsert> = {};
+  if (input.amountPence !== undefined) set.amountPence = input.amountPence;
+  if (input.direction !== undefined) set.direction = input.direction;
+  if (input.entryDate !== undefined) set.entryDate = input.entryDate;
+  if (input.note !== undefined) set.note = input.note;
+  await db.update(debtLedgerEntries).set(set).where(eq(debtLedgerEntries.id, id));
+}
+
+/** Real, permanent delete - same reasoning as expense entries: a ledger row
+ * is a transaction record, not a concept worth soft-deleting. */
+export async function deleteDebtEntry(id: number) {
+  await db.delete(debtLedgerEntries).where(eq(debtLedgerEntries.id, id));
+}
+
 /** Soft-delete - keeps the ledger history intact (it's financial history,
  * shouldn't vanish just because you stop tracking someone going forward),
  * just hides them from the Debt page. */

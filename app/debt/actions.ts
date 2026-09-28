@@ -5,7 +5,9 @@ import {
   addDebtEntry,
   addPerson as addPersonQuery,
   archivePerson as archivePersonQuery,
+  deleteDebtEntry,
   unarchivePerson as unarchivePersonQuery,
+  updateDebtEntry,
 } from "@/lib/db/debt";
 import { incrementIncomeEntry, logExpense as logExpenseQuery } from "@/lib/db/queries";
 import { poundsToPence } from "@/lib/money";
@@ -75,4 +77,28 @@ export async function addLedgerEntry(input: {
   revalidatePath("/debt");
   revalidatePath("/grid");
   revalidatePath("/reports");
+}
+
+export async function editLedgerEntry(
+  personId: number,
+  id: number,
+  input: { pounds?: number; direction?: "loan" | "repayment"; entryDate?: string; note?: string }
+) {
+  if (input.pounds !== undefined && !(input.pounds > 0)) {
+    throw new Error("Amount must be greater than zero.");
+  }
+  await updateDebtEntry(id, {
+    amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
+    direction: input.direction,
+    entryDate: input.entryDate,
+    note: input.note !== undefined ? input.note || null : undefined,
+  });
+  revalidatePath(`/debt/${personId}`);
+  revalidatePath("/debt");
+}
+
+export async function removeLedgerEntry(personId: number, id: number) {
+  await deleteDebtEntry(id);
+  revalidatePath(`/debt/${personId}`);
+  revalidatePath("/debt");
 }

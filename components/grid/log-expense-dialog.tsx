@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { logExpense } from "@/app/grid/actions";
+import { createPerson } from "@/app/debt/actions";
+
+const NEW_PERSON = "__new__";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -28,14 +32,19 @@ function todayIso() {
 
 export function LogExpenseDialog({
   categories,
+  people,
 }: {
   categories: { id: number; name: string }[];
+  people: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [categoryId, setCategoryId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState("");
+  const [isRepayment, setIsRepayment] = useState(false);
+  const [personId, setPersonId] = useState("");
+  const [newPersonName, setNewPersonName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -44,6 +53,9 @@ export function LogExpenseDialog({
     setAmount("");
     setDate(todayIso());
     setNote("");
+    setIsRepayment(false);
+    setPersonId("");
+    setNewPersonName("");
     setError(null);
   }
 
@@ -58,13 +70,29 @@ export function LogExpenseDialog({
       setError("Enter an amount greater than zero.");
       return;
     }
+    if (isRepayment && !personId) {
+      setError("Pick who you're paying back, or add a new person.");
+      return;
+    }
+    if (isRepayment && personId === NEW_PERSON && !newPersonName.trim()) {
+      setError("Enter the new person's name.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
+      let debtPersonId: number | undefined;
+      if (isRepayment) {
+        debtPersonId =
+          personId === NEW_PERSON
+            ? (await createPerson(newPersonName)).id
+            : parseInt(personId, 10);
+      }
       await logExpense({
         categoryId: parseInt(categoryId, 10),
         pounds,
         entryDate: date,
         note: note.trim() || undefined,
+        debtPersonId,
       });
       reset();
       setOpen(false);
@@ -142,6 +170,44 @@ export function LogExpenseDialog({
               onChange={(e) => setNote(e.target.value)}
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="expense-is-repayment"
+              checked={isRepayment}
+              onCheckedChange={(checked) => setIsRepayment(checked === true)}
+            />
+            <Label htmlFor="expense-is-repayment" className="font-normal">
+              This is paying someone back (add to Debt)
+            </Label>
+          </div>
+
+          {isRepayment && (
+            <div className="space-y-1.5">
+              <Label htmlFor="expense-person">Paying back</Label>
+              <Select value={personId} onValueChange={(v) => setPersonId(v ?? "")}>
+                <SelectTrigger id="expense-person" className="w-full">
+                  <SelectValue placeholder="Choose who you're paying back" />
+                </SelectTrigger>
+                <SelectContent>
+                  {people.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NEW_PERSON}>+ New person…</SelectItem>
+                </SelectContent>
+              </Select>
+              {personId === NEW_PERSON && (
+                <Input
+                  placeholder="Their name"
+                  value={newPersonName}
+                  onChange={(e) => setNewPersonName(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+          )}
 
           {error && <p className="text-sm text-status-critical">{error}</p>}
 
