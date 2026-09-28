@@ -127,7 +127,11 @@ export function LogExpenseDialog({
               onValueChange={(value) => setCategoryId(value ?? "")}
             >
               <SelectTrigger id="expense-category" className="w-full">
-                <SelectValue placeholder="Choose a category" />
+                <SelectValue>
+                  {(value: string) =>
+                    value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {categories.map((c) => (
@@ -187,7 +191,13 @@ export function LogExpenseDialog({
               <Label htmlFor="expense-person">Paying back</Label>
               <Select value={personId} onValueChange={(v) => setPersonId(v ?? "")}>
                 <SelectTrigger id="expense-person" className="w-full">
-                  <SelectValue placeholder="Choose who you're paying back" />
+                  <SelectValue>
+                    {(value: string) => {
+                      if (!value) return "Choose who you're paying back";
+                      if (value === NEW_PERSON) return "+ New person…";
+                      return people.find((p) => String(p.id) === value)?.name ?? value;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {people.map((p) => (

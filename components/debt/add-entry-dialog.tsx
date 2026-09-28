@@ -114,7 +114,13 @@ export function AddEntryDialog({
               }
             >
               <SelectTrigger id="entry-direction" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(value: string) =>
+                    value === "loan"
+                      ? "Borrowed (increases what you owe)"
+                      : "Paid back (decreases what you owe)"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="loan">Borrowed (increases what you owe)</SelectItem>

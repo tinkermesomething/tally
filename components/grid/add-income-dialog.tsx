@@ -124,7 +124,11 @@ export function AddIncomeDialog({
             <Label htmlFor="income-source">Source</Label>
             <Select value={sourceId} onValueChange={(v) => setSourceId(v ?? "")}>
               <SelectTrigger id="income-source" className="w-full">
-                <SelectValue placeholder="Choose a source" />
+                <SelectValue>
+                  {(value: string) =>
+                    value ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value) : "Choose a source"
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {incomeSources.map((s) => (
@@ -174,7 +178,13 @@ export function AddIncomeDialog({
               <Label htmlFor="income-person">From</Label>
               <Select value={personId} onValueChange={(v) => setPersonId(v ?? "")}>
                 <SelectTrigger id="income-person" className="w-full">
-                  <SelectValue placeholder="Choose who it's from" />
+                  <SelectValue>
+                    {(value: string) => {
+                      if (!value) return "Choose who it's from";
+                      if (value === NEW_PERSON) return "+ New person…";
+                      return people.find((p) => String(p.id) === value)?.name ?? value;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {people.map((p) => (
