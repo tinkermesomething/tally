@@ -2,19 +2,19 @@ import { formatPence } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 export function MobileSummaryBar({
-  subtotal,
+  planned,
   wages,
   available,
-  remaining,
+  leftToSpend,
 }: {
-  subtotal: number;
+  planned: number;
   wages: number;
   available: number;
-  remaining: number;
+  leftToSpend: number;
 }) {
   return (
     <div className="sticky bottom-0 z-20 -mx-4 mt-2 grid grid-cols-4 gap-px border-t border-border bg-border px-4 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
-      <SummaryCell label="Spent" value={formatPence(subtotal)} />
+      <SummaryCell label="Budgeted" value={formatPence(planned)} />
       <SummaryCell label="Income" value={formatPence(wages)} />
       <SummaryCell
         label="Available"
@@ -22,9 +22,9 @@ export function MobileSummaryBar({
         tone={available < 0 ? "critical" : "good"}
       />
       <SummaryCell
-        label="Left to pay"
-        value={formatPence(remaining)}
-        tone={remaining > 0 ? "critical" : "good"}
+        label="Left to spend"
+        value={formatPence(leftToSpend)}
+        tone={leftToSpend < 0 ? "critical" : "good"}
       />
     </div>
   );

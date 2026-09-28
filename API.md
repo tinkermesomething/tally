@@ -24,10 +24,18 @@ Base URL: `https://tally.home.internal/api/v1` (deployed) or
 
 ### `GET /grid?year=2026`
 Full grid: categories (with `.children`, `.months`, `.yearTotalPence`,
-`.monthlyAveragePence`), `subtotalByMonth`, `wagesByMonth`,
-`availableByMonth`, `remainingByMonth`, `yearTotal`. `year` defaults to the
-current year. `months` is keyed by month number (`1`-`12`); a month with no
-entry is simply absent from the object.
+`.monthlyAveragePence`), `wagesByMonth`, and two distinct pairs, each an
+array of 12 (plus a matching field in `yearTotal`) - don't confuse them:
+- `plannedByMonth` / `availableByMonth` - what's budgeted, and income minus
+  that. Stable, forward-looking - doesn't move based on what's been paid.
+- `actuallySpentByMonth` / `leftToSpendByMonth` - only what's actually been
+  paid/logged, and income minus that. Moves in real time through the month.
+
+`subtotalByMonth` also exists (spent-if-known-else-planned, blended) - it's
+what the grid's own SUBTOTAL row uses, not meant for anything else; prefer
+the two pairs above. `year` defaults to the current year. `months` is keyed
+by month number (`1`-`12`); a month with no entry is simply absent from the
+object.
 
 ### `GET /years`
 `{ "years": number[] }` - every year with data, plus the current and next

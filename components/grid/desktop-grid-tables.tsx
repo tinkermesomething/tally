@@ -16,7 +16,7 @@ const MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/** The expense table, the WAGES/AVAILABLE/Remaining bubble, and the income
+/** The expense table, the monthly summary bubble, and the income
  * table are three separate horizontally-scrollable regions sharing the same
  * column layout - keeping their scroll positions in sync (and starting them
  * near the current month instead of always January) makes them read as one
@@ -28,11 +28,16 @@ export function DesktopGridTables({
   existingGroups,
   subtotalByMonth,
   yearTotalSubtotal,
+  plannedByMonth,
+  yearTotalPlanned,
   wagesByMonth,
   availableByMonth,
-  remainingByMonth,
+  actuallySpentByMonth,
+  leftToSpendByMonth,
   yearTotalWages,
   yearTotalAvailable,
+  yearTotalActuallySpent,
+  yearTotalLeftToSpend,
   incomeSources,
   currentMonthIndex,
 }: {
@@ -42,11 +47,16 @@ export function DesktopGridTables({
   existingGroups: string[];
   subtotalByMonth: number[];
   yearTotalSubtotal: number;
+  plannedByMonth: number[];
+  yearTotalPlanned: number;
   wagesByMonth: number[];
   availableByMonth: number[];
-  remainingByMonth: number[];
+  actuallySpentByMonth: number[];
+  leftToSpendByMonth: number[];
   yearTotalWages: number;
   yearTotalAvailable: number;
+  yearTotalActuallySpent: number;
+  yearTotalLeftToSpend: number;
   incomeSources: IncomeSourceRow[];
   currentMonthIndex: number;
 }) {
@@ -203,10 +213,18 @@ export function DesktopGridTables({
 
       <div className="hidden md:block">
         <MonthlySummaryTable
+          plannedByMonth={plannedByMonth}
           wagesByMonth={wagesByMonth}
           availableByMonth={availableByMonth}
-          remainingByMonth={remainingByMonth}
-          yearTotal={{ wages: yearTotalWages, available: yearTotalAvailable }}
+          actuallySpentByMonth={actuallySpentByMonth}
+          leftToSpendByMonth={leftToSpendByMonth}
+          yearTotal={{
+            planned: yearTotalPlanned,
+            wages: yearTotalWages,
+            available: yearTotalAvailable,
+            actuallySpent: yearTotalActuallySpent,
+            leftToSpend: yearTotalLeftToSpend,
+          }}
           categoryColWidth={CATEGORY_COL_WIDTH}
           monthColWidth={MONTH_COL_WIDTH}
           summaryColWidth={SUMMARY_COL_WIDTH}

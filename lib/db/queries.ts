@@ -51,14 +51,32 @@ export type GridData = {
   year: number;
   categories: GridCategory[];
   incomeSources: IncomeSourceRow[];
+  /** Effective (spent-if-known, else planned) total per month - feeds only
+   * the main expense table's own SUBTOTAL footer row, a per-category-column
+   * total. Everything else (the top stat cards, the WAGES/AVAILABLE summary
+   * bar) uses the planned/actuallySpent pair below instead - two distinct
+   * numbers, not this blended one, since conflating them is what caused the
+   * "why did my numbers change" confusion this was split out to fix. */
   subtotalByMonth: number[]; // index 0 = January
+  /** What's budgeted/allocated for the month, full stop - never moves based
+   * on what's actually been paid. */
+  plannedByMonth: number[];
   wagesByMonth: number[];
+  /** Income minus planned - "if I stick to the whole plan, this is left."
+   * A stable, forward-looking projection. */
   availableByMonth: number[];
-  remainingByMonth: number[];
+  /** Sum of only the paid/logged amounts - money that's actually gone. */
+  actuallySpentByMonth: number[];
+  /** Income minus actuallySpent - "how much of my wage is still free right
+   * now," a live number that moves as you log/pay things through the month. */
+  leftToSpendByMonth: number[];
   yearTotal: {
     subtotal: number;
+    planned: number;
     wages: number;
     available: number;
+    actuallySpent: number;
+    leftToSpend: number;
   };
 };
 
@@ -234,7 +252,8 @@ export async function getGridData(year: number): Promise<GridData> {
   today.setHours(0, 0, 0, 0);
 
   const subtotalByMonth = Array(12).fill(0);
-  const remainingByMonth = Array(12).fill(0);
+  const plannedByMonth = Array(12).fill(0);
+  const actuallySpentByMonth = Array(12).fill(0);
   const wagesByMonth = Array(12).fill(0);
 
   for (const entry of income) {
@@ -316,7 +335,8 @@ export async function getGridData(year: number): Promise<GridData> {
       if (!cell) continue;
       const effectivePence = effectiveAmountPence(cell);
       subtotalByMonth[month - 1] += effectivePence;
-      if (!cell.paid) remainingByMonth[month - 1] += effectivePence;
+      plannedByMonth[month - 1] += cell.amountPence ?? 0;
+      if (cell.paid) actuallySpentByMonth[month - 1] += effectivePence;
     }
 
     return {
@@ -352,8 +372,11 @@ export async function getGridData(year: number): Promise<GridData> {
     };
   });
 
-  const availableByMonth = subtotalByMonth.map(
-    (subtotal, i) => wagesByMonth[i] - subtotal
+  const availableByMonth = plannedByMonth.map(
+    (planned, i) => wagesByMonth[i] - planned
+  );
+  const leftToSpendByMonth = actuallySpentByMonth.map(
+    (spent, i) => wagesByMonth[i] - spent
   );
 
   return {
@@ -361,13 +384,18 @@ export async function getGridData(year: number): Promise<GridData> {
     categories: gridCategories,
     incomeSources: incomeSourceRows,
     subtotalByMonth,
+    plannedByMonth,
     wagesByMonth,
     availableByMonth,
-    remainingByMonth,
+    actuallySpentByMonth,
+    leftToSpendByMonth,
     yearTotal: {
       subtotal: subtotalByMonth.reduce((a, b) => a + b, 0),
+      planned: plannedByMonth.reduce((a, b) => a + b, 0),
       wages: wagesByMonth.reduce((a, b) => a + b, 0),
       available: availableByMonth.reduce((a, b) => a + b, 0),
+      actuallySpent: actuallySpentByMonth.reduce((a, b) => a + b, 0),
+      leftToSpend: leftToSpendByMonth.reduce((a, b) => a + b, 0),
     },
   };
 }

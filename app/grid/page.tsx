@@ -36,10 +36,10 @@ export default async function GridPage({
   const now = new Date();
   const currentMonthIndex = now.getFullYear() === year ? now.getMonth() : 0;
   const monthLabel = MONTHS[currentMonthIndex];
-  const subtotalNow = data.subtotalByMonth[currentMonthIndex];
+  const plannedNow = data.plannedByMonth[currentMonthIndex];
   const wagesNow = data.wagesByMonth[currentMonthIndex];
   const availableNow = data.availableByMonth[currentMonthIndex];
-  const remainingNow = data.remainingByMonth[currentMonthIndex];
+  const leftToSpendNow = data.leftToSpendByMonth[currentMonthIndex];
 
   // Mobile month pager - independent of the "now" stat cards above, since
   // browsing a different month on a phone shouldn't move those.
@@ -72,7 +72,7 @@ export default async function GridPage({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <StatCard label={`Spent (${monthLabel})`} value={formatPence(subtotalNow)} icon={ReceiptText} tone="neutral" />
+        <StatCard label={`Budgeted (${monthLabel})`} value={formatPence(plannedNow)} icon={ReceiptText} tone="neutral" />
         <StatCard label={`Income (${monthLabel})`} value={formatPence(wagesNow)} icon={Banknote} tone="neutral" />
         <StatCard
           label="Available"
@@ -81,10 +81,10 @@ export default async function GridPage({
           tone={availableNow < 0 ? "critical" : "good"}
         />
         <StatCard
-          label="Remaining to pay"
-          value={formatPence(remainingNow)}
+          label="Left to spend"
+          value={formatPence(leftToSpendNow)}
           icon={Wallet}
-          tone={remainingNow > 0 ? "critical" : "good"}
+          tone={leftToSpendNow < 0 ? "critical" : "good"}
         />
       </div>
 
@@ -95,11 +95,16 @@ export default async function GridPage({
         existingGroups={existingGroups}
         subtotalByMonth={data.subtotalByMonth}
         yearTotalSubtotal={data.yearTotal.subtotal}
+        plannedByMonth={data.plannedByMonth}
+        yearTotalPlanned={data.yearTotal.planned}
         wagesByMonth={data.wagesByMonth}
         availableByMonth={data.availableByMonth}
-        remainingByMonth={data.remainingByMonth}
+        actuallySpentByMonth={data.actuallySpentByMonth}
+        leftToSpendByMonth={data.leftToSpendByMonth}
         yearTotalWages={data.yearTotal.wages}
         yearTotalAvailable={data.yearTotal.available}
+        yearTotalActuallySpent={data.yearTotal.actuallySpent}
+        yearTotalLeftToSpend={data.yearTotal.leftToSpend}
         incomeSources={data.incomeSources}
         currentMonthIndex={currentMonthIndex}
       />
@@ -134,10 +139,10 @@ export default async function GridPage({
         </div>
 
         <MobileSummaryBar
-          subtotal={data.subtotalByMonth[selectedMonthIndex]}
+          planned={data.plannedByMonth[selectedMonthIndex]}
           wages={data.wagesByMonth[selectedMonthIndex]}
           available={data.availableByMonth[selectedMonthIndex]}
-          remaining={data.remainingByMonth[selectedMonthIndex]}
+          leftToSpend={data.leftToSpendByMonth[selectedMonthIndex]}
         />
       </div>
     </div>

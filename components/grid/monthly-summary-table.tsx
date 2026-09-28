@@ -14,15 +14,25 @@ type SummaryRow = {
   values: number[];
   total: number;
   showAverage: boolean;
+  /** Negative reads as a problem (red), non-negative as fine (green) - only
+   * the two "money you actually have" rows get this; WAGES/Budgeted/
+   * Actually spent are plain facts, not a health signal either way. */
+  signed: boolean;
 };
 
-/** WAGES/AVAILABLE/Remaining aren't expense line items - they're derived
- * from expenses + income together, so they get their own bubble instead of
- * living in the expense table's footer next to SUBTOTAL. */
+/** WAGES/Budgeted/AVAILABLE/Actually spent/Left to spend aren't expense line
+ * items - they're derived from expenses + income together, so they get their
+ * own bubble instead of living in the expense table's footer next to
+ * SUBTOTAL. Budgeted/Available are a stable, forward-looking pair ("if I
+ * stick to the plan"); Actually spent/Left to spend are a live pair that
+ * moves as things get paid through the month - deliberately not the same
+ * number, see the GridData comment in lib/db/queries.ts for why. */
 export function MonthlySummaryTable({
+  plannedByMonth,
   wagesByMonth,
   availableByMonth,
-  remainingByMonth,
+  actuallySpentByMonth,
+  leftToSpendByMonth,
   yearTotal,
   categoryColWidth,
   monthColWidth,
@@ -30,10 +40,18 @@ export function MonthlySummaryTable({
   containerRef,
   onScroll,
 }: {
+  plannedByMonth: number[];
   wagesByMonth: number[];
   availableByMonth: number[];
-  remainingByMonth: number[];
-  yearTotal: { wages: number; available: number };
+  actuallySpentByMonth: number[];
+  leftToSpendByMonth: number[];
+  yearTotal: {
+    planned: number;
+    wages: number;
+    available: number;
+    actuallySpent: number;
+    leftToSpend: number;
+  };
   categoryColWidth: number;
   monthColWidth: number;
   summaryColWidth: number;
@@ -43,13 +61,22 @@ export function MonthlySummaryTable({
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
 
   const rows: SummaryRow[] = [
-    { label: "WAGES", values: wagesByMonth, total: yearTotal.wages, showAverage: true },
-    { label: "AVAILABLE", values: availableByMonth, total: yearTotal.available, showAverage: true },
+    { label: "WAGES", values: wagesByMonth, total: yearTotal.wages, showAverage: true, signed: false },
+    { label: "BUDGETED", values: plannedByMonth, total: yearTotal.planned, showAverage: true, signed: false },
+    { label: "AVAILABLE", values: availableByMonth, total: yearTotal.available, showAverage: true, signed: true },
     {
-      label: "Remaining this month",
-      values: remainingByMonth,
-      total: remainingByMonth.reduce((a, b) => a + b, 0),
+      label: "ACTUALLY SPENT",
+      values: actuallySpentByMonth,
+      total: yearTotal.actuallySpent,
+      showAverage: true,
+      signed: false,
+    },
+    {
+      label: "Left to spend",
+      values: leftToSpendByMonth,
+      total: yearTotal.leftToSpend,
       showAverage: false,
+      signed: true,
     },
   ];
 
@@ -106,8 +133,7 @@ export function MonthlySummaryTable({
                   key={i}
                   className={cn(
                     "px-3 py-2 text-right tabular-nums",
-                    row.label === "AVAILABLE" &&
-                      (value < 0 ? "text-status-critical" : "text-status-good")
+                    row.signed && (value < 0 ? "text-status-critical" : "text-status-good")
                   )}
                 >
                   {formatPence(value)}
