@@ -8,12 +8,7 @@ import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialo
 import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 import type { IncomeSourceRow } from "@/lib/db/queries";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
-
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
+import { MONTH_ABBREVIATIONS as MONTHS, MONTH_NUMBERS } from "@/lib/months";
 
 export function IncomeTable({
   sources,

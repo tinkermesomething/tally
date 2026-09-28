@@ -10,13 +10,17 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
   const [rows, setRows] = useState(entries);
   const [, startTransition] = useTransition();
 
-  function commitAmount(id: number, raw: string) {
+  /** Returns whether the edit was accepted, so the input can be snapped back
+   * to its last known-good value on invalid input instead of silently
+   * keeping whatever bad text the user typed. */
+  function commitAmount(id: number, raw: string): boolean {
     const pounds = parseFloat(raw);
-    if (Number.isNaN(pounds) || pounds <= 0) return;
+    if (Number.isNaN(pounds) || pounds <= 0) return false;
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, amountPence: Math.round(pounds * 100) } : r)));
     startTransition(async () => {
       await editExpenseEntry(id, { pounds });
     });
+    return true;
   }
 
   function commitNote(id: number, note: string) {
@@ -62,7 +66,11 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
                 <input
                   defaultValue={(entry.amountPence / 100).toFixed(2)}
                   inputMode="decimal"
-                  onBlur={(e) => commitAmount(entry.id, e.target.value)}
+                  onBlur={(e) => {
+                    if (!commitAmount(entry.id, e.target.value)) {
+                      e.target.value = (entry.amountPence / 100).toFixed(2);
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                   }}

@@ -3,11 +3,7 @@
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import { ScrollFade } from "@/components/scroll-fade";
-
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
 
 type SummaryRow = {
   label: string;

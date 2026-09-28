@@ -50,13 +50,17 @@ export function ExpenseEntriesPopover({
     onChanged?.();
   }
 
-  function commitAmount(id: number, raw: string) {
+  /** Returns whether the edit was accepted, so the input can be snapped back
+   * to its last known-good value on invalid input instead of silently
+   * keeping whatever bad text the user typed. */
+  function commitAmount(id: number, raw: string): boolean {
     const pounds = parseFloat(raw);
-    if (Number.isNaN(pounds) || pounds <= 0) return;
+    if (Number.isNaN(pounds) || pounds <= 0) return false;
     startTransition(async () => {
       await editExpenseEntry(id, { pounds });
       refresh();
     });
+    return true;
   }
 
   function commitNote(id: number, note: string) {
@@ -95,7 +99,11 @@ export function ExpenseEntriesPopover({
                 <input
                   defaultValue={(entry.amountPence / 100).toFixed(2)}
                   inputMode="decimal"
-                  onBlur={(e) => commitAmount(entry.id, e.target.value)}
+                  onBlur={(e) => {
+                    if (!commitAmount(entry.id, e.target.value)) {
+                      e.target.value = (entry.amountPence / 100).toFixed(2);
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                   }}

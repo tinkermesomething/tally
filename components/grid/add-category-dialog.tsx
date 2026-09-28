@@ -5,7 +5,6 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -22,12 +21,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createCategory } from "@/app/grid/actions";
+import { AnnualBillingFields } from "@/components/grid/annual-billing-fields";
 
 const NONE_PARENT = "none";
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 const DEFAULT_TRIGGER = (
   <Button size="sm" variant="outline">
@@ -150,36 +146,13 @@ export function AddCategoryDialog({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="category-annual"
-              checked={isAnnual}
-              onCheckedChange={(checked) => setIsAnnual(checked === true)}
-            />
-            <Label htmlFor="category-annual" className="font-normal">
-              Billed yearly, not monthly
-            </Label>
-          </div>
-
-          {isAnnual && (
-            <div className="space-y-1.5">
-              <Label htmlFor="category-annual-month">Usually billed in</Label>
-              <Select value={annualMonth} onValueChange={(v) => setAnnualMonth(v ?? "1")}>
-                <SelectTrigger id="category-annual-month" className="w-full">
-                  <SelectValue>
-                    {(value: string) => MONTHS[parseInt(value, 10) - 1] ?? value}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTHS.map((m, i) => (
-                    <SelectItem key={m} value={String(i + 1)}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <AnnualBillingFields
+            idPrefix="category"
+            isAnnual={isAnnual}
+            onIsAnnualChange={setIsAnnual}
+            annualMonth={annualMonth}
+            onAnnualMonthChange={setAnnualMonth}
+          />
 
           {error && <p className="text-sm text-status-critical">{error}</p>}
 

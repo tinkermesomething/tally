@@ -43,7 +43,8 @@ export function AccentProvider({ children }: { children: React.ReactNode }) {
 
   const setAccent = useCallback((next: AccentId) => {
     setAccentState(next);
-    document.documentElement.setAttribute("data-accent", next);
+    // The DOM attribute itself is written by the effect below, keyed off
+    // `accent` - not here - so there's exactly one place that touches it.
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {

@@ -1,5 +1,7 @@
 import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
+import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "./index";
+import { parseIsoDate } from "../date";
 import {
   categories,
   categoryEntries,
@@ -292,6 +294,7 @@ export async function getGridData(year: number): Promise<GridData> {
     attachPreviousMonthHints(directMonths, prevDecByCategory.get(category.id));
     applyOverdueFlags(directMonths, category.dueDay, year, today);
     const months: Record<number, MonthCell> = {};
+    const childById = new Map(children.map((c) => [c.id, c]));
 
     // Annual children (e.g. a once-a-year subscription) are expected to be
     // empty most months - they shouldn't gate whether the *regular* children
@@ -303,14 +306,16 @@ export async function getGridData(year: number): Promise<GridData> {
 
     for (let month = 1; month <= 12; month++) {
       const regularChildCellsThisMonth = regularChildCats
-        .map((c) => children.find((gc) => gc.id === c.id)!.months[month])
+        .map((c) => childById.get(c.id)?.months[month])
         .filter((cell): cell is MonthCell => cell?.amountPence !== undefined);
 
-      const allRegularChildrenPresent =
+      // Named for what it actually checks - every regular child has a
+      // planned/spent entry this month, not merely that the child exists.
+      const allRegularChildrenHaveEntries =
         regularChildCats.length > 0 &&
         regularChildCellsThisMonth.length === regularChildCats.length;
 
-      if (allRegularChildrenPresent) {
+      if (allRegularChildrenHaveEntries) {
         const allChildCellsThisMonth = children
           .map((c) => c.months[month])
           .filter((cell): cell is MonthCell => cell?.amountPence !== undefined);
@@ -492,24 +497,41 @@ function incomeEntryMatch(incomeSourceId: number, year: number, month: number) {
   );
 }
 
+/** Shared "update if a matching row exists, otherwise insert" shape behind
+ * both upsertCategoryEntry and upsertIncomeEntry - callers supply their own
+ * typed find/update/insert so this stays a plain control-flow helper rather
+ * than fighting Drizzle's per-table generics. */
+async function upsertViaFindFirst(
+  find: () => Promise<{ id: number } | undefined>,
+  update: (id: number) => Promise<unknown>,
+  insert: () => Promise<unknown>
+) {
+  const existing = await find();
+  if (existing) {
+    await update(existing.id);
+  } else {
+    await insert();
+  }
+}
+
 export async function upsertCategoryEntry(input: {
   categoryId: number;
   year: number;
   month: number;
   amountPence: number;
 }) {
-  const existing = await db.query.categoryEntries.findFirst({
-    where: categoryEntryMatch(input.categoryId, input.year, input.month),
-  });
-
-  if (existing) {
-    await db
-      .update(categoryEntries)
-      .set({ amountPence: input.amountPence })
-      .where(eq(categoryEntries.id, existing.id));
-  } else {
-    await db.insert(categoryEntries).values({ ...input, paid: false });
-  }
+  await upsertViaFindFirst(
+    () =>
+      db.query.categoryEntries.findFirst({
+        where: categoryEntryMatch(input.categoryId, input.year, input.month),
+      }),
+    (id) =>
+      db
+        .update(categoryEntries)
+        .set({ amountPence: input.amountPence })
+        .where(eq(categoryEntries.id, id)),
+    () => db.insert(categoryEntries).values({ ...input, paid: false })
+  );
 }
 
 /** Clearing a cell back to blank is a real, distinct state from "0" - it
@@ -558,7 +580,7 @@ export async function logExpense(input: {
    * traceability; the actual ledger effect is a separate row. */
   debtPersonId?: number;
 }) {
-  const [year, month] = input.entryDate.split("-").map(Number);
+  const { year, month } = parseIsoDate(input.entryDate);
   await db.insert(expenseEntries).values({
     categoryId: input.categoryId,
     year,
@@ -663,7 +685,7 @@ export async function updateExpenseEntry(
   if (input.note !== undefined) set.note = input.note;
   if (input.entryDate !== undefined) {
     set.entryDate = input.entryDate;
-    const [year, month] = input.entryDate.split("-").map(Number);
+    const { year, month } = parseIsoDate(input.entryDate);
     set.year = year;
     set.month = month;
   }
@@ -703,18 +725,18 @@ export async function upsertIncomeEntry(input: {
   month: number;
   amountPence: number;
 }) {
-  const existing = await db.query.incomeEntries.findFirst({
-    where: incomeEntryMatch(input.incomeSourceId, input.year, input.month),
-  });
-
-  if (existing) {
-    await db
-      .update(incomeEntries)
-      .set({ amountPence: input.amountPence })
-      .where(eq(incomeEntries.id, existing.id));
-  } else {
-    await db.insert(incomeEntries).values(input);
-  }
+  await upsertViaFindFirst(
+    () =>
+      db.query.incomeEntries.findFirst({
+        where: incomeEntryMatch(input.incomeSourceId, input.year, input.month),
+      }),
+    (id) =>
+      db
+        .update(incomeEntries)
+        .set({ amountPence: input.amountPence })
+        .where(eq(incomeEntries.id, id)),
+    () => db.insert(incomeEntries).values(input)
+  );
 }
 
 /** Adds to whatever's already there for that source/month instead of
@@ -749,6 +771,16 @@ export async function deleteIncomeEntry(input: {
   await db.delete(incomeEntries).where(incomeEntryMatch(input.incomeSourceId, input.year, input.month));
 }
 
+/** Next free sortOrder for a table, used when appending a new row to the end
+ * of a manually-orderable list (categories, income sources, report panels).
+ * Table and column are passed separately, rather than typing this generic
+ * over a union of table types, since each caller's own table/column are
+ * already concretely typed at the call site. */
+async function nextSortOrder(table: SQLiteTable, sortOrderColumn: AnySQLiteColumn): Promise<number> {
+  const [maxRow] = await db.select({ max: sql<number>`max(${sortOrderColumn})` }).from(table);
+  return (maxRow?.max ?? -1) + 1;
+}
+
 export async function addCategory(input: {
   name: string;
   parentId: number | null;
@@ -756,31 +788,27 @@ export async function addCategory(input: {
   isAnnual: boolean;
   annualMonth: number | null;
 }) {
-  const [maxRow] = await db
-    .select({ max: sql<number>`max(${categories.sortOrder})` })
-    .from(categories);
+  const sortOrder = await nextSortOrder(categories, categories.sortOrder);
   const [created] = await db
     .insert(categories)
     .values({
       name: input.name,
       parentId: input.parentId,
+      // groupName only means anything on a top-level category - a child's
+      // group is inherited from its parent for the pie chart, so storing one
+      // on the child too would just be a second, driftable source of truth.
       groupName: input.parentId === null ? input.groupName : null,
       isAnnual: input.isAnnual,
       annualMonth: input.isAnnual ? input.annualMonth : null,
-      sortOrder: (maxRow?.max ?? -1) + 1,
+      sortOrder,
     })
     .returning();
   return created;
 }
 
 export async function addIncomeSource(name: string) {
-  const [maxRow] = await db
-    .select({ max: sql<number>`max(${incomeSources.sortOrder})` })
-    .from(incomeSources);
-  const [created] = await db
-    .insert(incomeSources)
-    .values({ name, sortOrder: (maxRow?.max ?? -1) + 1 })
-    .returning();
+  const sortOrder = await nextSortOrder(incomeSources, incomeSources.sortOrder);
+  const [created] = await db.insert(incomeSources).values({ name, sortOrder }).returning();
   return created;
 }
 
@@ -857,15 +885,13 @@ export async function createReportPanel(name: string, selection: ReportPanelPick
   if (existing.length >= MAX_REPORT_PANELS) {
     throw new Error(`You can only have ${MAX_REPORT_PANELS} custom report panels.`);
   }
-  const [maxRow] = await db
-    .select({ max: sql<number>`max(${reportPanels.sortOrder})` })
-    .from(reportPanels);
+  const sortOrder = await nextSortOrder(reportPanels, reportPanels.sortOrder);
   const [created] = await db
     .insert(reportPanels)
     .values({
       name,
       selection: JSON.stringify(selection),
-      sortOrder: (maxRow?.max ?? -1) + 1,
+      sortOrder,
     })
     .returning();
   return created;

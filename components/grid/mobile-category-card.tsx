@@ -9,11 +9,7 @@ import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { cn } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
-
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+import { MONTH_ABBREVIATIONS as MONTH_NAMES } from "@/lib/months";
 
 export function MobileCategoryCard({
   category,

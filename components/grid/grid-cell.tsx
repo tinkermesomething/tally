@@ -54,6 +54,7 @@ export function GridCell({
   const [viewingEntries, setViewingEntries] = useState(false);
   const canViewEntries = categoryId !== undefined && year !== undefined && month !== undefined;
   const [confirmValue, setConfirmValue] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const confirmRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -84,13 +85,17 @@ export function GridCell({
 
   function openConfirm() {
     setConfirmValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
+    setConfirmError(null);
     setConfirming(true);
   }
 
   function submitConfirm(e: React.FormEvent) {
     e.preventDefault();
     const pounds = parseFloat(confirmValue);
-    if (Number.isNaN(pounds) || pounds <= 0) return;
+    if (Number.isNaN(pounds) || pounds <= 0) {
+      setConfirmError("Enter an amount greater than £0");
+      return;
+    }
     setConfirming(false);
     startTransition(() => onConfirmPayment?.(pounds));
   }
@@ -126,9 +131,9 @@ export function GridCell({
             onCheckedChange={(checked) => {
               if (checked === true) {
                 if (onConfirmPayment) openConfirm();
-                else onTogglePaid && startTransition(() => onTogglePaid(true));
-              } else {
-                onTogglePaid && startTransition(() => onTogglePaid(false));
+                else if (onTogglePaid) startTransition(() => onTogglePaid(true));
+              } else if (onTogglePaid) {
+                startTransition(() => onTogglePaid(false));
               }
             }}
             aria-label={paid ? "Mark unpaid" : "Mark paid"}
@@ -140,24 +145,32 @@ export function GridCell({
         <form
           ref={confirmRef}
           onSubmit={submitConfirm}
-          className="absolute top-full right-0 z-20 mt-1 flex items-center gap-1.5 rounded-lg border border-border bg-card p-2 shadow-md"
+          className="absolute top-full right-0 z-20 mt-1 flex flex-col gap-1 rounded-lg border border-border bg-card p-2 shadow-md"
         >
-          <span className="text-xs text-muted-foreground">Paid</span>
-          <span className="text-xs text-muted-foreground">£</span>
-          <input
-            autoFocus
-            inputMode="decimal"
-            value={confirmValue}
-            onChange={(e) => setConfirmValue(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setConfirming(false);
-            }}
-            className="w-16 rounded-md border border-input bg-background px-1.5 py-1 text-right text-sm tabular-nums outline-none"
-          />
-          <Button type="submit" size="sm">
-            Confirm
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Paid</span>
+            <span className="text-xs text-muted-foreground">£</span>
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={confirmValue}
+              onChange={(e) => {
+                setConfirmValue(e.target.value);
+                setConfirmError(null);
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setConfirming(false);
+              }}
+              className="w-16 rounded-md border border-input bg-background px-1.5 py-1 text-right text-sm tabular-nums outline-none"
+            />
+            <Button type="submit" size="sm">
+              Confirm
+            </Button>
+          </div>
+          {confirmError && (
+            <span className="text-xs text-status-critical">{confirmError}</span>
+          )}
         </form>
       )}
       {spentPence > 0 && (

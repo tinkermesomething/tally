@@ -68,19 +68,23 @@ export function AddEntryDialog({
     }
     setError(null);
     startTransition(async () => {
-      await addLedgerEntry({
-        personId,
-        pounds,
-        entryDate: date,
-        direction,
-        note: note.trim() || undefined,
-        incomeSourceId:
-          direction === "loan" && incomeSourceId !== NONE ? parseInt(incomeSourceId, 10) : undefined,
-        categoryId:
-          direction === "repayment" && categoryId !== NONE ? parseInt(categoryId, 10) : undefined,
-      });
-      reset();
-      setOpen(false);
+      try {
+        await addLedgerEntry({
+          personId,
+          pounds,
+          entryDate: date,
+          direction,
+          note: note.trim() || undefined,
+          incomeSourceId:
+            direction === "loan" && incomeSourceId !== NONE ? parseInt(incomeSourceId, 10) : undefined,
+          categoryId:
+            direction === "repayment" && categoryId !== NONE ? parseInt(categoryId, 10) : undefined,
+        });
+        reset();
+        setOpen(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to add entry.");
+      }
     });
   }
 

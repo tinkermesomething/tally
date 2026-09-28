@@ -25,6 +25,7 @@ import {
 } from "@/lib/db/queries";
 import { addDebtEntry } from "@/lib/db/debt";
 import { poundsToPence } from "@/lib/money";
+import { parseIsoDate } from "@/lib/date";
 
 export async function updateAmount(input: {
   categoryId: number;
@@ -110,7 +111,7 @@ export async function confirmPayment(input: {
   month: number;
   pounds: number;
 }) {
-  if (!(input.pounds > 0)) {
+  if (input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
   const entryDate = new Date().toISOString().slice(0, 10);
@@ -138,7 +139,7 @@ export async function logExpense(input: {
    * repayment+categoryId branch, just entered from the expense side). */
   debtPersonId?: number;
 }) {
-  if (!(input.pounds > 0)) {
+  if (input.pounds <= 0) {
     throw new Error("Expense amount must be greater than zero.");
   }
   const amountPence = poundsToPence(input.pounds);
@@ -170,7 +171,7 @@ export async function editExpenseEntry(
   id: number,
   input: { pounds?: number; note?: string; entryDate?: string }
 ) {
-  if (input.pounds !== undefined && !(input.pounds > 0)) {
+  if (input.pounds !== undefined && input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
   await updateExpenseEntryQuery(id, {
@@ -200,11 +201,11 @@ export async function logIncome(input: {
   entryDate: string;
   debtPersonId?: number;
 }) {
-  if (!(input.pounds > 0)) {
+  if (input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
   const amountPence = poundsToPence(input.pounds);
-  const [year, month] = input.entryDate.split("-").map(Number);
+  const { year, month } = parseIsoDate(input.entryDate);
   await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
   if (input.debtPersonId) {
     await addDebtEntry({

@@ -26,6 +26,21 @@ function defaultName(groups: string[], categoryIds: number[], categories: Catego
   return [...groups, ...categoryNames].join(", ");
 }
 
+/** The dialog's whole state derives from `panel` (or blanks out for a new
+ * one) - shared by useState's initializer and reset() so the two can't
+ * silently drift apart. */
+function initialState(panel?: { name: string; selection: ReportPanelPick[] }) {
+  return {
+    name: panel?.name ?? "",
+    nameTouched: false,
+    groups: new Set(panel?.selection.filter((p) => p.type === "group").map((p) => p.value as string)),
+    categoryIds: new Set(
+      panel?.selection.filter((p) => p.type === "category").map((p) => p.value as number)
+    ),
+    error: null as string | null,
+  };
+}
+
 export function ReportPanelDialog({
   trigger,
   existingGroups,
@@ -39,25 +54,20 @@ export function ReportPanelDialog({
   panel?: { id: number; name: string; selection: ReportPanelPick[] };
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(panel?.name ?? "");
+  const [name, setName] = useState(() => initialState(panel).name);
   const [nameTouched, setNameTouched] = useState(false);
-  const [groups, setGroups] = useState<Set<string>>(
-    new Set(panel?.selection.filter((p) => p.type === "group").map((p) => p.value as string))
-  );
-  const [categoryIds, setCategoryIds] = useState<Set<number>>(
-    new Set(panel?.selection.filter((p) => p.type === "category").map((p) => p.value as number))
-  );
+  const [groups, setGroups] = useState<Set<string>>(() => initialState(panel).groups);
+  const [categoryIds, setCategoryIds] = useState<Set<number>>(() => initialState(panel).categoryIds);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function reset() {
-    setName(panel?.name ?? "");
-    setNameTouched(false);
-    setGroups(new Set(panel?.selection.filter((p) => p.type === "group").map((p) => p.value as string)));
-    setCategoryIds(
-      new Set(panel?.selection.filter((p) => p.type === "category").map((p) => p.value as number))
-    );
-    setError(null);
+    const s = initialState(panel);
+    setName(s.name);
+    setNameTouched(s.nameTouched);
+    setGroups(s.groups);
+    setCategoryIds(s.categoryIds);
+    setError(s.error);
   }
 
   function toggleGroup(group: string) {

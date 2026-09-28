@@ -8,9 +8,16 @@ type Ctx = { params: Promise<{ id: string }> };
 // POST { pounds, entryDate: "YYYY-MM-DD", direction: "loan"|"repayment", note? }
 export const POST = apiRoute<Ctx>(async (request, { params }) => {
   const { id } = await params;
+  const personId = parseInt(id, 10);
+  if (Number.isNaN(personId)) {
+    return NextResponse.json({ error: "invalid person id" }, { status: 400 });
+  }
   const body = await request.json();
-  if (!(body.pounds > 0)) {
-    return NextResponse.json({ error: "pounds must be greater than zero" }, { status: 400 });
+  if (typeof body.entryDate !== "string" || !body.entryDate) {
+    return NextResponse.json({ error: "entryDate is required" }, { status: 400 });
+  }
+  if (typeof body.pounds !== "number" || body.pounds <= 0) {
+    return NextResponse.json({ error: "pounds must be a number greater than zero" }, { status: 400 });
   }
   if (body.direction !== "loan" && body.direction !== "repayment") {
     return NextResponse.json(
@@ -19,7 +26,7 @@ export const POST = apiRoute<Ctx>(async (request, { params }) => {
     );
   }
   await addDebtEntry({
-    personId: parseInt(id, 10),
+    personId,
     entryDate: body.entryDate,
     amountPence: poundsToPence(body.pounds),
     direction: body.direction,

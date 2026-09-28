@@ -10,7 +10,10 @@ export const PATCH = apiRoute<Ctx>(async (request, { params }) => {
   const categoryId = parseInt(id, 10);
   const body = await request.json();
 
-  if (typeof body.name === "string" && body.name.trim()) {
+  if (typeof body.name === "string") {
+    if (!body.name.trim()) {
+      return NextResponse.json({ error: "name cannot be empty" }, { status: 400 });
+    }
     await renameCategory(categoryId, body.name.trim());
   }
   if ("groupName" in body) {

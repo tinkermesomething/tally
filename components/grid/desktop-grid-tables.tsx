@@ -13,11 +13,7 @@ import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import { CATEGORY_COL_WIDTH, MONTH_COL_WIDTH, SUMMARY_COL_WIDTH, TABLE_WIDTH } from "@/lib/grid-layout";
 import { UNGROUPED } from "@/lib/group-colors";
 import type { GridCategory, IncomeSourceRow } from "@/lib/db/queries";
-
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
 
 /** The expense table, the monthly summary bubble, and the income
  * table are three separate horizontally-scrollable regions sharing the same

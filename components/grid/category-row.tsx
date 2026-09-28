@@ -17,12 +17,7 @@ import {
   togglePaid,
   confirmPayment,
 } from "@/app/grid/actions";
-
-const MONTH_NUMBERS = Array.from({ length: 12 }, (_, i) => i + 1);
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+import { MONTH_ABBREVIATIONS as MONTH_NAMES, MONTH_NUMBERS } from "@/lib/months";
 
 function AnnualBadge({ annualMonth }: { annualMonth: number | null }) {
   return (

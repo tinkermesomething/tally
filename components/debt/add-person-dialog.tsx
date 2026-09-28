@@ -29,9 +29,13 @@ export function AddPersonDialog() {
     }
     setError(null);
     startTransition(async () => {
-      await createPerson(name);
-      setName("");
-      setOpen(false);
+      try {
+        await createPerson(name);
+        setName("");
+        setOpen(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to add person.");
+      }
     });
   }
 

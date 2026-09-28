@@ -17,6 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { formatPence } from "@/lib/money";
 
+const PIE_INNER_RADIUS = 64;
+const PIE_OUTER_RADIUS = 110;
+
 export type CategoryBreakdown = {
   name: string;
   amountPence: number;
@@ -81,8 +84,8 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
             data={chartData}
             dataKey="value"
             nameKey="name"
-            innerRadius={64}
-            outerRadius={110}
+            innerRadius={PIE_INNER_RADIUS}
+            outerRadius={PIE_OUTER_RADIUS}
             strokeWidth={2}
           >
             {slices.map((s) => (

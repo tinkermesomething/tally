@@ -15,19 +15,24 @@ import type { LedgerRow } from "@/lib/db/debt";
 export function LedgerTable({ personId, entries }: { personId: number; entries: LedgerRow[] }) {
   const [, startTransition] = useTransition();
 
-  function commitAmount(id: number, raw: string) {
+  /** Returns whether the edit was accepted, so the input can be snapped back
+   * to its last known-good value on invalid input instead of silently
+   * keeping whatever bad text the user typed. */
+  function commitAmount(id: number, raw: string): boolean {
     const pounds = parseFloat(raw);
-    if (Number.isNaN(pounds) || pounds <= 0) return;
+    if (Number.isNaN(pounds) || pounds <= 0) return false;
     startTransition(() => editLedgerEntry(personId, id, { pounds }));
+    return true;
   }
 
   function commitDirection(id: number, direction: "loan" | "repayment") {
     startTransition(() => editLedgerEntry(personId, id, { direction }));
   }
 
-  function commitDate(id: number, entryDate: string) {
-    if (!entryDate) return;
+  function commitDate(id: number, entryDate: string): boolean {
+    if (!entryDate) return false;
     startTransition(() => editLedgerEntry(personId, id, { entryDate }));
+    return true;
   }
 
   function commitNote(id: number, note: string) {
@@ -68,7 +73,11 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                 <input
                   type="date"
                   defaultValue={entry.entryDate}
-                  onBlur={(e) => commitDate(entry.id, e.target.value)}
+                  onBlur={(e) => {
+                    if (!commitDate(entry.id, e.target.value)) {
+                      e.target.value = entry.entryDate;
+                    }
+                  }}
                   className="rounded-md border border-transparent bg-transparent px-1 py-0.5 hover:border-input focus:border-input focus:bg-background focus:outline-none"
                 />
               </td>
@@ -105,7 +114,11 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                   <input
                     defaultValue={(entry.amountPence / 100).toFixed(2)}
                     inputMode="decimal"
-                    onBlur={(e) => commitAmount(entry.id, e.target.value)}
+                    onBlur={(e) => {
+                      if (!commitAmount(entry.id, e.target.value)) {
+                        e.target.value = (entry.amountPence / 100).toFixed(2);
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                     }}

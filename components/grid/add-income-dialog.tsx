@@ -22,9 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { logIncome } from "@/app/grid/actions";
-import { createPerson } from "@/app/debt/actions";
-
-const NEW_PERSON = "__new__";
+import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -45,8 +43,8 @@ export function AddIncomeDialog({
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
   const [isLoan, setIsLoan] = useState(false);
-  const [personId, setPersonId] = useState("");
-  const [newPersonName, setNewPersonName] = useState("");
+  const { personId, setPersonId, newPersonName, setNewPersonName, reset: resetPerson, resolvePersonId } =
+    usePersonSelection();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -55,8 +53,7 @@ export function AddIncomeDialog({
     setAmount("");
     setDate(todayIso());
     setIsLoan(false);
-    setPersonId("");
-    setNewPersonName("");
+    resetPerson();
     setError(null);
   }
 
@@ -81,13 +78,7 @@ export function AddIncomeDialog({
     }
     setError(null);
     startTransition(async () => {
-      let debtPersonId: number | undefined;
-      if (isLoan) {
-        debtPersonId =
-          personId === NEW_PERSON
-            ? (await createPerson(newPersonName)).id
-            : parseInt(personId, 10);
-      }
+      const debtPersonId = isLoan ? await resolvePersonId() : undefined;
       await logIncome({
         incomeSourceId: parseInt(sourceId, 10),
         pounds,
@@ -174,36 +165,16 @@ export function AddIncomeDialog({
           </div>
 
           {isLoan && (
-            <div className="space-y-1.5">
-              <Label htmlFor="income-person">From</Label>
-              <Select value={personId} onValueChange={(v) => setPersonId(v ?? "")}>
-                <SelectTrigger id="income-person" className="w-full">
-                  <SelectValue>
-                    {(value: string) => {
-                      if (!value) return "Choose who it's from";
-                      if (value === NEW_PERSON) return "+ New person…";
-                      return people.find((p) => String(p.id) === value)?.name ?? value;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {people.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value={NEW_PERSON}>+ New person…</SelectItem>
-                </SelectContent>
-              </Select>
-              {personId === NEW_PERSON && (
-                <Input
-                  placeholder="Their name"
-                  value={newPersonName}
-                  onChange={(e) => setNewPersonName(e.target.value)}
-                  autoFocus
-                />
-              )}
-            </div>
+            <PersonPickerField
+              idPrefix="income"
+              label="From"
+              placeholder="Choose who it's from"
+              people={people}
+              personId={personId}
+              onPersonIdChange={setPersonId}
+              newPersonName={newPersonName}
+              onNewPersonNameChange={setNewPersonName}
+            />
           )}
 
           {error && <p className="text-sm text-status-critical">{error}</p>}

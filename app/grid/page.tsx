@@ -12,11 +12,7 @@ import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
 import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
 import { MobileSummaryBar } from "@/components/grid/mobile-summary-bar";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
-
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
 
 export default async function GridPage({
   searchParams,

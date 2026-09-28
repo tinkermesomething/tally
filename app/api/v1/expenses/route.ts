@@ -16,18 +16,28 @@ export const GET = apiRoute(async (request) => {
   const categoryIdParam = url.searchParams.get("categoryId");
 
   if (categoryIdParam) {
+    const categoryId = parseInt(categoryIdParam, 10);
+    if (Number.isNaN(categoryId)) {
+      return NextResponse.json({ error: "categoryId must be a valid number" }, { status: 400 });
+    }
     if (!monthParam) {
       return NextResponse.json({ error: "month is required when categoryId is set" }, { status: 400 });
     }
-    const entries = await getExpenseEntriesForCell(
-      parseInt(categoryIdParam, 10),
-      year,
-      parseInt(monthParam, 10)
-    );
+    const month = parseInt(monthParam, 10);
+    if (Number.isNaN(month)) {
+      return NextResponse.json({ error: "month must be a valid number" }, { status: 400 });
+    }
+    const entries = await getExpenseEntriesForCell(categoryId, year, month);
     return NextResponse.json({ entries });
   }
 
-  const month = monthParam ? parseInt(monthParam, 10) : undefined;
+  let month: number | undefined;
+  if (monthParam) {
+    month = parseInt(monthParam, 10);
+    if (Number.isNaN(month)) {
+      return NextResponse.json({ error: "month must be a valid number" }, { status: 400 });
+    }
+  }
   const entries = await getExpenseEntriesForMonth(year, month);
   return NextResponse.json({ entries });
 });
@@ -35,8 +45,14 @@ export const GET = apiRoute(async (request) => {
 // POST { categoryId, pounds, entryDate: "YYYY-MM-DD", note? }
 export const POST = apiRoute(async (request) => {
   const body = await request.json();
-  if (!(body.pounds > 0)) {
-    return NextResponse.json({ error: "pounds must be greater than zero" }, { status: 400 });
+  if (typeof body.categoryId !== "number") {
+    return NextResponse.json({ error: "categoryId is required" }, { status: 400 });
+  }
+  if (typeof body.entryDate !== "string" || !body.entryDate) {
+    return NextResponse.json({ error: "entryDate is required" }, { status: 400 });
+  }
+  if (typeof body.pounds !== "number" || body.pounds <= 0) {
+    return NextResponse.json({ error: "pounds must be a number greater than zero" }, { status: 400 });
   }
   await logExpense({
     categoryId: body.categoryId,

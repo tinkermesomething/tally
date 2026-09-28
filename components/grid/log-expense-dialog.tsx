@@ -22,9 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { logExpense } from "@/app/grid/actions";
-import { createPerson } from "@/app/debt/actions";
-
-const NEW_PERSON = "__new__";
+import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -43,8 +41,8 @@ export function LogExpenseDialog({
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState("");
   const [isRepayment, setIsRepayment] = useState(false);
-  const [personId, setPersonId] = useState("");
-  const [newPersonName, setNewPersonName] = useState("");
+  const { personId, setPersonId, newPersonName, setNewPersonName, reset: resetPerson, resolvePersonId } =
+    usePersonSelection();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -54,8 +52,7 @@ export function LogExpenseDialog({
     setDate(todayIso());
     setNote("");
     setIsRepayment(false);
-    setPersonId("");
-    setNewPersonName("");
+    resetPerson();
     setError(null);
   }
 
@@ -80,13 +77,7 @@ export function LogExpenseDialog({
     }
     setError(null);
     startTransition(async () => {
-      let debtPersonId: number | undefined;
-      if (isRepayment) {
-        debtPersonId =
-          personId === NEW_PERSON
-            ? (await createPerson(newPersonName)).id
-            : parseInt(personId, 10);
-      }
+      const debtPersonId = isRepayment ? await resolvePersonId() : undefined;
       await logExpense({
         categoryId: parseInt(categoryId, 10),
         pounds,
@@ -187,43 +178,23 @@ export function LogExpenseDialog({
           </div>
 
           {isRepayment && (
-            <div className="space-y-1.5">
-              <Label htmlFor="expense-person">Paying back</Label>
-              <Select value={personId} onValueChange={(v) => setPersonId(v ?? "")}>
-                <SelectTrigger id="expense-person" className="w-full">
-                  <SelectValue>
-                    {(value: string) => {
-                      if (!value) return "Choose who you're paying back";
-                      if (value === NEW_PERSON) return "+ New person…";
-                      return people.find((p) => String(p.id) === value)?.name ?? value;
-                    }}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {people.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value={NEW_PERSON}>+ New person…</SelectItem>
-                </SelectContent>
-              </Select>
-              {personId === NEW_PERSON && (
-                <Input
-                  placeholder="Their name"
-                  value={newPersonName}
-                  onChange={(e) => setNewPersonName(e.target.value)}
-                  autoFocus
-                />
-              )}
-            </div>
+            <PersonPickerField
+              idPrefix="expense"
+              label="Paying back"
+              placeholder="Choose who you're paying back"
+              people={people}
+              personId={personId}
+              onPersonIdChange={setPersonId}
+              newPersonName={newPersonName}
+              onNewPersonNameChange={setNewPersonName}
+            />
           )}
 
           {error && <p className="text-sm text-status-critical">{error}</p>}
 
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save expense"}
+              {pending ? "Saving…" : "Log expense"}
             </Button>
           </DialogFooter>
         </form>

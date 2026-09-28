@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/debt";
 import { incrementIncomeEntry, logExpense as logExpenseQuery } from "@/lib/db/queries";
 import { poundsToPence } from "@/lib/money";
+import { parseIsoDate } from "@/lib/date";
 
 export async function createPerson(name: string) {
   const trimmed = name.trim();
@@ -45,7 +46,7 @@ export async function addLedgerEntry(input: {
    * category, e.g. paying a loan back out of the Misc budget. */
   categoryId?: number;
 }) {
-  if (!(input.pounds > 0)) {
+  if (input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
   const amountPence = poundsToPence(input.pounds);
@@ -59,7 +60,7 @@ export async function addLedgerEntry(input: {
   });
 
   if (input.direction === "loan" && input.incomeSourceId) {
-    const [year, month] = input.entryDate.split("-").map(Number);
+    const { year, month } = parseIsoDate(input.entryDate);
     await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
   }
 
@@ -84,7 +85,7 @@ export async function editLedgerEntry(
   id: number,
   input: { pounds?: number; direction?: "loan" | "repayment"; entryDate?: string; note?: string }
 ) {
-  if (input.pounds !== undefined && !(input.pounds > 0)) {
+  if (input.pounds !== undefined && input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
   await updateDebtEntry(id, {
