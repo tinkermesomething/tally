@@ -533,6 +533,19 @@ export async function logExpense(input: {
     note: input.note || null,
     debtPersonId: input.debtPersonId,
   });
+
+  // Logging an expense means the money is already gone - that's the same
+  // real-world fact as ticking "paid", so mark it here too. Otherwise a
+  // logged expense correctly counts toward SUBTOTAL/AVAILABLE but still
+  // shows up in "Remaining to pay" as if it hadn't happened yet.
+  const existing = await db.query.categoryEntries.findFirst({
+    where: categoryEntryMatch(input.categoryId, year, month),
+  });
+  if (existing) {
+    await db.update(categoryEntries).set({ paid: true }).where(eq(categoryEntries.id, existing.id));
+  } else {
+    await db.insert(categoryEntries).values({ categoryId: input.categoryId, year, month, amountPence: 0, paid: true });
+  }
 }
 
 export async function upsertIncomeEntry(input: {
