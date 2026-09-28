@@ -7,7 +7,9 @@ import {
   archiveCategory as archiveCategoryQuery,
   archiveIncomeSource as archiveIncomeSourceQuery,
   deleteCategoryEntry,
+  deleteExpenseEntry as deleteExpenseEntryQuery,
   deleteIncomeEntry,
+  getExpenseEntriesForCell,
   getGridData,
   logExpense as logExpenseQuery,
   renameCategory as renameCategoryQuery,
@@ -16,6 +18,7 @@ import {
   unarchiveIncomeSource as unarchiveIncomeSourceQuery,
   updateCategoryDueDay as updateCategoryDueDayQuery,
   updateCategoryGroup as updateCategoryGroupQuery,
+  updateExpenseEntry as updateExpenseEntryQuery,
   upsertCategoryEntry,
   upsertIncomeEntry,
 } from "@/lib/db/queries";
@@ -139,6 +142,32 @@ export async function logExpense(input: {
     note: input.note,
   });
   revalidatePath("/grid");
+}
+
+export async function listExpenseEntries(categoryId: number, year: number, month: number) {
+  return getExpenseEntriesForCell(categoryId, year, month);
+}
+
+export async function editExpenseEntry(
+  id: number,
+  input: { pounds?: number; note?: string; entryDate?: string }
+) {
+  if (input.pounds !== undefined && !(input.pounds > 0)) {
+    throw new Error("Amount must be greater than zero.");
+  }
+  await updateExpenseEntryQuery(id, {
+    amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
+    note: input.note !== undefined ? input.note || null : undefined,
+    entryDate: input.entryDate,
+  });
+  revalidatePath("/grid");
+  revalidatePath("/entries");
+}
+
+export async function removeExpenseEntry(id: number) {
+  await deleteExpenseEntryQuery(id);
+  revalidatePath("/grid");
+  revalidatePath("/entries");
 }
 
 export async function updateIncomeAmount(input: {

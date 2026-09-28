@@ -94,6 +94,9 @@ export function CategoryMonthCell({
       spentPence={cell?.spentPence ?? 0}
       previousAmountPence={cell?.previousAmountPence}
       overdue={cell?.overdue ?? false}
+      categoryId={category.id}
+      year={year}
+      month={month}
       onCommitAmount={(pounds) => updateAmount({ categoryId: category.id, year, month, pounds })}
       onClearAmount={() => clearAmount({ categoryId: category.id, year, month })}
       onTogglePaid={(paid) => togglePaid({ categoryId: category.id, year, month, paid })}

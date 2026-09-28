@@ -68,13 +68,37 @@ Mark a month's entry paid/unpaid.
 { "year": 2026, "month": 4, "paid": true }
 ```
 
+### `GET /expenses?year=&month=&categoryId=`
+List logged expenses. `year` required. `month` optional (omit for the whole
+year). `categoryId` optional - narrows to one cell's entries (requires
+`month` too when set); omitting it lists across every category.
+```json
+{ "entries": [{ "id": 7, "categoryId": 12, "categoryName": "Groceries",
+  "year": 2026, "month": 9, "amountPence": 2350, "note": "weekly shop",
+  "entryDate": "2026-09-26" }] }
+```
+
 ### `POST /expenses`
 Log an actual expense against a category (tracked separately from the
-planned amount - shows as "£X left" in the UI).
+planned amount - shows as "£X left" in the UI). Also marks that category's
+month paid, same as ticking the checkbox - logging an expense and settling
+it are the same real-world fact.
 ```json
 { "categoryId": 12, "pounds": 23.50, "entryDate": "2026-09-26",
   "note": "weekly shop" }
 ```
+
+### `PATCH /expenses/:id`
+Edit a logged expense. All fields optional - only send what changed.
+```json
+{ "pounds": 25.00, "note": "corrected", "entryDate": "2026-09-27" }
+```
+
+### `DELETE /expenses/:id`
+**Real, permanent delete** - unlike everything else in this API, a logged
+expense is not soft-deleted. If it was the last expense logged for that
+category/month, that month's `paid` flag is also reverted to false (it no
+longer reflects anything real).
 
 ### `POST /income/sources`
 ```json

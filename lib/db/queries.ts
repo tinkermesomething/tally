@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   categories,
@@ -545,6 +545,120 @@ export async function logExpense(input: {
     await db.update(categoryEntries).set({ paid: true }).where(eq(categoryEntries.id, existing.id));
   } else {
     await db.insert(categoryEntries).values({ categoryId: input.categoryId, year, month, amountPence: 0, paid: true });
+  }
+}
+
+export type ExpenseEntryRow = {
+  id: number;
+  categoryId: number;
+  categoryName: string;
+  year: number;
+  month: number;
+  amountPence: number;
+  note: string | null;
+  entryDate: string;
+};
+
+/** Individual logged expenses for one category/month - the breakdown behind
+ * a grid cell's "Paid £X" total, which is just their sum. */
+export async function getExpenseEntriesForCell(
+  categoryId: number,
+  year: number,
+  month: number
+): Promise<ExpenseEntryRow[]> {
+  const rows = await db
+    .select({
+      id: expenseEntries.id,
+      categoryId: expenseEntries.categoryId,
+      categoryName: categories.name,
+      year: expenseEntries.year,
+      month: expenseEntries.month,
+      amountPence: expenseEntries.amountPence,
+      note: expenseEntries.note,
+      entryDate: expenseEntries.entryDate,
+    })
+    .from(expenseEntries)
+    .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
+    .where(
+      and(
+        eq(expenseEntries.categoryId, categoryId),
+        eq(expenseEntries.year, year),
+        eq(expenseEntries.month, month)
+      )
+    )
+    .orderBy(expenseEntries.entryDate);
+  return rows;
+}
+
+/** All logged expenses for a year, optionally narrowed to one month - the
+ * data behind the "Logged entries" ledger page. `month` undefined means the
+ * full year. */
+export async function getExpenseEntriesForMonth(
+  year: number,
+  month?: number
+): Promise<ExpenseEntryRow[]> {
+  const rows = await db
+    .select({
+      id: expenseEntries.id,
+      categoryId: expenseEntries.categoryId,
+      categoryName: categories.name,
+      year: expenseEntries.year,
+      month: expenseEntries.month,
+      amountPence: expenseEntries.amountPence,
+      note: expenseEntries.note,
+      entryDate: expenseEntries.entryDate,
+    })
+    .from(expenseEntries)
+    .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
+    .where(
+      month === undefined
+        ? eq(expenseEntries.year, year)
+        : and(eq(expenseEntries.year, year), eq(expenseEntries.month, month))
+    )
+    .orderBy(desc(expenseEntries.entryDate));
+  return rows;
+}
+
+export async function updateExpenseEntry(
+  id: number,
+  input: { amountPence?: number; note?: string | null; entryDate?: string }
+) {
+  const set: Partial<typeof expenseEntries.$inferInsert> = {};
+  if (input.amountPence !== undefined) set.amountPence = input.amountPence;
+  if (input.note !== undefined) set.note = input.note;
+  if (input.entryDate !== undefined) {
+    set.entryDate = input.entryDate;
+    const [year, month] = input.entryDate.split("-").map(Number);
+    set.year = year;
+    set.month = month;
+  }
+  await db.update(expenseEntries).set(set).where(eq(expenseEntries.id, id));
+}
+
+/** Real, permanent delete - unlike everything else in this app (categories,
+ * income sources, people are all soft-deleted), a logged expense is a
+ * transaction record: "I entered this wrong" should just remove it, there's
+ * no future value in keeping a row around that never happened. */
+export async function deleteExpenseEntry(id: number) {
+  const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
+  if (!entry) return;
+  await db.delete(expenseEntries).where(eq(expenseEntries.id, id));
+
+  // If that was the last logged expense for this cell, its "paid" status
+  // (set automatically by logExpense) no longer reflects anything real -
+  // revert it, the same way ticking the amount back to blank would.
+  const remaining = await db.query.expenseEntries.findFirst({
+    where: and(
+      eq(expenseEntries.categoryId, entry.categoryId),
+      eq(expenseEntries.year, entry.year),
+      eq(expenseEntries.month, entry.month)
+    ),
+  });
+  if (!remaining) {
+    await db
+      .update(categoryEntries)
+      .set({ paid: false })
+      .where(categoryEntryMatch(entry.categoryId, entry.year, entry.month));
   }
 }
 

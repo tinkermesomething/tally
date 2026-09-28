@@ -22,9 +22,11 @@ const LABELS: Record<string, string> = {
 export function MonthSelect({
   year,
   month,
+  basePath = "/reports",
 }: {
   year: number;
   month: string; // "all" | "1".."12"
+  basePath?: string;
 }) {
   const router = useRouter();
 
@@ -33,7 +35,7 @@ export function MonthSelect({
       value={month}
       onValueChange={(value) => {
         if (!value) return;
-        router.push(`/reports?year=${year}&month=${value}`);
+        router.push(`${basePath}?year=${year}&month=${value}`);
       }}
     >
       <SelectTrigger className="w-44">

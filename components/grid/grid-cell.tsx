@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatPence } from "@/lib/money";
+import { ExpenseEntriesPopover } from "@/components/grid/expense-entries-popover";
 
 export function GridCell({
   amountPence,
@@ -14,6 +15,9 @@ export function GridCell({
   previousAmountPence,
   showPaidToggle = true,
   overdue = false,
+  categoryId,
+  year,
+  month,
   onCommitAmount,
   onClearAmount,
   onTogglePaid,
@@ -25,6 +29,12 @@ export function GridCell({
   previousAmountPence?: number;
   showPaidToggle?: boolean;
   overdue?: boolean;
+  /** Set on leaf category cells only (not income, not computed rollup
+   * cells) - lets "Paid £X" open the individual logged-entries breakdown.
+   * Omitting any of the three just hides that affordance. */
+  categoryId?: number;
+  year?: number;
+  month?: number;
   onCommitAmount: (pounds: number) => void;
   /** Blank is a real, distinct state from "0" - clearing a cell deletes the
    * entry rather than reverting to whatever it was before. */
@@ -41,6 +51,8 @@ export function GridCell({
     amountPence !== undefined ? (amountPence / 100).toFixed(2) : ""
   );
   const [confirming, setConfirming] = useState(false);
+  const [viewingEntries, setViewingEntries] = useState(false);
+  const canViewEntries = categoryId !== undefined && year !== undefined && month !== undefined;
   const [confirmValue, setConfirmValue] = useState("");
   const confirmRef = useRef<HTMLFormElement>(null);
 
@@ -149,9 +161,28 @@ export function GridCell({
         </form>
       )}
       {spentPence > 0 && (
-        <span className="pr-7 text-xs tabular-nums text-primary">
-          Paid {formatPence(spentPence)}
-        </span>
+        canViewEntries ? (
+          <button
+            type="button"
+            onClick={() => setViewingEntries((v) => !v)}
+            className="pr-7 text-xs tabular-nums text-primary underline-offset-2 hover:underline"
+            title="View logged entries"
+          >
+            Paid {formatPence(spentPence)}
+          </button>
+        ) : (
+          <span className="pr-7 text-xs tabular-nums text-primary">
+            Paid {formatPence(spentPence)}
+          </span>
+        )
+      )}
+      {viewingEntries && canViewEntries && (
+        <ExpenseEntriesPopover
+          categoryId={categoryId!}
+          year={year!}
+          month={month!}
+          onClose={() => setViewingEntries(false)}
+        />
       )}
       {amountPence === undefined && previousAmountPence !== undefined && (
         <button
