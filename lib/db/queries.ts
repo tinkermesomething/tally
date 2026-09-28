@@ -322,7 +322,14 @@ export async function getGridData(year: number): Promise<GridData> {
           (sum, c) => sum + c.spentPence,
           0
         );
-        const paid = allChildCellsThisMonth.every((c) => c.paid);
+        // A child with nothing actually charged or planned this month has
+        // nothing to be "paid" about - it shouldn't be able to block the
+        // whole parent just because nobody explicitly ticked it (e.g. a
+        // pay-as-you-go subscription untouched this month). Only children
+        // that actually carry money have to be confirmed paid.
+        const paid = allChildCellsThisMonth.every(
+          (c) => c.paid || effectiveAmountPence(c) === 0
+        );
         const overdue = allChildCellsThisMonth.some((c) => c.overdue);
         months[month] = { amountPence, paid, spentPence, computed: true, overdue };
       } else if (directMonths[month]) {

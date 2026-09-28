@@ -34,11 +34,15 @@ export function ExpenseEntriesPopover({
   }, [categoryId, year, month]);
 
   useEffect(() => {
-    function handlePointerDown(e: PointerEvent) {
+    // "click" (not "pointerdown"/"mousedown") - those fire before the
+    // browser blurs whatever's currently focused, so closing on them raced
+    // an in-progress edit's blur-triggered save right out from under it.
+    // By the time "click" fires, blur has already happened and committed.
+    function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
   }, [onClose]);
 
   function refresh() {
@@ -92,6 +96,9 @@ export function ExpenseEntriesPopover({
                   defaultValue={(entry.amountPence / 100).toFixed(2)}
                   inputMode="decimal"
                   onBlur={(e) => commitAmount(entry.id, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
                   className="w-16 rounded border border-transparent bg-transparent px-1 text-right text-xs tabular-nums hover:border-input focus:border-input focus:bg-background focus:outline-none"
                 />
               </div>
@@ -99,6 +106,9 @@ export function ExpenseEntriesPopover({
                 defaultValue={entry.note ?? ""}
                 placeholder="Add a note…"
                 onBlur={(e) => commitNote(entry.id, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                }}
                 className="w-full rounded border border-transparent bg-transparent px-1 text-xs text-muted-foreground hover:border-input focus:border-input focus:bg-background focus:text-foreground focus:outline-none"
               />
             </div>

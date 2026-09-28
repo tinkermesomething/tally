@@ -87,6 +87,9 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                   defaultValue={entry.note ?? ""}
                   placeholder="Add a note…"
                   onBlur={(e) => commitNote(entry.id, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
                   className="w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-muted-foreground hover:border-input focus:border-input focus:bg-background focus:text-foreground focus:outline-none"
                 />
               </td>
@@ -103,6 +106,9 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                     defaultValue={(entry.amountPence / 100).toFixed(2)}
                     inputMode="decimal"
                     onBlur={(e) => commitAmount(entry.id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     className="w-20 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-right tabular-nums hover:border-input focus:border-input focus:bg-background focus:outline-none"
                   />
                 </div>
