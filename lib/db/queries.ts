@@ -184,6 +184,21 @@ function effectiveAmountPence(cell: MonthCell): number {
   return cell.spentPence > 0 ? cell.spentPence : (cell.amountPence ?? 0);
 }
 
+/** What counts toward actuallySpentByMonth: real logged spending always
+ * counts - it happened, full stop, regardless of `paid` - and only falls
+ * back to the planned amount, gated on `paid`, for the "ticked paid with
+ * no expense ever logged" case. Deliberately NOT `cell.paid ?
+ * effectiveAmountPence(cell) : 0` - on a rollup cell, `paid` is an
+ * aggregate across children, and can be false even when the cell's own
+ * spentPence is fully confirmed, just because some unrelated sibling's
+ * separate planned amount hasn't come due yet this month. Gating real,
+ * already-spent money behind an aggregate that a different child can drag
+ * down is exactly the bug this exists to avoid. */
+function confirmedSpentPence(cell: MonthCell): number {
+  if (cell.spentPence > 0) return cell.spentPence;
+  return cell.paid ? (cell.amountPence ?? 0) : 0;
+}
+
 function summarize(months: Record<number, MonthCell>) {
   let yearTotalPence = 0;
   let monthsWithData = 0;
@@ -466,7 +481,32 @@ export async function getGridData(year: number): Promise<GridData> {
       const effectivePence = effectiveAmountPence(cell);
       subtotalByMonth[month - 1] += effectivePence;
       plannedByMonth[month - 1] += cell.amountPence ?? 0;
-      if (cell.paid) actuallySpentByMonth[month - 1] += effectivePence;
+    }
+
+    // actuallySpentByMonth never trusts a rollup cell's own aggregate `paid`
+    // flag - it can be false even when one specific child's own money is
+    // fully confirmed spent, just because a different, unrelated sibling's
+    // plan hasn't come due yet this month. `cell.computed` says which path
+    // the display logic already took: a rollup (sum each child's own
+    // confirmed spend individually, so no sibling can drag another's real
+    // spending out) or a direct entry (a real leaf, or a parent's own
+    // direct spending for a month its children's rollup didn't apply to -
+    // e.g. general spending logged straight against a category that also
+    // has one specific child broken out separately). Using the cell as-is
+    // for the direct case, rather than always summing children, is what a
+    // naive "has children -> sum children" rule gets wrong.
+    for (let month = 1; month <= 12; month++) {
+      const cell = months[month];
+      if (!cell) continue;
+      if (cell.computed) {
+        for (const child of children) {
+          const childCell = child.months[month];
+          if (!childCell) continue;
+          actuallySpentByMonth[month - 1] += confirmedSpentPence(childCell);
+        }
+      } else {
+        actuallySpentByMonth[month - 1] += confirmedSpentPence(cell);
+      }
     }
 
     return {
