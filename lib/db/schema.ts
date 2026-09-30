@@ -70,6 +70,10 @@ export const incomeSources = sqliteTable("income_sources", {
   // Null = active. Same year-relative treatment as categories.archivedAt -
   // archiving a source must not rewrite what a past year's WAGES said.
   archivedAt: integer("archived_at", { mode: "timestamp" }),
+  // At most one source is the pay anchor at a time (enforced at the app
+  // layer, not the schema). Logging an entry against this source is what
+  // creates a payPeriodAnchors boundary - see that table's comment.
+  isPayAnchor: integer("is_pay_anchor", { mode: "boolean" }).notNull().default(false),
 });
 
 export const incomeEntries = sqliteTable(
@@ -91,6 +95,40 @@ export const incomeEntries = sqliteTable(
     ),
   ]
 );
+
+/** A boundary created each time the designated "pay anchor" income source
+ * gets a logged entry: `receivedDate` is when the money actually landed,
+ * `year`/`month` is which budget period it counts toward - the two can
+ * differ (wages received Aug 28, counted as September). Every other logged
+ * entry (expense, non-anchor income, debt) dated on/after the most recent
+ * boundary's receivedDate resolves to that boundary's year/month instead of
+ * its own calendar month - see resolvePeriodForDate in lib/pay-period.ts.
+ * Entries dated before the earliest boundary ever recorded just fall back
+ * to plain calendar-month resolution (nothing to anchor off yet). */
+export const payPeriodAnchors = sqliteTable("pay_period_anchors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  incomeSourceId: integer("income_source_id")
+    .notNull()
+    .references(() => incomeSources.id),
+  receivedDate: text("received_date").notNull(), // ISO date
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12
+});
+
+/** A category's parent changes only from a given year onward - past years
+ * keep showing it under its old grouping, the same principle as
+ * categories.archivedAt. Resolving a category's effective parent for year Y
+ * means: the parentId of the move row with the largest effectiveYear <= Y,
+ * or the category's own (original) parentId if no move row qualifies. See
+ * resolveEffectiveParent in lib/db/queries.ts. */
+export const categoryParentMoves = sqliteTable("category_parent_moves", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  categoryId: integer("category_id")
+    .notNull()
+    .references(() => categories.id),
+  parentId: integer("parent_id"), // null = moved to top-level
+  effectiveYear: integer("effective_year").notNull(),
+});
 
 export const people = sqliteTable("people", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -118,4 +156,15 @@ export const debtLedgerEntries = sqliteTable("debt_ledger_entries", {
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),
+});
+
+/** Single-row table (app logic always reads/writes the first row, creating
+ * it with these defaults on first read if missing) - app-wide display
+ * preferences, not per-category/entry data. currency is an ISO 4217 code
+ * fed straight to Intl.NumberFormat; dateFormat is one of DATE_FORMATS in
+ * lib/date-format.ts. */
+export const appSettings = sqliteTable("app_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  currency: text("currency").notNull().default("GBP"),
+  dateFormat: text("date_format").notNull().default("dmy"),
 });

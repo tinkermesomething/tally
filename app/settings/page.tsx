@@ -5,6 +5,7 @@ import {
   getArchivedIncomeSources,
 } from "@/lib/db/queries";
 import { getPeopleWithBalances, getArchivedPeople } from "@/lib/db/debt";
+import { getAppSettings } from "@/lib/db/settings";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
@@ -13,6 +14,7 @@ import { AddPersonDialog } from "@/components/debt/add-person-dialog";
 import { CategorySettingsRow } from "@/components/settings/category-settings-row";
 import { IncomeSourceSettingsRow } from "@/components/settings/income-source-settings-row";
 import { PersonSettingsRow } from "@/components/settings/person-settings-row";
+import { PreferencesSettings } from "@/components/settings/preferences-settings";
 import { ArchivedList } from "@/components/settings/archived-list";
 import {
   unarchiveCategory,
@@ -23,7 +25,7 @@ import { restorePerson } from "@/app/debt/actions";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [categoryTree, incomeSources, people, archivedCategories, archivedIncomeSources, archivedPeople] =
+  const [categoryTree, incomeSources, people, archivedCategories, archivedIncomeSources, archivedPeople, appSettings] =
     await Promise.all([
       getCategoryTree(),
       getIncomeSourceList(),
@@ -31,6 +33,7 @@ export default async function SettingsPage() {
       getArchivedCategories(),
       getArchivedIncomeSources(),
       getArchivedPeople(),
+      getAppSettings(),
     ]);
 
   const groupColors = buildGroupColorMap(categoryTree);
@@ -47,6 +50,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="income">Income</TabsTrigger>
           <TabsTrigger value="people">People</TabsTrigger>
+          <TabsTrigger value="preferences">Preferences</TabsTrigger>
         </TabsList>
 
         <TabsContent value="categories" className="space-y-4 pt-4">
@@ -67,6 +71,7 @@ export default async function SettingsPage() {
                 category={category}
                 color={groupColors.get(category.groupName ?? UNGROUPED)!}
                 existingGroups={existingGroups}
+                topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
               />
             ))}
           </div>
@@ -91,7 +96,12 @@ export default async function SettingsPage() {
 
           <div className="space-y-2">
             {incomeSources.map((source) => (
-              <IncomeSourceSettingsRow key={source.id} id={source.id} name={source.name} />
+              <IncomeSourceSettingsRow
+                key={source.id}
+                id={source.id}
+                name={source.name}
+                isPayAnchor={source.isPayAnchor}
+              />
             ))}
           </div>
 
@@ -131,6 +141,11 @@ export default async function SettingsPage() {
               />
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="preferences" className="space-y-4 pt-4">
+          <p className="text-sm text-muted-foreground">Display preferences for the whole app.</p>
+          <PreferencesSettings currency={appSettings.currency} dateFormat={appSettings.dateFormat} />
         </TabsContent>
       </Tabs>
     </div>

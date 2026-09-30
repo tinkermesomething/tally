@@ -9,6 +9,7 @@ import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 import type { IncomeSourceRow } from "@/lib/db/queries";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import { MONTH_ABBREVIATIONS as MONTHS, MONTH_NUMBERS } from "@/lib/months";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 export function IncomeTable({
   sources,
@@ -29,6 +30,7 @@ export function IncomeTable({
   containerRef?: React.RefObject<HTMLDivElement | null>;
   onScroll?: (el: HTMLDivElement) => void;
 }) {
+  const { currency } = useAppSettings();
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
   const yearTotal = totalByMonth.reduce((a, b) => a + b, 0);
 
@@ -125,13 +127,13 @@ export function IncomeTable({
                   style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
                   className={cn("sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
                 >
-                  {formatPence(source.yearTotalPence)}
+                  {formatPence(source.yearTotalPence, currency)}
                 </td>
                 <td
                   style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
                   className="sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
                 >
-                  {formatPence(source.monthlyAveragePence)}
+                  {formatPence(source.monthlyAveragePence, currency)}
                 </td>
               </tr>
             ))
@@ -142,20 +144,20 @@ export function IncomeTable({
             <td className="sticky left-0 z-10 bg-secondary px-3 py-2">Total income</td>
             {totalByMonth.map((value, i) => (
               <td key={i} className="px-3 py-2 text-right tabular-nums">
-                {formatPence(value)}
+                {formatPence(value, currency)}
               </td>
             ))}
             <td
               style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--secondary") }}
               className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
             >
-              {formatPence(yearTotal)}
+              {formatPence(yearTotal, currency)}
             </td>
             <td
               style={{ right: 0, backgroundColor: floatingPanelFill("--secondary") }}
               className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
             >
-              {formatPence(Math.round(yearTotal / 12))}
+              {formatPence(Math.round(yearTotal / 12), currency)}
             </td>
           </tr>
         </tfoot>

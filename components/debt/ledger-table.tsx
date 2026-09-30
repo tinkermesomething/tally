@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { editLedgerEntry, removeLedgerEntry } from "@/app/debt/actions";
 import { formatPence } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { LedgerRow } from "@/lib/db/debt";
 
 /** Unlike the expense-entries table, this doesn't optimistically patch local
@@ -13,16 +14,18 @@ import type { LedgerRow } from "@/lib/db/debt";
  * real recomputed chain arrives. It just re-renders from the fresh `entries`
  * prop once each edit's revalidatePath completes. */
 export function LedgerTable({ personId, entries }: { personId: number; entries: LedgerRow[] }) {
+  const { currency } = useAppSettings();
   const [, startTransition] = useTransition();
 
-  /** Returns whether the edit was accepted, so the input can be snapped back
-   * to its last known-good value on invalid input instead of silently
-   * keeping whatever bad text the user typed. */
-  function commitAmount(id: number, raw: string): boolean {
+  /** Returns the canonical "10.00"-formatted value to redisplay on a valid
+   * edit, or null on invalid input (meaning: revert instead). The input is
+   * uncontrolled, so without this it would keep showing whatever raw text
+   * was typed forever instead of settling on the formatted amount. */
+  function commitAmount(id: number, raw: string): string | null {
     const pounds = parseFloat(raw);
-    if (Number.isNaN(pounds) || pounds <= 0) return false;
+    if (Number.isNaN(pounds) || pounds <= 0) return null;
     startTransition(() => editLedgerEntry(personId, id, { pounds }));
-    return true;
+    return pounds.toFixed(2);
   }
 
   function commitDirection(id: number, direction: "loan" | "repayment") {
@@ -115,9 +118,7 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                     defaultValue={(entry.amountPence / 100).toFixed(2)}
                     inputMode="decimal"
                     onBlur={(e) => {
-                      if (!commitAmount(entry.id, e.target.value)) {
-                        e.target.value = (entry.amountPence / 100).toFixed(2);
-                      }
+                      e.target.value = commitAmount(entry.id, e.target.value) ?? (entry.amountPence / 100).toFixed(2);
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
@@ -127,7 +128,7 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                 </div>
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
-                {formatPence(entry.runningBalancePence)}
+                {formatPence(entry.runningBalancePence, currency)}
               </td>
               <td className="px-2 py-2 text-right">
                 <button

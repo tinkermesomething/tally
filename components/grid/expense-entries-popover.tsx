@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { editExpenseEntry, listExpenseEntries, removeExpenseEntry } from "@/app/grid/actions";
+import { formatDate } from "@/lib/date-format";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { ExpenseEntryRow } from "@/lib/db/queries";
 
 /** The breakdown behind a grid cell's "Paid £X" total - individually
@@ -25,6 +27,7 @@ export function ExpenseEntriesPopover({
    * Entries page re-fetching its own separate list. */
   onChanged?: () => void;
 }) {
+  const { dateFormat } = useAppSettings();
   const [entries, setEntries] = useState<ExpenseEntryRow[] | null>(null);
   const [, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
@@ -50,17 +53,18 @@ export function ExpenseEntriesPopover({
     onChanged?.();
   }
 
-  /** Returns whether the edit was accepted, so the input can be snapped back
-   * to its last known-good value on invalid input instead of silently
-   * keeping whatever bad text the user typed. */
-  function commitAmount(id: number, raw: string): boolean {
+  /** Returns the canonical "10.00"-formatted value to redisplay on a valid
+   * edit, or null on invalid input (meaning: revert instead). The input is
+   * uncontrolled, so without this it would keep showing whatever raw text
+   * was typed forever instead of settling on the formatted amount. */
+  function commitAmount(id: number, raw: string): string | null {
     const pounds = parseFloat(raw);
-    if (Number.isNaN(pounds) || pounds <= 0) return false;
+    if (Number.isNaN(pounds) || pounds <= 0) return null;
     startTransition(async () => {
       await editExpenseEntry(id, { pounds });
       refresh();
     });
-    return true;
+    return pounds.toFixed(2);
   }
 
   function commitNote(id: number, note: string) {
@@ -95,14 +99,12 @@ export function ExpenseEntriesPopover({
           >
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex items-center justify-between gap-1">
-                <span className="text-[0.7rem] text-muted-foreground">{entry.entryDate}</span>
+                <span className="text-[0.7rem] text-muted-foreground">{formatDate(entry.entryDate, dateFormat)}</span>
                 <input
                   defaultValue={(entry.amountPence / 100).toFixed(2)}
                   inputMode="decimal"
                   onBlur={(e) => {
-                    if (!commitAmount(entry.id, e.target.value)) {
-                      e.target.value = (entry.amountPence / 100).toFixed(2);
-                    }
+                    e.target.value = commitAmount(entry.id, e.target.value) ?? (entry.amountPence / 100).toFixed(2);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();

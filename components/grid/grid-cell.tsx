@@ -5,8 +5,9 @@ import { Undo2, AlertCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatPence } from "@/lib/money";
+import { formatPence, getCurrencySymbol } from "@/lib/money";
 import { ExpenseEntriesPopover } from "@/components/grid/expense-entries-popover";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 export function GridCell({
   amountPence,
@@ -46,6 +47,7 @@ export function GridCell({
    * may differ from what was allocated. */
   onConfirmPayment?: (pounds: number) => void;
 }) {
+  const { currency } = useAppSettings();
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(
     amountPence !== undefined ? (amountPence / 100).toFixed(2) : ""
@@ -56,6 +58,15 @@ export function GridCell({
   const [confirmValue, setConfirmValue] = useState("");
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const confirmRef = useRef<HTMLFormElement>(null);
+
+  // `value` starts from amountPence at mount, but a plain useState
+  // initializer never re-runs after that - without this, a successful
+  // commit left the box showing whatever raw text was typed ("10") forever
+  // instead of settling on the canonical "10.00" once the amountPence prop
+  // came back around through the server round-trip.
+  useEffect(() => {
+    setValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
+  }, [amountPence]);
 
   useEffect(() => {
     if (!confirming) return;
@@ -93,7 +104,7 @@ export function GridCell({
     e.preventDefault();
     const pounds = parseFloat(confirmValue);
     if (Number.isNaN(pounds) || pounds <= 0) {
-      setConfirmError("Enter an amount greater than £0");
+      setConfirmError(`Enter an amount greater than ${getCurrencySymbol(currency)}0`);
       return;
     }
     setConfirming(false);
@@ -149,7 +160,7 @@ export function GridCell({
         >
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Paid</span>
-            <span className="text-xs text-muted-foreground">£</span>
+            <span className="text-xs text-muted-foreground">{getCurrencySymbol(currency)}</span>
             <input
               autoFocus
               inputMode="decimal"
@@ -181,11 +192,11 @@ export function GridCell({
             className="pr-7 text-xs tabular-nums text-primary underline-offset-2 hover:underline"
             title="View logged entries"
           >
-            Paid {formatPence(spentPence)}
+            Paid {formatPence(spentPence, currency)}
           </button>
         ) : (
           <span className="pr-7 text-xs tabular-nums text-primary">
-            Paid {formatPence(spentPence)}
+            Paid {formatPence(spentPence, currency)}
           </span>
         )
       )}
@@ -209,7 +220,7 @@ export function GridCell({
           title="Use last month's amount"
         >
           <Undo2 className="size-3" />
-          {formatPence(previousAmountPence)}
+          {formatPence(previousAmountPence, currency)}
         </button>
       )}
     </div>

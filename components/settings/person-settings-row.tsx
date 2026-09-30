@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { formatPence } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { removePerson } from "@/app/debt/actions";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { PersonWithBalance } from "@/lib/db/debt";
 
 export function PersonSettingsRow({ person }: { person: PersonWithBalance }) {
+  const { currency } = useAppSettings();
   const [pending, startTransition] = useTransition();
 
   return (
@@ -23,8 +25,8 @@ export function PersonSettingsRow({ person }: { person: PersonWithBalance }) {
             )}
           >
             {person.balancePence > 0
-              ? `You owe ${formatPence(person.balancePence)}`
-              : `Owed to you ${formatPence(-person.balancePence)}`}
+              ? `You owe ${formatPence(person.balancePence, currency)}`
+              : `Owed to you ${formatPence(-person.balancePence, currency)}`}
           </span>
         )}
       </div>

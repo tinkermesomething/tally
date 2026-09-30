@@ -14,6 +14,7 @@ import { CATEGORY_COL_WIDTH, MONTH_COL_WIDTH, SUMMARY_COL_WIDTH, TABLE_WIDTH } f
 import { UNGROUPED } from "@/lib/group-colors";
 import type { GridCategory, IncomeSourceRow } from "@/lib/db/queries";
 import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 /** The expense table, the monthly summary bubble, and the income
  * table are three separate horizontally-scrollable regions sharing the same
@@ -65,6 +66,7 @@ export function DesktopGridTables({
   const summaryRef = useRef<HTMLDivElement>(null);
   const incomeRef = useRef<HTMLDivElement>(null);
   const isSyncingRef = useRef(false);
+  const { currency } = useAppSettings();
   const [expenseMaxHeight, setExpenseMaxHeight] = useState<number>();
 
   function mirrorScroll(source: HTMLDivElement) {
@@ -200,20 +202,20 @@ export function DesktopGridTables({
               <td className="sticky left-0 z-10 bg-secondary px-3 py-2">SUBTOTAL</td>
               {subtotalByMonth.map((value, i) => (
                 <td key={i} className="px-3 py-2 text-right tabular-nums">
-                  {formatPence(value)}
+                  {formatPence(value, currency)}
                 </td>
               ))}
               <td
                 style={{ right: SUMMARY_COL_WIDTH, backgroundColor: floatingPanelFill("--secondary") }}
                 className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
               >
-                {formatPence(yearTotalSubtotal)}
+                {formatPence(yearTotalSubtotal, currency)}
               </td>
               <td
                 style={{ right: 0, backgroundColor: floatingPanelFill("--secondary") }}
                 className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
               >
-                {formatPence(Math.round(yearTotalSubtotal / 12))}
+                {formatPence(Math.round(yearTotalSubtotal / 12), currency)}
               </td>
             </tr>
           </tfoot>

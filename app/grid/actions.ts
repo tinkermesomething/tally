@@ -11,8 +11,10 @@ import {
   deleteIncomeEntry,
   getExpenseEntriesForCell,
   getGridData,
+  getIncomeSource,
   incrementIncomeEntry,
   logExpense as logExpenseQuery,
+  moveCategoryParent as moveCategoryParentQuery,
   renameCategory as renameCategoryQuery,
   setCategoryEntryPaid,
   unarchiveCategory as unarchiveCategoryQuery,
@@ -24,6 +26,7 @@ import {
   upsertIncomeEntry,
 } from "@/lib/db/queries";
 import { addDebtEntry } from "@/lib/db/debt";
+import { recordPayPeriodAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { parseIsoDate } from "@/lib/date";
 
@@ -199,13 +202,42 @@ export async function logIncome(input: {
   incomeSourceId: number;
   pounds: number;
   entryDate: string;
+  /** Required when incomeSourceId is the designated pay anchor (see
+   * lib/db/pay-period.ts) - which budget month this payment counts toward,
+   * independent of its real calendar date (e.g. received Aug 28, counted
+   * as September). Ignored for any non-anchor source, which always derives
+   * its period from entryDate as before. */
+  periodYear?: number;
+  periodMonth?: number;
   debtPersonId?: number;
 }) {
   if (input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
   const amountPence = poundsToPence(input.pounds);
-  const { year, month } = parseIsoDate(input.entryDate);
+  const source = await getIncomeSource(input.incomeSourceId);
+  if (!source) {
+    throw new Error("Income source not found.");
+  }
+
+  let year: number;
+  let month: number;
+  if (source.isPayAnchor) {
+    if (input.periodYear === undefined || input.periodMonth === undefined) {
+      throw new Error("Pick which budget month this pay anchor entry counts toward.");
+    }
+    year = input.periodYear;
+    month = input.periodMonth;
+    await recordPayPeriodAnchor({
+      incomeSourceId: input.incomeSourceId,
+      receivedDate: input.entryDate,
+      year,
+      month,
+    });
+  } else {
+    ({ year, month } = parseIsoDate(input.entryDate));
+  }
+
   await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
   if (input.debtPersonId) {
     await addDebtEntry({
@@ -281,6 +313,24 @@ export async function archiveCategory(categoryId: number) {
   await archiveCategoryQuery(categoryId);
   revalidatePath("/grid");
   revalidatePath("/reports");
+  revalidatePath("/settings");
+}
+
+/** Moves a category to a new parent (or null for top-level) starting this
+ * calendar year - see moveCategoryParent for the year-scoping and leaf-only
+ * validation this wraps. */
+export async function moveCategory(categoryId: number, newParentId: number | null) {
+  await moveCategoryParentQuery(categoryId, newParentId);
+  revalidatePath("/grid");
+  revalidatePath("/reports");
+  revalidatePath("/settings");
+}
+
+/** Marks one income source as the pay anchor (or clears it, with null) -
+ * see setPayAnchorSource for why only one source can hold this at a time. */
+export async function setPayAnchor(incomeSourceId: number | null) {
+  await setPayAnchorSource(incomeSourceId);
+  revalidatePath("/grid");
   revalidatePath("/settings");
 }
 

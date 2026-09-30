@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPence } from "@/lib/money";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 const PIE_INNER_RADIUS = 64;
 const PIE_OUTER_RADIUS = 110;
@@ -34,6 +35,7 @@ export type GroupSlice = {
 };
 
 export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
+  const { currency } = useAppSettings();
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const total = slices.reduce((sum, s) => sum + s.amountPence, 0);
   const selected = slices.find((s) => s.group === openGroup) ?? null;
@@ -73,7 +75,7 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                   <div className="flex w-full items-center justify-between gap-3">
                     <span className="text-muted-foreground">{name}</span>
                     <span className="font-mono font-medium tabular-nums">
-                      {formatPence(Math.round(Number(value) * 100))}
+                      {formatPence(Math.round(Number(value) * 100), currency)}
                     </span>
                   </div>
                 )}
@@ -115,7 +117,7 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                   {pct.toFixed(0)}%
                 </span>
                 <span className="w-24 text-right tabular-nums font-medium">
-                  {formatPence(s.amountPence)}
+                  {formatPence(s.amountPence, currency)}
                 </span>
               </button>
             </li>
@@ -145,7 +147,7 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                     <li key={c.name}>
                       <div className="flex items-center justify-between gap-3 py-1">
                         <span className="font-medium uppercase">{c.name}</span>
-                        <span className="tabular-nums">{formatPence(c.amountPence)}</span>
+                        <span className="tabular-nums">{formatPence(c.amountPence, currency)}</span>
                       </div>
                       {c.children.length > 0 && (
                         <ul className="ml-3 space-y-0.5 border-l border-border pl-3">
@@ -155,7 +157,7 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                               className="flex items-center justify-between gap-3 py-0.5 text-muted-foreground"
                             >
                               <span className="uppercase">{child.name}</span>
-                              <span className="tabular-nums">{formatPence(child.amountPence)}</span>
+                              <span className="tabular-nums">{formatPence(child.amountPence, currency)}</span>
                             </li>
                           ))}
                         </ul>

@@ -1,10 +1,11 @@
 import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "./index";
-import { parseIsoDate } from "../date";
+import { resolvePeriodForDate } from "./pay-period";
 import {
   categories,
   categoryEntries,
+  categoryParentMoves,
   expenseEntries,
   incomeEntries,
   incomeSources,
@@ -44,6 +45,7 @@ export type GridCategory = {
 export type IncomeSourceRow = {
   id: number;
   name: string;
+  isPayAnchor: boolean;
   months: Record<number, MonthCell>;
   yearTotalPence: number;
   monthlyAveragePence: number;
@@ -199,6 +201,98 @@ function summarize(months: Record<number, MonthCell>) {
   };
 }
 
+export type ParentMove = { id: number; categoryId: number; parentId: number | null; effectiveYear: number };
+
+/** For each category, resolves its effective parent for a given year: the
+ * parentId of its most recent move with effectiveYear <= year, or its
+ * original (creation-time) parentId if no qualifying move exists - the
+ * same year-relative principle as archivedAt, generalized to handle a
+ * category moving more than once. Pure function, no DB access, so it's
+ * cheap to unit test against a plain list of moves. */
+export function resolveEffectiveParents(
+  cats: { id: number; parentId: number | null }[],
+  moves: ParentMove[],
+  year: number
+): Map<number, number | null> {
+  const movesByCategory = new Map<number, ParentMove[]>();
+  for (const m of moves) {
+    const list = movesByCategory.get(m.categoryId) ?? [];
+    list.push(m);
+    movesByCategory.set(m.categoryId, list);
+  }
+  const result = new Map<number, number | null>();
+  for (const c of cats) {
+    const qualifying = (movesByCategory.get(c.id) ?? [])
+      .filter((m) => m.effectiveYear <= year)
+      // Most recent effectiveYear wins; ties (more than one move within
+      // the same year - the common case, since a move always takes effect
+      // "this year") break on id, so the most recently made move wins
+      // rather than whichever happened to come first in an untied sort.
+      .sort((a, b) => b.effectiveYear - a.effectiveYear || b.id - a.id);
+    result.set(c.id, qualifying.length > 0 ? qualifying[0].parentId : c.parentId);
+  }
+  return result;
+}
+
+/** The only correct way to read a resolveEffectiveParents() result. Plain
+ * `effectiveParents.get(id) ?? category.parentId` is a real bug: `??`
+ * can't tell "no entry for this id" apart from "entry is null" - and a
+ * resolved effective parent of null (genuinely top-level) is one of the
+ * most common, valid results this map produces. That pattern silently
+ * discarded every "moved to top-level" resolution, falling back to the
+ * category's stale original parentId instead. */
+function effectiveParentOf(
+  effectiveParents: Map<number, number | null>,
+  category: { id: number; parentId: number | null }
+): number | null {
+  return effectiveParents.has(category.id) ? (effectiveParents.get(category.id) ?? null) : category.parentId;
+}
+
+async function getEffectiveParentMap(year: number): Promise<Map<number, number | null>> {
+  const cats = await db.select({ id: categories.id, parentId: categories.parentId }).from(categories);
+  const moves = await db.select().from(categoryParentMoves);
+  return resolveEffectiveParents(cats, moves, year);
+}
+
+/** Moves a category to a new parent (or to top-level, if newParentId is
+ * null) starting this calendar year - past years keep showing it under
+ * its old grouping, so moving something today never rewrites what a past
+ * year's rollup said. Only a genuine leaf category can move: this app's
+ * rollup logic is strictly two levels deep, so a category currently acting
+ * as someone else's parent can't also become a child, and a category can
+ * only be nested under a genuine top-level category, never under another
+ * child (which would make three levels). */
+export async function moveCategoryParent(categoryId: number, newParentId: number | null) {
+  if (newParentId === categoryId) {
+    throw new Error("A category can't be its own parent.");
+  }
+  const category = await db.query.categories.findFirst({ where: eq(categories.id, categoryId) });
+  if (!category) throw new Error("Category not found.");
+
+  const currentYear = new Date().getFullYear();
+  const effectiveParents = await getEffectiveParentMap(currentYear);
+
+  const hasChildrenNow = Array.from(effectiveParents.values()).some((p) => p === categoryId);
+  if (hasChildrenNow) {
+    throw new Error("Can't move a category that currently has its own subcategories.");
+  }
+
+  if (newParentId !== null) {
+    const newParent = await db.query.categories.findFirst({ where: eq(categories.id, newParentId) });
+    if (!newParent) throw new Error("Target category not found.");
+    const targetEffectiveParent = effectiveParentOf(effectiveParents, newParent);
+    if (targetEffectiveParent !== null) {
+      throw new Error("Can't nest under a subcategory - only top-level categories can have children.");
+    }
+  }
+
+  await db.insert(categoryParentMoves).values({
+    categoryId,
+    parentId: newParentId,
+    effectiveYear: currentYear,
+  });
+}
+
 export async function getGridData(year: number): Promise<GridData> {
   // A category archived sometime in year X disappears starting year X (this
   // is when you noticed it stopped applying) but stays visible/counted for
@@ -262,13 +356,17 @@ export async function getGridData(year: number): Promise<GridData> {
     wagesByMonth[entry.month - 1] += entry.amountPence;
   }
 
-  const topLevel = cats.filter((c) => c.parentId === null);
+  const parentMoves = await db.select().from(categoryParentMoves);
+  const effectiveParents = resolveEffectiveParents(cats, parentMoves, year);
+
+  const topLevel = cats.filter((c) => effectiveParentOf(effectiveParents, c) === null);
   const childrenByParent = new Map<number, RawCategory[]>();
   for (const c of cats) {
-    if (c.parentId === null) continue;
-    const list = childrenByParent.get(c.parentId) ?? [];
+    const effectiveParentId = effectiveParentOf(effectiveParents, c);
+    if (effectiveParentId === null) continue;
+    const list = childrenByParent.get(effectiveParentId) ?? [];
     list.push(c);
-    childrenByParent.set(c.parentId, list);
+    childrenByParent.set(effectiveParentId, list);
   }
 
   const gridCategories: GridCategory[] = topLevel.map((category) => {
@@ -379,6 +477,7 @@ export async function getGridData(year: number): Promise<GridData> {
     return {
       id: source.id,
       name: source.name,
+      isPayAnchor: source.isPayAnchor,
       months,
       ...summarize(months),
     };
@@ -443,21 +542,28 @@ export type CategoryTreeNode = {
 };
 
 /** Lightweight structural view of categories (no months/amounts) for the
- * Settings page - just the tree shape, for rename/regroup/archive. */
+ * Settings page - just the tree shape, for rename/regroup/archive/move.
+ * Uses the current calendar year's effective grouping (Settings manages
+ * the live app, not a historical view) - see resolveEffectiveParents. */
 export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
+  const currentYear = new Date().getFullYear();
   const cats = await db.query.categories.findMany({
     where: isNull(categories.archivedAt),
     orderBy: (c, { asc }) => [asc(c.sortOrder)],
   });
+  const moves = await db.select().from(categoryParentMoves);
+  const effectiveParents = resolveEffectiveParents(cats, moves, currentYear);
+
   const childrenByParent = new Map<number, typeof cats>();
   for (const c of cats) {
-    if (c.parentId === null) continue;
-    const list = childrenByParent.get(c.parentId) ?? [];
+    const effectiveParentId = effectiveParentOf(effectiveParents, c);
+    if (effectiveParentId === null) continue;
+    const list = childrenByParent.get(effectiveParentId) ?? [];
     list.push(c);
-    childrenByParent.set(c.parentId, list);
+    childrenByParent.set(effectiveParentId, list);
   }
   return cats
-    .filter((c) => c.parentId === null)
+    .filter((c) => effectiveParentOf(effectiveParents, c) === null)
     .map((c) => ({
       id: c.id,
       name: c.name,
@@ -580,7 +686,7 @@ export async function logExpense(input: {
    * traceability; the actual ledger effect is a separate row. */
   debtPersonId?: number;
 }) {
-  const { year, month } = parseIsoDate(input.entryDate);
+  const { year, month } = await resolvePeriodForDate(input.entryDate);
   await db.insert(expenseEntries).values({
     categoryId: input.categoryId,
     year,
@@ -685,7 +791,7 @@ export async function updateExpenseEntry(
   if (input.note !== undefined) set.note = input.note;
   if (input.entryDate !== undefined) {
     set.entryDate = input.entryDate;
-    const { year, month } = parseIsoDate(input.entryDate);
+    const { year, month } = await resolvePeriodForDate(input.entryDate);
     set.year = year;
     set.month = month;
   }
@@ -816,6 +922,10 @@ export async function archiveIncomeSource(id: number) {
   await db.update(incomeSources).set({ archivedAt: new Date() }).where(eq(incomeSources.id, id));
 }
 
+export async function getIncomeSource(id: number) {
+  return db.query.incomeSources.findFirst({ where: eq(incomeSources.id, id) });
+}
+
 export async function unarchiveIncomeSource(id: number) {
   await db.update(incomeSources).set({ archivedAt: null }).where(eq(incomeSources.id, id));
 }
@@ -834,6 +944,13 @@ export async function getArchivedIncomeSources() {
 export async function archiveCategory(id: number) {
   const now = new Date();
   await db.update(categories).set({ archivedAt: now }).where(eq(categories.id, id));
+  // Cascades by original parentId, not effective (moved-to) parent - a
+  // category moved under `id` via moveCategoryParent has its own, unrelated
+  // parentId column and won't be swept up here. Rare in practice (you'd
+  // have to move a child under a parent, then archive that exact parent),
+  // and the child just becomes orphaned-but-visible under its original
+  // parent for future years rather than silently vanishing, so it's a
+  // known gap rather than a silent-data-loss risk.
   await db.update(categories).set({ archivedAt: now }).where(eq(categories.parentId, id));
 }
 
@@ -850,7 +967,9 @@ export async function getArchivedCategories() {
 }
 
 /** Lightweight active income source list (no months/amounts) for Settings. */
-export async function getIncomeSourceList(): Promise<{ id: number; name: string }[]> {
+export async function getIncomeSourceList(): Promise<
+  { id: number; name: string; isPayAnchor: boolean }[]
+> {
   return db.query.incomeSources.findMany({
     where: (s, { isNull }) => isNull(s.archivedAt),
     orderBy: (s, { asc }) => [asc(s.sortOrder)],

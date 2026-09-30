@@ -4,23 +4,28 @@ import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { editExpenseEntry, removeExpenseEntry } from "@/app/grid/actions";
 import { formatPence } from "@/lib/money";
+import { formatDate } from "@/lib/date-format";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { ExpenseEntryRow } from "@/lib/db/queries";
 
 export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
+  const { currency, dateFormat } = useAppSettings();
   const [rows, setRows] = useState(entries);
   const [, startTransition] = useTransition();
 
-  /** Returns whether the edit was accepted, so the input can be snapped back
-   * to its last known-good value on invalid input instead of silently
-   * keeping whatever bad text the user typed. */
-  function commitAmount(id: number, raw: string): boolean {
+  /** Returns the canonical "10.00"-formatted value to redisplay on a valid
+   * edit, or null on invalid input - the input is uncontrolled (defaultValue
+   * only applies once, at mount), so without this the box would keep
+   * showing whatever raw text was typed ("10") forever instead of settling
+   * on the formatted amount. Null tells the caller to revert instead. */
+  function commitAmount(id: number, raw: string): string | null {
     const pounds = parseFloat(raw);
-    if (Number.isNaN(pounds) || pounds <= 0) return false;
+    if (Number.isNaN(pounds) || pounds <= 0) return null;
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, amountPence: Math.round(pounds * 100) } : r)));
     startTransition(async () => {
       await editExpenseEntry(id, { pounds });
     });
-    return true;
+    return pounds.toFixed(2);
   }
 
   function commitNote(id: number, note: string) {
@@ -60,16 +65,14 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
         <tbody>
           {rows.map((entry) => (
             <tr key={entry.id} className="border-t border-border">
-              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{entry.entryDate}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(entry.entryDate, dateFormat)}</td>
               <td className="px-3 py-2 font-medium">{entry.categoryName}</td>
               <td className="px-3 py-2 text-right">
                 <input
                   defaultValue={(entry.amountPence / 100).toFixed(2)}
                   inputMode="decimal"
                   onBlur={(e) => {
-                    if (!commitAmount(entry.id, e.target.value)) {
-                      e.target.value = (entry.amountPence / 100).toFixed(2);
-                    }
+                    e.target.value = commitAmount(entry.id, e.target.value) ?? (entry.amountPence / 100).toFixed(2);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
@@ -109,7 +112,7 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
               Total
             </td>
             <td className="px-3 py-2 text-right tabular-nums">
-              {formatPence(rows.reduce((sum, r) => sum + r.amountPence, 0))}
+              {formatPence(rows.reduce((sum, r) => sum + r.amountPence, 0), currency)}
             </td>
             <td colSpan={2} />
           </tr>

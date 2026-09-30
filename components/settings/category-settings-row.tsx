@@ -7,6 +7,7 @@ import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { EditableDueDay } from "@/components/grid/editable-due-day";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
+import { MoveCategoryButton } from "@/components/settings/move-category-button";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
 import type { CategoryTreeNode } from "@/lib/db/queries";
 
@@ -14,10 +15,14 @@ export function CategorySettingsRow({
   category,
   color,
   existingGroups,
+  topLevelCategories,
 }: {
   category: CategoryTreeNode;
   color: string;
   existingGroups: string[];
+  /** Every top-level category (including this one) - used to populate the
+   * "move to" target list for this row and its children. */
+  topLevelCategories: { id: number; name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -36,6 +41,13 @@ export function CategorySettingsRow({
           existingGroups={existingGroups}
         />
         <EditableDueDay categoryId={category.id} dueDay={category.dueDay} />
+        {category.children.length === 0 && (
+          <MoveCategoryButton
+            categoryId={category.id}
+            currentParentId={null}
+            topLevelCategories={topLevelCategories}
+          />
+        )}
         <AddSubcategoryDialog parentId={category.id} parentName={category.name} />
         <Button
           size="icon-xs"
@@ -59,6 +71,11 @@ export function CategorySettingsRow({
                 onCommit={(next) => renameCategory(child.id, next)}
               />
               <EditableDueDay categoryId={child.id} dueDay={child.dueDay} />
+              <MoveCategoryButton
+                categoryId={child.id}
+                currentParentId={category.id}
+                topLevelCategories={topLevelCategories}
+              />
               <Button
                 size="icon-xs"
                 variant="ghost"

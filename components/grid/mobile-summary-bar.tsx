@@ -6,24 +6,26 @@ export function MobileSummaryBar({
   wages,
   available,
   leftToSpend,
+  currency,
 }: {
   planned: number;
   wages: number;
   available: number;
   leftToSpend: number;
+  currency: string;
 }) {
   return (
     <div className="sticky bottom-0 z-20 -mx-4 mt-2 grid grid-cols-4 gap-px border-t border-border bg-border px-4 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
-      <SummaryCell label="Budgeted" value={formatPence(planned)} />
-      <SummaryCell label="Income" value={formatPence(wages)} />
+      <SummaryCell label="Budgeted" value={formatPence(planned, currency)} />
+      <SummaryCell label="Income" value={formatPence(wages, currency)} />
       <SummaryCell
         label="Available"
-        value={formatPence(available)}
+        value={formatPence(available, currency)}
         tone={available < 0 ? "critical" : "good"}
       />
       <SummaryCell
         label="Left to spend"
-        value={formatPence(leftToSpend)}
+        value={formatPence(leftToSpend, currency)}
         tone={leftToSpend < 0 ? "critical" : "good"}
       />
     </div>

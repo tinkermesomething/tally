@@ -1,6 +1,7 @@
 import { Wallet, Banknote, PiggyBank, ReceiptText } from "lucide-react";
 import { getAvailableYears, getGridData } from "@/lib/db/queries";
 import { getPeopleWithBalances } from "@/lib/db/debt";
+import { getAppSettings } from "@/lib/db/settings";
 import { formatPence } from "@/lib/money";
 import { StatCard } from "@/components/grid/stat-card";
 import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
@@ -21,10 +22,11 @@ export default async function GridPage({
 }) {
   const { year: yearParam, month: monthParam } = await searchParams;
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-  const [data, years, people] = await Promise.all([
+  const [data, years, people, { currency }] = await Promise.all([
     getGridData(year),
     getAvailableYears(),
     getPeopleWithBalances(),
+    getAppSettings(),
   ]);
   const groupColors = buildGroupColorMap(data.categories);
   const groupColorsObj = Object.fromEntries(groupColors);
@@ -63,24 +65,28 @@ export default async function GridPage({
             people={people.map((p) => ({ id: p.id, name: p.name }))}
           />
           <AddIncomeDialog
-            incomeSources={data.incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+            incomeSources={data.incomeSources.map((s) => ({
+              id: s.id,
+              name: s.name,
+              isPayAnchor: s.isPayAnchor,
+            }))}
             people={people.map((p) => ({ id: p.id, name: p.name }))}
           />
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <StatCard label={`Budgeted (${monthLabel})`} value={formatPence(plannedNow)} icon={ReceiptText} tone="neutral" />
-        <StatCard label={`Income (${monthLabel})`} value={formatPence(wagesNow)} icon={Banknote} tone="neutral" />
+        <StatCard label={`Budgeted (${monthLabel})`} value={formatPence(plannedNow, currency)} icon={ReceiptText} tone="neutral" />
+        <StatCard label={`Income (${monthLabel})`} value={formatPence(wagesNow, currency)} icon={Banknote} tone="neutral" />
         <StatCard
           label="Available"
-          value={formatPence(availableNow)}
+          value={formatPence(availableNow, currency)}
           icon={PiggyBank}
           tone={availableNow < 0 ? "critical" : "good"}
         />
         <StatCard
           label="Left to spend"
-          value={formatPence(leftToSpendNow)}
+          value={formatPence(leftToSpendNow, currency)}
           icon={Wallet}
           tone={leftToSpendNow < 0 ? "critical" : "good"}
         />
@@ -142,6 +148,7 @@ export default async function GridPage({
           wages={data.wagesByMonth[selectedMonthIndex]}
           available={data.availableByMonth[selectedMonthIndex]}
           leftToSpend={data.leftToSpendByMonth[selectedMonthIndex]}
+          currency={currency}
         />
       </div>
     </div>

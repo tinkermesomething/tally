@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getPersonLedger } from "@/lib/db/debt";
 import { getCategoryTree, getIncomeSourceList } from "@/lib/db/queries";
+import { getAppSettings } from "@/lib/db/settings";
 import { formatPence } from "@/lib/money";
 import { AddEntryDialog } from "@/components/debt/add-entry-dialog";
 import { LedgerTable } from "@/components/debt/ledger-table";
@@ -15,10 +16,11 @@ export default async function PersonLedgerPage({
 }) {
   const { personId } = await params;
   const id = parseInt(personId, 10);
-  const [{ person, entries, balancePence }, incomeSources, categoryTree] = await Promise.all([
+  const [{ person, entries, balancePence }, incomeSources, categoryTree, { currency }] = await Promise.all([
     getPersonLedger(id),
     getIncomeSourceList(),
     getCategoryTree(),
+    getAppSettings(),
   ]);
 
   if (!person) notFound();
@@ -51,8 +53,8 @@ export default async function PersonLedgerPage({
               )}
             >
               {balancePence > 0
-                ? `You owe ${formatPence(balancePence)}`
-                : `Owed to you ${formatPence(-balancePence)}`}
+                ? `You owe ${formatPence(balancePence, currency)}`
+                : `Owed to you ${formatPence(-balancePence, currency)}`}
             </p>
           )}
         </div>

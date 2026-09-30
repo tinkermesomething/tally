@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Users, Scale } from "lucide-react";
 import { getPeopleWithBalances } from "@/lib/db/debt";
+import { getAppSettings } from "@/lib/db/settings";
 import { formatPence } from "@/lib/money";
 import { AddPersonDialog } from "@/components/debt/add-person-dialog";
 import { StatCard } from "@/components/grid/stat-card";
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function DebtPage() {
-  const people = await getPeopleWithBalances();
+  const [people, { currency }] = await Promise.all([getPeopleWithBalances(), getAppSettings()]);
   const netBalancePence = people.reduce((sum, p) => sum + p.balancePence, 0);
 
   return (
@@ -24,7 +25,7 @@ export default async function DebtPage() {
       {people.length > 0 && netBalancePence !== 0 && (
         <StatCard
           label={netBalancePence > 0 ? "Net: you owe" : "Net: owed to you"}
-          value={formatPence(Math.abs(netBalancePence))}
+          value={formatPence(Math.abs(netBalancePence), currency)}
           icon={Scale}
           tone={netBalancePence > 0 ? "critical" : "good"}
         />
@@ -54,8 +55,8 @@ export default async function DebtPage() {
                   )}
                 >
                   {person.balancePence > 0
-                    ? `You owe ${formatPence(person.balancePence)}`
-                    : `Owed to you ${formatPence(-person.balancePence)}`}
+                    ? `You owe ${formatPence(person.balancePence, currency)}`
+                    : `Owed to you ${formatPence(-person.balancePence, currency)}`}
                 </span>
               )}
               <span className="text-xs text-muted-foreground">

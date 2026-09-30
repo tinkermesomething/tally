@@ -4,6 +4,7 @@ import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import { ScrollFade } from "@/components/scroll-fade";
 import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 type SummaryRow = {
   label: string;
@@ -54,6 +55,7 @@ export function MonthlySummaryTable({
   containerRef?: React.RefObject<HTMLDivElement | null>;
   onScroll?: (el: HTMLDivElement) => void;
 }) {
+  const { currency } = useAppSettings();
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
 
   const rows: SummaryRow[] = [
@@ -132,20 +134,20 @@ export function MonthlySummaryTable({
                     row.signed && (value < 0 ? "text-status-critical" : "text-status-good")
                   )}
                 >
-                  {formatPence(value)}
+                  {formatPence(value, currency)}
                 </td>
               ))}
               <td
                 style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
                 className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
               >
-                {formatPence(row.total)}
+                {formatPence(row.total, currency)}
               </td>
               <td
                 style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
                 className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
               >
-                {row.showAverage ? formatPence(Math.round(row.total / 12)) : "—"}
+                {row.showAverage ? formatPence(Math.round(row.total / 12), currency) : "—"}
               </td>
             </tr>
           ))}

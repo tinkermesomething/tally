@@ -18,6 +18,7 @@ import {
   confirmPayment,
 } from "@/app/grid/actions";
 import { MONTH_ABBREVIATIONS as MONTH_NAMES, MONTH_NUMBERS } from "@/lib/months";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 function AnnualBadge({ annualMonth }: { annualMonth: number | null }) {
   return (
@@ -44,6 +45,7 @@ function ComputedCell({
   spentPence: number;
   overdue: boolean;
 }) {
+  const { currency } = useAppSettings();
   return (
     <div className="flex flex-col items-end gap-0.5 px-1.5 py-1">
       <div className="flex items-center gap-1">
@@ -53,11 +55,11 @@ function ComputedCell({
           </span>
         )}
         <span className="text-[0.925rem] tabular-nums text-foreground">
-          {amountPence !== undefined ? formatPence(amountPence) : "—"}
+          {amountPence !== undefined ? formatPence(amountPence, currency) : "—"}
         </span>
       </div>
       {spentPence > 0 && (
-        <span className="text-xs tabular-nums text-primary">Paid {formatPence(spentPence)}</span>
+        <span className="text-xs tabular-nums text-primary">Paid {formatPence(spentPence, currency)}</span>
       )}
     </div>
   );
@@ -139,6 +141,7 @@ export function CategoryRow({
   groupColor: string;
   existingGroups: string[];
 }) {
+  const { currency } = useAppSettings();
   const [expanded, setExpanded] = useState(false);
   const hasChildren = category.children.length > 0;
 
@@ -190,13 +193,13 @@ export function CategoryRow({
           style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
           className={cn("sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
         >
-          {formatPence(category.yearTotalPence)}
+          {formatPence(category.yearTotalPence, currency)}
         </td>
         <td
           style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
           className="sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
         >
-          {formatPence(category.monthlyAveragePence)}
+          {formatPence(category.monthlyAveragePence, currency)}
         </td>
       </tr>
       {expanded &&
@@ -210,13 +213,13 @@ export function CategoryRow({
                 FLOATING_PANEL_EDGE
               )}
             >
-              {formatPence(child.yearTotalPence)}
+              {formatPence(child.yearTotalPence, currency)}
             </td>
             <td
               style={{ right: 0, backgroundColor: floatingPanelFill("--muted") }}
               className="sticky z-10 px-3 py-1.5 text-right font-bold text-muted-foreground tabular-nums"
             >
-              {formatPence(child.monthlyAveragePence)}
+              {formatPence(child.monthlyAveragePence, currency)}
             </td>
           </tr>
         ))}

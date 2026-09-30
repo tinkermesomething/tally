@@ -7,6 +7,7 @@ import { CategoryPieChart, type GroupSlice } from "@/components/reports/category
 import { ReportPanelDialog } from "@/components/reports/report-panel-dialog";
 import { deleteReportPanel } from "@/app/reports/actions";
 import { formatPence } from "@/lib/money";
+import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { ReportPanel } from "@/lib/db/queries";
 
 export function ReportPanelCard({
@@ -20,6 +21,7 @@ export function ReportPanelCard({
   existingGroups: string[];
   categories: { id: number; name: string }[];
 }) {
+  const { currency } = useAppSettings();
   const [pending, startTransition] = useTransition();
   const total = slices.reduce((sum, s) => sum + s.amountPence, 0);
 
@@ -28,7 +30,7 @@ export function ReportPanelCard({
       <div className="mb-2 flex items-center justify-between">
         <div>
           <h2 className="font-medium">{panel.name}</h2>
-          <p className="text-sm text-muted-foreground">Where {formatPence(total)} is allocated.</p>
+          <p className="text-sm text-muted-foreground">Where {formatPence(total, currency)} is allocated.</p>
         </div>
         <div className="flex items-center gap-1">
           <ReportPanelDialog

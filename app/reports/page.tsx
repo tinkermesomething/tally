@@ -1,4 +1,5 @@
 import { getAvailableYears, getGridData, getReportPanels, MAX_REPORT_PANELS, type ReportPanel } from "@/lib/db/queries";
+import { getAppSettings } from "@/lib/db/settings";
 import { formatPence } from "@/lib/money";
 import { MonthSelect } from "@/components/reports/month-select";
 import { YearSwitcher } from "@/components/grid/year-switcher";
@@ -19,7 +20,12 @@ export default async function ReportsPage({
   const { year: yearParam, month: monthParam } = await searchParams;
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
   const month = monthParam ?? "all";
-  const [data, panels, years] = await Promise.all([getGridData(year), getReportPanels(), getAvailableYears()]);
+  const [data, panels, years, { currency }] = await Promise.all([
+    getGridData(year),
+    getReportPanels(),
+    getAvailableYears(),
+    getAppSettings(),
+  ]);
 
   // Stable group -> color assignment, derived from the full category list
   // (not the filtered view), shared with the /grid tags so a group is
@@ -134,7 +140,7 @@ export default async function ReportsPage({
 
       <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <p className="mb-2 text-sm text-muted-foreground">
-          Where {formatPence(total)} is allocated, by broad category.
+          Where {formatPence(total, currency)} is allocated, by broad category.
         </p>
         <CategoryPieChart slices={slices} />
       </div>
