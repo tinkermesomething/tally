@@ -14,3 +14,15 @@ export function floatingPanelFill(baseVar: string) {
   return `color-mix(in oklab, var(--primary) 7%, var(${baseVar}))`
 }
 
+// A budget cell's amount text: neutral until something's actually been
+// spent against it (nothing to judge yet), green once spending is at or
+// under plan, red once it's over - only meaningful when there's a real
+// planned figure to compare against.
+export function budgetValueColorClass(
+  amountPence: number | undefined,
+  spentPence: number
+): string {
+  if (spentPence === 0 || amountPence === undefined) return "text-foreground"
+  return spentPence <= amountPence ? "text-status-good" : "text-status-critical"
+}
+

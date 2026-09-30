@@ -2,6 +2,7 @@ import { Wallet, Banknote, PiggyBank, ReceiptText } from "lucide-react";
 import { getAvailableYears, getGridData } from "@/lib/db/queries";
 import { getPeopleWithBalances } from "@/lib/db/debt";
 import { getAppSettings } from "@/lib/db/settings";
+import { resolvePeriodForDate } from "@/lib/db/pay-period";
 import { formatPence } from "@/lib/money";
 import { StatCard } from "@/components/grid/stat-card";
 import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
@@ -21,7 +22,16 @@ export default async function GridPage({
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
   const { year: yearParam, month: monthParam } = await searchParams;
-  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+  // "Now" is whatever budget period today's date resolves to through the
+  // pay anchor (see lib/db/pay-period.ts) - not just the raw calendar
+  // year/month. Once you log a pay-anchor entry that shifts the boundary
+  // (e.g. October's wages received Sept 30, or a Dec 30 entry anchored
+  // into next January), the default year and the stat cards both need to
+  // follow that shift the same way every other logged entry already does,
+  // or they'd keep showing the outgoing period after you've functionally
+  // moved into the next one.
+  const nowPeriod = await resolvePeriodForDate(new Date().toISOString().slice(0, 10));
+  const year = yearParam ? parseInt(yearParam, 10) : nowPeriod.year;
   const [data, years, people, { currency }] = await Promise.all([
     getGridData(year),
     getAvailableYears(),
@@ -34,8 +44,7 @@ export default async function GridPage({
     new Set(data.categories.map((c) => c.groupName).filter((g): g is string => !!g))
   );
 
-  const now = new Date();
-  const currentMonthIndex = now.getFullYear() === year ? now.getMonth() : 0;
+  const currentMonthIndex = nowPeriod.year === year ? nowPeriod.month - 1 : 0;
   const monthLabel = MONTHS[currentMonthIndex];
   const plannedNow = data.plannedByMonth[currentMonthIndex];
   const wagesNow = data.wagesByMonth[currentMonthIndex];

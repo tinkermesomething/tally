@@ -7,7 +7,7 @@ import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { formatPence } from "@/lib/money";
-import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
+import { cn, FLOATING_PANEL_EDGE, floatingPanelFill, budgetValueColorClass } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
 import {
   renameCategory,
@@ -54,7 +54,7 @@ function ComputedCell({
             <AlertCircle className="size-3.5 shrink-0 text-status-critical" aria-label="Overdue" />
           </span>
         )}
-        <span className="text-[0.925rem] tabular-nums text-foreground">
+        <span className={cn("text-[0.925rem] tabular-nums", budgetValueColorClass(amountPence, spentPence))}>
           {amountPence !== undefined ? formatPence(amountPence, currency) : "—"}
         </span>
       </div>

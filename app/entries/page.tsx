@@ -1,4 +1,5 @@
 import { getAvailableYears, getExpenseEntriesForMonth } from "@/lib/db/queries";
+import { resolvePeriodForDate } from "@/lib/db/pay-period";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthSelect } from "@/components/reports/month-select";
 import { EntriesTable } from "@/components/entries/entries-table";
@@ -10,10 +11,16 @@ export default async function EntriesPage({
 }) {
   const { year: yearParam, month: monthParam } = await searchParams;
   const now = new Date();
-  const year = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
   // Unlike Reports (defaults to "all"), this defaults to the current month -
-  // a ledger of logged expenses is naturally read a month at a time.
-  const month = monthParam ?? String(now.getMonth() + 1);
+  // a ledger of logged expenses is naturally read a month at a time. "Current"
+  // follows the pay anchor (lib/db/pay-period.ts), same as /grid's stat
+  // cards - not just the raw calendar month/year, or this would default to
+  // the outgoing period right after logging an anchor entry that moves you
+  // into the next one (including across a year boundary, e.g. a Dec 30
+  // entry anchored to next January).
+  const nowPeriod = await resolvePeriodForDate(now.toISOString().slice(0, 10));
+  const year = yearParam ? parseInt(yearParam, 10) : nowPeriod.year;
+  const month = monthParam ?? String(nowPeriod.month);
 
   const [entries, years] = await Promise.all([
     getExpenseEntriesForMonth(year, month === "all" ? undefined : parseInt(month, 10)),

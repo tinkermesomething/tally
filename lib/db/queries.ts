@@ -413,16 +413,26 @@ export async function getGridData(year: number): Promise<GridData> {
         regularChildCats.length > 0 &&
         regularChildCellsThisMonth.length === regularChildCats.length;
 
+      // "Actually spent" is a live, partial, always-growing number (see the
+      // GridData comment on actuallySpentByMonth) - unlike the planned
+      // total, it must never be gated on every sibling having an entry.
+      // Hiding real, already-logged spending because one untouched sibling
+      // (e.g. a pay-as-you-go subscription nobody's topped up yet this
+      // month) has nothing yet is actively misleading, not conservative -
+      // it makes "Left to spend" overstate how much money is really still
+      // free. Sum whatever's genuinely there, across every child
+      // (annual or not), with no gate at all.
+      const anyChildCellsThisMonth = children
+        .map((c) => c.months[month])
+        .filter((cell): cell is MonthCell => cell !== undefined);
+      const spentPence = anyChildCellsThisMonth.reduce((sum, c) => sum + c.spentPence, 0);
+
       if (allRegularChildrenHaveEntries) {
-        const allChildCellsThisMonth = children
+        const plannedCells = children
           .map((c) => c.months[month])
           .filter((cell): cell is MonthCell => cell?.amountPence !== undefined);
-        const amountPence = allChildCellsThisMonth.reduce(
+        const amountPence = plannedCells.reduce(
           (sum, c) => sum + (c.amountPence ?? 0),
-          0
-        );
-        const spentPence = allChildCellsThisMonth.reduce(
-          (sum, c) => sum + c.spentPence,
           0
         );
         // A child with nothing actually charged or planned this month has
@@ -430,11 +440,21 @@ export async function getGridData(year: number): Promise<GridData> {
         // whole parent just because nobody explicitly ticked it (e.g. a
         // pay-as-you-go subscription untouched this month). Only children
         // that actually carry money have to be confirmed paid.
-        const paid = allChildCellsThisMonth.every(
+        const paid = plannedCells.every(
           (c) => c.paid || effectiveAmountPence(c) === 0
         );
-        const overdue = allChildCellsThisMonth.some((c) => c.overdue);
+        const overdue = plannedCells.some((c) => c.overdue);
         months[month] = { amountPence, paid, spentPence, computed: true, overdue };
+      } else if (anyChildCellsThisMonth.some((c) => c.spentPence > 0)) {
+        // No complete plan for the month yet, but real money has genuinely
+        // been spent on at least one child - still surface that spending
+        // (amountPence stays undefined, since there's no trustworthy
+        // planned figure to show alongside it).
+        const paid = anyChildCellsThisMonth.every(
+          (c) => c.paid || effectiveAmountPence(c) === 0
+        );
+        const overdue = anyChildCellsThisMonth.some((c) => c.overdue);
+        months[month] = { amountPence: undefined, paid, spentPence, computed: true, overdue };
       } else if (directMonths[month]) {
         months[month] = directMonths[month];
       }

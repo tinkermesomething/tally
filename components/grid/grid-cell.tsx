@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Undo2, AlertCircle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, budgetValueColorClass } from "@/lib/utils";
 import { formatPence, getCurrencySymbol } from "@/lib/money";
 import { ExpenseEntriesPopover } from "@/components/grid/expense-entries-popover";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -129,7 +129,8 @@ export function GridCell({
           }}
           placeholder="—"
           className={cn(
-            "w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-[0.925rem] tabular-nums text-foreground transition-colors",
+            "w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-right text-[0.925rem] tabular-nums transition-colors",
+            budgetValueColorClass(amountPence, spentPence),
             "hover:border-input focus:border-input focus:bg-card focus:outline-none",
             paid && amountPence !== undefined && "line-through decoration-muted-foreground/70",
             pending && "opacity-60"

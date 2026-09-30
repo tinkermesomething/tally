@@ -7,7 +7,15 @@ export function Footer() {
 
   return (
     <footer className="mx-auto max-w-6xl px-4 py-6 text-center text-xs text-muted-foreground">
-      Tally · v{version}
+      Tally · v{version} ·{" "}
+      <a
+        href="https://github.com/tinkermesomething/tally"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline-offset-2 hover:text-foreground hover:underline"
+      >
+        GitHub
+      </a>
     </footer>
   );
 }
