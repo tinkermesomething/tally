@@ -8,6 +8,7 @@ import {
   expenseEntries,
   importedTransactions,
 } from "./schema";
+import { getAccountTransactions, toRawImportedTransaction } from "../gocardless";
 
 // ---- Bank accounts ----
 
@@ -74,6 +75,34 @@ export async function archiveBankAccount(id: number) {
 
 export async function markBankAccountSynced(id: number) {
   await db.update(bankAccounts).set({ lastSyncedAt: new Date() }).where(eq(bankAccounts.id, id));
+}
+
+/** The actual fetch-from-GoCardless-and-stage step - everything else in
+ * this file (rules, learned patterns, duplicate suggestion, the review
+ * pool) only does anything once rows actually land via this. Narrows to
+ * transactions booked on/after the account's last sync (full history on
+ * the very first sync, bounded by the agreement's own max_historical_days
+ * regardless) so a re-sync doesn't re-fetch the account's whole lifetime
+ * every time. */
+export async function syncBankAccount(bankAccountId: number): Promise<{ staged: number }> {
+  const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, bankAccountId) });
+  if (!account) throw new Error(`Bank account ${bankAccountId} not found.`);
+
+  const dateFrom = account.lastSyncedAt ? account.lastSyncedAt.toISOString().slice(0, 10) : undefined;
+  const { booked } = await getAccountTransactions(account.externalAccountId, dateFrom);
+  const staged = await stageImportedTransactions(bankAccountId, booked.map(toRawImportedTransaction));
+  await markBankAccountSynced(bankAccountId);
+  return { staged: staged.length };
+}
+
+export async function syncAllBankAccounts(): Promise<{ bankAccountId: number; displayName: string; staged: number }[]> {
+  const accounts = await getBankAccounts();
+  const results = [];
+  for (const account of accounts) {
+    const { staged } = await syncBankAccount(account.id);
+    results.push({ bankAccountId: account.id, displayName: account.displayName, staged });
+  }
+  return results;
 }
 
 // ---- Rules engine (explicit rules) ----

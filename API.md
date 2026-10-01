@@ -146,6 +146,17 @@ it).
 Archives the person. Their ledger history is preserved, just hidden from the
 Debt page going forward.
 
+### `POST /bank-sync/sync`
+Fetches new transactions for every active linked bank account and stages
+them into the Review queue (`/review` in the UI) - exact-id deduped against
+anything already staged, auto-categorized where an explicit rule or learned
+pattern matches, otherwise left `pending_review`. Not automatic - nothing
+else triggers this, so hit it manually or from a cron job.
+```json
+{ "results": [{ "bankAccountId": 1, "displayName": "NatWest - current",
+  "staged": 4 }] }
+```
+
 ## Notes for an agent using this API
 
 - All money in requests is **pounds** (decimal, e.g. `23.50`), not pence -

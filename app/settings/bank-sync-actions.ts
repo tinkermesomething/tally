@@ -2,7 +2,12 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { archiveBankAccount, addCategoryRule, deactivateCategoryRule } from "@/lib/db/bank-sync";
+import {
+  archiveBankAccount,
+  addCategoryRule,
+  deactivateCategoryRule,
+  syncBankAccount,
+} from "@/lib/db/bank-sync";
 import {
   listInstitutions,
   createAgreement,
@@ -10,6 +15,13 @@ import {
   PENDING_CONNECTION_COOKIE,
   type PendingConnection,
 } from "@/lib/gocardless";
+
+export async function syncBankAccountNow(id: number): Promise<{ staged: number }> {
+  const result = await syncBankAccount(id);
+  revalidatePath("/settings");
+  revalidatePath("/review");
+  return result;
+}
 
 export async function archiveLinkedBankAccount(id: number) {
   await archiveBankAccount(id);
