@@ -58,6 +58,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth((req) => {
       signIn: "/signin",
     },
     callbacks: {
+      // redirectProxyUrl only fixes the OAuth-PROVIDER-facing redirect_uri
+      // (the authorize/token-exchange steps) - it does nothing for the
+      // SEPARATE question of where Auth.js sends the browser once login
+      // actually completes. That step still fell back to Auth.js's own
+      // internally-resolved baseUrl, which is the SAME broken
+      // "https://0.0.0.0:3000" origin found earlier in the bank-sync
+      // callback route (confirmed live: login completed - the session
+      // cookie was already set - but landed on an unreachable 0.0.0.0 URL,
+      // only becoming visible as "logged in" after manually reloading the
+      // real domain). realBaseUrl reuses the SAME per-request
+      // proto/host this closure already computed for redirectProxyUrl,
+      // rather than trusting whatever baseUrl Auth.js itself resolved.
+      // Default-implementation shape confirmed against Auth.js's own docs
+      // (authjs.dev/reference/core's redirect callback reference).
+      redirect({ url, baseUrl }) {
+        const realBaseUrl = host ? `${proto}://${host}` : baseUrl;
+        if (url.startsWith("/")) return `${realBaseUrl}${url}`;
+        try {
+          const parsed = new URL(url);
+          if (parsed.origin === baseUrl || parsed.origin === realBaseUrl) {
+            return `${realBaseUrl}${parsed.pathname}${parsed.search}`;
+          }
+        } catch {
+          // url wasn't a valid absolute URL - fall through to the safe default
+        }
+        return realBaseUrl;
+      },
       // This is a single-user app - reject anyone whose pocket-id account isn't
       // the one explicit allowed address, even if pocket-id is later reconfigured
       // with a second account.
