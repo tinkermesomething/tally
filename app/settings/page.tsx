@@ -68,6 +68,7 @@ export default async function SettingsPage({
   ]);
   const categoryNameById = new Map(flatCategories.map((c) => [c.id, c.name]));
   const personNameById = new Map(people.map((p) => [p.id, p.name]));
+  const incomeSourceNameById = new Map(incomeSources.map((s) => [s.id, s.name]));
 
   return (
     <div className="space-y-4">
@@ -226,7 +227,11 @@ export default async function SettingsPage({
                   Runs automatically when a transaction imports - first match wins.
                 </p>
               </div>
-              <AddCategoryRuleDialog categories={flatCategories} people={people.map((p) => ({ id: p.id, name: p.name }))} />
+              <AddCategoryRuleDialog
+                categories={flatCategories}
+                incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+                people={people.map((p) => ({ id: p.id, name: p.name }))}
+              />
             </div>
             {categoryRules.length === 0 ? (
               <p className="text-sm text-muted-foreground">No rules yet.</p>
@@ -239,7 +244,11 @@ export default async function SettingsPage({
                     field={r.field}
                     operator={r.operator}
                     value={r.field === "amount" ? (parseInt(r.value, 10) / 100).toFixed(2) : r.value}
-                    categoryName={categoryNameById.get(r.categoryId) ?? "Unknown category"}
+                    targetName={
+                      r.targetType === "income"
+                        ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
+                        : (categoryNameById.get(r.categoryId!) ?? "Unknown category")
+                    }
                     debtPersonName={r.debtPersonId ? (personNameById.get(r.debtPersonId) ?? null) : null}
                   />
                 ))}

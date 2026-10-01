@@ -1,5 +1,5 @@
 import { getPendingTransactions, getPossibleDuplicateDetails, getBankAccounts } from "@/lib/db/bank-sync";
-import { getCategoryTree } from "@/lib/db/queries";
+import { getCategoryTree, getIncomeSourceList } from "@/lib/db/queries";
 import { getPeopleWithBalances } from "@/lib/db/debt";
 import { ReviewList } from "@/components/review/review-list";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,10 @@ export default async function ReviewPage({
 }) {
   const { from, to } = await searchParams;
 
-  const [pending, categoryTree, people, bankAccounts] = await Promise.all([
+  const [pending, categoryTree, incomeSources, people, bankAccounts] = await Promise.all([
     getPendingTransactions({ dateFrom: from, dateTo: to }),
     getCategoryTree(),
+    getIncomeSourceList(),
     getPeopleWithBalances(),
     getBankAccounts(),
   ]);
@@ -77,7 +78,12 @@ export default async function ReviewPage({
         )}
       </form>
 
-      <ReviewList transactions={transactions} categories={flatCategories} people={people.map((p) => ({ id: p.id, name: p.name }))} />
+      <ReviewList
+        transactions={transactions}
+        categories={flatCategories}
+        incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+        people={people.map((p) => ({ id: p.id, name: p.name }))}
+      />
     </div>
   );
 }

@@ -242,6 +242,17 @@ export const importedTransactions = sqliteTable(
       .notNull()
       .default("pending_review"),
     possibleDuplicateExpenseEntryId: integer("possible_duplicate_expense_entry_id"),
+    // Set when this row was categorized as INCOME rather than an expense -
+    // income_entries is one aggregate row per (source, year, month), not
+    // one row per transaction like expenseEntries, so there's no
+    // equivalent of expenseEntries.importedTransactionId to join back
+    // through. This is what suggestIncomeSourceFromHistory reads instead -
+    // a real FK (unlike possibleDuplicateExpenseEntryId) since income
+    // sources are only ever archived, never hard-deleted, so it can't go
+    // stale the same way.
+    categorizedIncomeSourceId: integer("categorized_income_source_id").references(
+      () => incomeSources.id
+    ),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),
@@ -251,22 +262,38 @@ export const importedTransactions = sqliteTable(
   ]
 );
 
-/** An explicit auto-categorization rule (lib/bank-sync/rules.ts) - runs
+/** An explicit auto-categorization rule (lib/db/bank-sync.ts) - runs
  * automatically at import time, before a transaction ever reaches the
  * review pool, same model as actual-budget's. `value` is stored as text
  * and parsed per field+operator at match time (e.g. "gt"/"lt" on amount
- * parse it as pence). debtPersonId is optional: a rule can tag a category
- * AND a debt repayment/loan in one step, extending the existing debt-tag
- * mechanism - something actual-budget's own rules engine has no
- * equivalent of. */
+ * parse it as pence).
+ *
+ * targetType decides which of categoryId/incomeSourceId applies - exactly
+ * one is set, matching targetType, enforced in application code (addCategoryRule).
+ * Added for v2.1: staging imports BOTH directions (money in and out) but
+ * rules were expense-only, so an incoming transaction matching an
+ * expense-shaped rule (e.g. a "payee contains wages" rule meant for
+ * something else entirely) would try to categorize it as an expense and
+ * throw - matchCategoryRule now filters candidate rules by whether their
+ * targetType is even compatible with the transaction's sign BEFORE
+ * evaluating field/operator, so a mismatched rule can never fire on the
+ * wrong direction's transaction in the first place.
+ *
+ * debtPersonId is expense-only: a rule can tag a category AND a debt
+ * repayment/loan in one step, extending the existing debt-tag mechanism -
+ * something actual-budget's own rules engine has no equivalent of. Not
+ * meaningful for an income-targeted rule (the debt ledger already models
+ * someone repaying you as its own ledger entry, unconnected to bank-sync). */
 export const categoryRules = sqliteTable("category_rules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   field: text("field", { enum: ["payee", "amount"] }).notNull(),
   operator: text("operator", { enum: ["contains", "is", "gt", "lt"] }).notNull(),
   value: text("value").notNull(),
-  categoryId: integer("category_id")
+  targetType: text("target_type", { enum: ["expense", "income"] })
     .notNull()
-    .references(() => categories.id),
+    .default("expense"),
+  categoryId: integer("category_id").references(() => categories.id),
+  incomeSourceId: integer("income_source_id").references(() => incomeSources.id),
   debtPersonId: integer("debt_person_id").references(() => people.id),
   sortOrder: integer("sort_order").notNull().default(0),
   active: integer("active", { mode: "boolean" }).notNull().default(true),

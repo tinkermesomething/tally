@@ -9,10 +9,12 @@ import { bulkIgnoreImportedTransactions } from "@/app/review/actions";
 export function ReviewList({
   transactions,
   categories,
+  incomeSources,
   people,
 }: {
   transactions: ReviewRow[];
   categories: { id: number; name: string }[];
+  incomeSources: { id: number; name: string }[];
   people: { id: number; name: string }[];
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -59,6 +61,7 @@ export function ReviewList({
           key={t.id}
           transaction={t}
           categories={categories}
+          incomeSources={incomeSources}
           people={people}
           selected={selected.has(t.id)}
           onToggleSelected={toggle}

@@ -26,6 +26,7 @@ import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/
 
 type Field = "payee" | "amount";
 type Operator = "contains" | "is" | "gt" | "lt";
+type TargetType = "expense" | "income";
 
 const OPERATORS_BY_FIELD: Record<Field, { value: Operator; label: string }[]> = {
   payee: [
@@ -41,16 +42,20 @@ const OPERATORS_BY_FIELD: Record<Field, { value: Operator; label: string }[]> = 
 
 export function AddCategoryRuleDialog({
   categories,
+  incomeSources,
   people,
 }: {
   categories: { id: number; name: string }[];
+  incomeSources: { id: number; name: string }[];
   people: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [field, setField] = useState<Field>("payee");
   const [operator, setOperator] = useState<Operator>("contains");
   const [value, setValue] = useState("");
+  const [targetType, setTargetType] = useState<TargetType>("expense");
   const [categoryId, setCategoryId] = useState("");
+  const [incomeSourceId, setIncomeSourceId] = useState("");
   const [tagDebt, setTagDebt] = useState(false);
   const { personId, setPersonId, newPersonName, setNewPersonName, reset: resetPerson, resolvePersonId } =
     usePersonSelection();
@@ -61,7 +66,9 @@ export function AddCategoryRuleDialog({
     setField("payee");
     setOperator("contains");
     setValue("");
+    setTargetType("expense");
     setCategoryId("");
+    setIncomeSourceId("");
     setTagDebt(false);
     resetPerson();
     setError(null);
@@ -70,6 +77,15 @@ export function AddCategoryRuleDialog({
   function handleFieldChange(next: Field) {
     setField(next);
     setOperator(OPERATORS_BY_FIELD[next][0].value);
+  }
+
+  function handleTargetTypeChange(next: TargetType) {
+    setTargetType(next);
+    // Debt-tagging a rule only makes sense alongside an expense category -
+    // the debt ledger already models someone repaying you as its own
+    // entry, unconnected to bank-sync, so there's nothing for an
+    // income-targeted rule to tag.
+    if (next === "income") setTagDebt(false);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -82,8 +98,12 @@ export function AddCategoryRuleDialog({
       setError("Amount must be a number (in pounds).");
       return;
     }
-    if (!categoryId) {
+    if (targetType === "expense" && !categoryId) {
       setError("Pick a category.");
+      return;
+    }
+    if (targetType === "income" && !incomeSourceId) {
+      setError("Pick an income source.");
       return;
     }
     if (tagDebt && !personId) {
@@ -97,16 +117,28 @@ export function AddCategoryRuleDialog({
     setError(null);
     startTransition(async () => {
       try {
-        const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
-        await createCategoryRule({
-          field,
-          operator,
-          // Rules match against pence, same as everything else stored in
-          // this app - the form takes pounds like every other amount input.
-          value: field === "amount" ? String(Math.round(parseFloat(value) * 100)) : value,
-          categoryId: parseInt(categoryId, 10),
-          debtPersonId,
-        });
+        // Rules match against pence, same as everything else stored in
+        // this app - the form takes pounds like every other amount input.
+        const matchValue = field === "amount" ? String(Math.round(parseFloat(value) * 100)) : value;
+        if (targetType === "expense") {
+          const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
+          await createCategoryRule({
+            field,
+            operator,
+            value: matchValue,
+            targetType: "expense",
+            categoryId: parseInt(categoryId, 10),
+            debtPersonId,
+          });
+        } else {
+          await createCategoryRule({
+            field,
+            operator,
+            value: matchValue,
+            targetType: "income",
+            incomeSourceId: parseInt(incomeSourceId, 10),
+          });
+        }
         reset();
         setOpen(false);
       } catch (err) {
@@ -136,6 +168,22 @@ export function AddCategoryRuleDialog({
           <DialogTitle>New auto-categorization rule</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="rule-target-type">Routes to</Label>
+            <Select
+              value={targetType}
+              onValueChange={(v) => handleTargetTypeChange((v as TargetType) ?? "expense")}
+            >
+              <SelectTrigger id="rule-target-type" className="w-full">
+                <SelectValue>{(v: string) => (v === "income" ? "Income source" : "Expense category")}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="expense">Expense category</SelectItem>
+                <SelectItem value="income">Income source</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="rule-field">If</Label>
             <Select value={field} onValueChange={(v) => handleFieldChange((v as Field) ?? "payee")}>
@@ -178,40 +226,66 @@ export function AddCategoryRuleDialog({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="rule-category">Category</Label>
-            <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-              <SelectTrigger id="rule-category" className="w-full">
-                <SelectValue>
-                  {(v: string) => (v ? (categories.find((c) => String(c.id) === v)?.name ?? v) : "Choose a category")}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {targetType === "expense" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="rule-category">Category</Label>
+              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+                <SelectTrigger id="rule-category" className="w-full">
+                  <SelectValue>
+                    {(v: string) => (v ? (categories.find((c) => String(c.id) === v)?.name ?? v) : "Choose a category")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="rule-income-source">Income source</Label>
+              <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? "")}>
+                <SelectTrigger id="rule-income-source" className="w-full">
+                  <SelectValue>
+                    {(v: string) =>
+                      v ? (incomeSources.find((s) => String(s.id) === v)?.name ?? v) : "Choose an income source"
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {incomeSources.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          <div className="flex items-center gap-2">
-            <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
-            <Label className="font-normal">Also tag as a debt repayment</Label>
-          </div>
+          {targetType === "expense" && (
+            <>
+              <div className="flex items-center gap-2">
+                <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
+                <Label className="font-normal">Also tag as a debt repayment</Label>
+              </div>
 
-          {tagDebt && (
-            <PersonPickerField
-              idPrefix="rule"
-              label="Paying back"
-              placeholder="Choose who"
-              people={people}
-              personId={personId}
-              onPersonIdChange={setPersonId}
-              newPersonName={newPersonName}
-              onNewPersonNameChange={setNewPersonName}
-            />
+              {tagDebt && (
+                <PersonPickerField
+                  idPrefix="rule"
+                  label="Paying back"
+                  placeholder="Choose who"
+                  people={people}
+                  personId={personId}
+                  onPersonIdChange={setPersonId}
+                  newPersonName={newPersonName}
+                  onNewPersonNameChange={setNewPersonName}
+                />
+              )}
+            </>
           )}
 
           {error && <p className="text-sm text-status-critical">{error}</p>}

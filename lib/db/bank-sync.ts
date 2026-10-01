@@ -1,6 +1,7 @@
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "./index";
-import { logExpense } from "./queries";
+import { logExpense, incrementIncomeEntry } from "./queries";
+import { resolvePeriodForDate } from "./pay-period";
 import {
   bankAccounts,
   categories,
@@ -116,13 +117,24 @@ export async function getCategoryRules(): Promise<CategoryRule[]> {
   });
 }
 
-export async function addCategoryRule(input: {
-  field: "payee" | "amount";
-  operator: "contains" | "is" | "gt" | "lt";
-  value: string;
-  categoryId: number;
-  debtPersonId?: number;
-}) {
+export async function addCategoryRule(
+  input:
+    | {
+        field: "payee" | "amount";
+        operator: "contains" | "is" | "gt" | "lt";
+        value: string;
+        targetType: "expense";
+        categoryId: number;
+        debtPersonId?: number;
+      }
+    | {
+        field: "payee" | "amount";
+        operator: "contains" | "is" | "gt" | "lt";
+        value: string;
+        targetType: "income";
+        incomeSourceId: number;
+      }
+) {
   const [maxRow] = await db
     .select({ max: sql<number>`max(${categoryRules.sortOrder})` })
     .from(categoryRules);
@@ -137,17 +149,44 @@ export async function deactivateCategoryRule(id: number) {
   await db.update(categoryRules).set({ active: false }).where(eq(categoryRules.id, id));
 }
 
+export type RuleMatch =
+  | { targetType: "expense"; categoryId: number; debtPersonId: number | null }
+  | { targetType: "income"; incomeSourceId: number };
+
 /** Pure function, no DB access - evaluates rules in order, first match
  * wins. Matches actual-budget's own model: condition (field/operator/
- * value) -> action (category, optionally also a debt tag). A transaction
- * with no payeeClean set yet falls back to payeeRaw for payee-field rules,
- * since cleanup may not have run (or found nothing to clean). */
+ * value) -> action (category or income source, optionally also a debt
+ * tag for expenses). A transaction with no payeeClean set yet falls back
+ * to payeeRaw for payee-field rules, since cleanup may not have run (or
+ * found nothing to clean).
+ *
+ * Rules are filtered to their COMPATIBLE direction before any field/
+ * operator condition is even evaluated: an expense-targeted rule is never
+ * considered for a positive (money-in) transaction, and vice versa. This
+ * is deliberate, not just an optimization - staging imports both
+ * directions, but categorizeTransaction (expense) and
+ * categorizeTransactionAsIncome throw if given the wrong sign. Without
+ * this filter, an expense rule whose payee/amount condition happened to
+ * also match an incoming transaction (e.g. a "payee contains wages" rule
+ * meant for something unrelated matching an actual incoming wage payment)
+ * would throw mid-batch and silently abort the rest of that sync - this
+ * filter makes that failure mode structurally impossible rather than
+ * relying on every rule being written carefully enough to avoid it. */
 export function matchCategoryRule(
   transaction: { payeeRaw: string; payeeClean: string | null; amountPence: number },
   rules: CategoryRule[]
-): { categoryId: number; debtPersonId: number | null } | null {
+): RuleMatch | null {
+  // A real bank transaction is never exactly 0 pence, but handle it for
+  // real: neither categorizeTransaction nor categorizeTransactionAsIncome
+  // accept a 0 amount, so a 0-amount transaction must never match ANY
+  // rule - not "fall into income's bucket by default" - or this filter's
+  // own claim of making the mid-batch crash impossible would have a hole.
+  if (transaction.amountPence === 0) return null;
+  const direction: "expense" | "income" = transaction.amountPence < 0 ? "expense" : "income";
   const payee = (transaction.payeeClean ?? transaction.payeeRaw).toLowerCase();
   for (const rule of rules) {
+    if (rule.targetType !== direction) continue;
+
     let matched: boolean;
     if (rule.field === "payee") {
       const value = rule.value.toLowerCase();
@@ -158,9 +197,17 @@ export function matchCategoryRule(
       else if (rule.operator === "lt") matched = transaction.amountPence < value;
       else matched = transaction.amountPence === value;
     }
-    if (matched) {
-      return { categoryId: rule.categoryId, debtPersonId: rule.debtPersonId ?? null };
+    if (!matched) continue;
+
+    if (rule.targetType === "expense") {
+      // categoryId is NOT NULL at the application level for an "expense"
+      // rule (enforced by addCategoryRule's discriminated input type), but
+      // the column itself is nullable in the schema (shared with income
+      // rules) - the ! is safe given that invariant, not a type escape hatch
+      // papering over a real gap.
+      return { targetType: "expense", categoryId: rule.categoryId!, debtPersonId: rule.debtPersonId ?? null };
     }
+    return { targetType: "income", incomeSourceId: rule.incomeSourceId! };
   }
   return null;
 }
@@ -190,6 +237,35 @@ export async function suggestCategoryFromHistory(payeeClean: string): Promise<nu
   }
   for (const [categoryId, count] of counts) {
     if (count >= 3) return categoryId;
+  }
+  return null;
+}
+
+/** Income's equivalent of suggestCategoryFromHistory - same >= 3-of-last-5
+ * threshold. Reads categorizedIncomeSourceId directly rather than joining
+ * through a per-transaction table the way the expense side joins
+ * expenseEntries, since income_entries has no such join target (see the
+ * schema comment on categorizedIncomeSourceId). Filtering to rows that
+ * were actually income-categorized (not just "categorized" generally) in
+ * the query itself, rather than after the fact, keeps the 5-row window
+ * meaningful for a payee that's occasionally appeared on both sides. */
+export async function suggestIncomeSourceFromHistory(payeeClean: string): Promise<number | null> {
+  const recent = await db.query.importedTransactions.findMany({
+    where: and(
+      eq(importedTransactions.payeeClean, payeeClean),
+      eq(importedTransactions.status, "categorized"),
+      isNotNull(importedTransactions.categorizedIncomeSourceId)
+    ),
+    orderBy: (t, { desc }) => [desc(t.createdAt)],
+    limit: 5,
+  });
+  const counts = new Map<number, number>();
+  for (const t of recent) {
+    const id = t.categorizedIncomeSourceId!;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  for (const [incomeSourceId, count] of counts) {
+    if (count >= 3) return incomeSourceId;
   }
   return null;
 }
@@ -299,15 +375,30 @@ async function autoProcessStagedTransaction(id: number) {
   const rules = await getCategoryRules();
   const ruleMatch = matchCategoryRule(row, rules);
   if (ruleMatch) {
-    await categorizeTransaction(id, ruleMatch);
+    if (ruleMatch.targetType === "expense") {
+      await categorizeTransaction(id, ruleMatch);
+    } else {
+      await categorizeTransactionAsIncome(id, ruleMatch);
+    }
     return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
   }
 
-  if (row.payeeClean) {
-    const learnedCategoryId = await suggestCategoryFromHistory(row.payeeClean);
-    if (learnedCategoryId !== null) {
-      await categorizeTransaction(id, { categoryId: learnedCategoryId, debtPersonId: null });
-      return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
+  // Same direction guard as matchCategoryRule, same reason - a 0-amount
+  // transaction (unrealistic for a real bank feed, but not impossible)
+  // must never reach either categorize function, both of which reject it.
+  if (row.payeeClean && row.amountPence !== 0) {
+    if (row.amountPence < 0) {
+      const learnedCategoryId = await suggestCategoryFromHistory(row.payeeClean);
+      if (learnedCategoryId !== null) {
+        await categorizeTransaction(id, { categoryId: learnedCategoryId, debtPersonId: null });
+        return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
+      }
+    } else {
+      const learnedIncomeSourceId = await suggestIncomeSourceFromHistory(row.payeeClean);
+      if (learnedIncomeSourceId !== null) {
+        await categorizeTransactionAsIncome(id, { incomeSourceId: learnedIncomeSourceId });
+        return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
+      }
     }
   }
 
@@ -383,6 +474,37 @@ export async function categorizeTransaction(
   await db
     .update(importedTransactions)
     .set({ status: "categorized" })
+    .where(eq(importedTransactions.id, id));
+}
+
+/** Income's equivalent of categorizeTransaction - but income_entries is one
+ * aggregate row per (source, year, month), not one row per transaction, so
+ * there's no insert-a-new-row step the way logExpense has. Adds into
+ * whatever's already there for that month (incrementIncomeEntry), never
+ * replaces it - a second incoming payment the same month must not clobber
+ * the first. categorizedIncomeSourceId is the traceability record instead
+ * of a reverse FK from income_entries (see the schema comment on it). */
+export async function categorizeTransactionAsIncome(
+  id: number,
+  input: { incomeSourceId: number }
+) {
+  const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
+  if (!row) throw new Error(`Staged transaction ${id} not found.`);
+  if (row.amountPence <= 0) {
+    throw new Error("Only money-in (positive amount) transactions can be categorized as income.");
+  }
+
+  const { year, month } = await resolvePeriodForDate(row.bookingDate);
+  await incrementIncomeEntry({
+    incomeSourceId: input.incomeSourceId,
+    year,
+    month,
+    amountPence: row.amountPence,
+  });
+
+  await db
+    .update(importedTransactions)
+    .set({ status: "categorized", categorizedIncomeSourceId: input.incomeSourceId })
     .where(eq(importedTransactions.id, id));
 }
 

@@ -87,13 +87,24 @@ export async function startBankConnection(institution: {
   return { link: requisition.link };
 }
 
-export async function createCategoryRule(input: {
-  field: "payee" | "amount";
-  operator: "contains" | "is" | "gt" | "lt";
-  value: string;
-  categoryId: number;
-  debtPersonId?: number;
-}) {
+export async function createCategoryRule(
+  input:
+    | {
+        field: "payee" | "amount";
+        operator: "contains" | "is" | "gt" | "lt";
+        value: string;
+        targetType: "expense";
+        categoryId: number;
+        debtPersonId?: number;
+      }
+    | {
+        field: "payee" | "amount";
+        operator: "contains" | "is" | "gt" | "lt";
+        value: string;
+        targetType: "income";
+        incomeSourceId: number;
+      }
+) {
   const trimmedValue = input.value.trim();
   if (!trimmedValue) throw new Error("Enter a value for the rule to match against.");
   await addCategoryRule({ ...input, value: trimmedValue });

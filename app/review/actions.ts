@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   categorizeTransaction,
+  categorizeTransactionAsIncome,
   ignoreTransaction,
   restoreTransaction,
   bulkIgnoreTransactions,
@@ -16,6 +17,12 @@ export async function categorizeImportedTransaction(
   revalidatePath("/review");
   revalidatePath("/grid");
   revalidatePath("/entries");
+}
+
+export async function categorizeImportedTransactionAsIncome(id: number, input: { incomeSourceId: number }) {
+  await categorizeTransactionAsIncome(id, input);
+  revalidatePath("/review");
+  revalidatePath("/grid");
 }
 
 export async function ignoreImportedTransaction(id: number) {
