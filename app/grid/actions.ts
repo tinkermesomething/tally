@@ -113,11 +113,19 @@ export async function confirmPayment(input: {
   year: number;
   month: number;
   pounds: number;
+  /** ISO date - which real day the money actually left, not necessarily
+   * today. Caller (the grid cell's confirm popup) defaults this sensibly
+   * via defaultEntryDateFor, but the real value always comes from the user,
+   * since entryDate is what decides which year/month the resulting expense
+   * lands in (see logExpense) - silently hardcoding "today" here caused a
+   * real bug: confirming an old month's cell after today filed the expense
+   * under today's month instead. */
+  entryDate: string;
 }) {
   if (input.pounds <= 0) {
     throw new Error("Amount must be greater than zero.");
   }
-  const entryDate = new Date().toISOString().slice(0, 10);
+  const { entryDate } = input;
   await setCategoryEntryPaid({
     categoryId: input.categoryId,
     year: input.year,

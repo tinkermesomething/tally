@@ -797,6 +797,10 @@ export async function logExpense(input: {
   /** Set when this expense is also a debt repayment - purely for
    * traceability; the actual ledger effect is a separate row. */
   debtPersonId?: number;
+  /** Set when this expense was created by categorizing a staged bank-sync
+   * row, rather than typed in directly - purely for traceability back to
+   * its source (lib/db/bank-sync.ts). */
+  importedTransactionId?: number;
 }) {
   const { year, month } = await resolvePeriodForDate(input.entryDate);
   await db.insert(expenseEntries).values({
@@ -807,6 +811,7 @@ export async function logExpense(input: {
     entryDate: input.entryDate,
     note: input.note || null,
     debtPersonId: input.debtPersonId,
+    importedTransactionId: input.importedTransactionId,
   });
 
   // Logging an expense means the money is already gone - that's the same

@@ -6,8 +6,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { cn, budgetValueColorClass } from "@/lib/utils";
 import { formatPence, getCurrencySymbol } from "@/lib/money";
+import { defaultEntryDateFor } from "@/lib/date";
 import { ExpenseEntriesPopover } from "@/components/grid/expense-entries-popover";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
+import {
+  Popover,
+  PopoverPortal,
+  PopoverPositioner,
+  PopoverPopup,
+} from "@/components/ui/popover";
 
 export function GridCell({
   amountPence,
@@ -42,10 +49,12 @@ export function GridCell({
   onClearAmount?: () => void;
   onTogglePaid?: (paid: boolean) => void;
   /** Called instead of onTogglePaid when checking (not unchecking) the paid
-   * box, once the user confirms the actual amount in the popover - the
-   * moment it's ticked is also the moment the real figure is known, which
-   * may differ from what was allocated. */
-  onConfirmPayment?: (pounds: number) => void;
+   * box, once the user confirms the actual amount AND date in the popover -
+   * the moment it's ticked is also the moment the real figure is known,
+   * which may differ from what was allocated. entryDate drives which
+   * year/month the resulting expense actually lands in (see logExpense),
+   * so it's never silently hardcoded to today - see defaultEntryDateFor. */
+  onConfirmPayment?: (pounds: number, entryDate: string) => void;
 }) {
   const { currency } = useAppSettings();
   const [pending, startTransition] = useTransition();
@@ -56,8 +65,10 @@ export function GridCell({
   const [viewingEntries, setViewingEntries] = useState(false);
   const canViewEntries = categoryId !== undefined && year !== undefined && month !== undefined;
   const [confirmValue, setConfirmValue] = useState("");
+  const [confirmDate, setConfirmDate] = useState("");
   const [confirmError, setConfirmError] = useState<string | null>(null);
-  const confirmRef = useRef<HTMLFormElement>(null);
+  const checkboxAnchorRef = useRef<HTMLSpanElement>(null);
+  const paidButtonAnchorRef = useRef<HTMLButtonElement>(null);
 
   // `value` starts from amountPence at mount, but a plain useState
   // initializer never re-runs after that - without this, a successful
@@ -67,17 +78,6 @@ export function GridCell({
   useEffect(() => {
     setValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
   }, [amountPence]);
-
-  useEffect(() => {
-    if (!confirming) return;
-    function handlePointerDown(e: PointerEvent) {
-      if (confirmRef.current && !confirmRef.current.contains(e.target as Node)) {
-        setConfirming(false);
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [confirming]);
 
   function commit(raw: string) {
     if (raw.trim() === "") {
@@ -96,6 +96,7 @@ export function GridCell({
 
   function openConfirm() {
     setConfirmValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
+    setConfirmDate(year !== undefined && month !== undefined ? defaultEntryDateFor(year, month) : "");
     setConfirmError(null);
     setConfirming(true);
   }
@@ -107,8 +108,12 @@ export function GridCell({
       setConfirmError(`Enter an amount greater than ${getCurrencySymbol(currency)}0`);
       return;
     }
+    if (!confirmDate) {
+      setConfirmError("Pick a date.");
+      return;
+    }
     setConfirming(false);
-    startTransition(() => onConfirmPayment?.(pounds));
+    startTransition(() => onConfirmPayment?.(pounds, confirmDate));
   }
 
   return (
@@ -137,57 +142,76 @@ export function GridCell({
           )}
         />
         {showPaidToggle && (
-          <Checkbox
-            checked={paid}
-            disabled={amountPence === undefined}
-            onCheckedChange={(checked) => {
-              if (checked === true) {
-                if (onConfirmPayment) openConfirm();
-                else if (onTogglePaid) startTransition(() => onTogglePaid(true));
-              } else if (onTogglePaid) {
-                startTransition(() => onTogglePaid(false));
-              }
-            }}
-            aria-label={paid ? "Mark unpaid" : "Mark paid"}
-            className="shrink-0"
-          />
+          <span ref={checkboxAnchorRef} className="inline-flex shrink-0">
+            <Checkbox
+              checked={paid}
+              disabled={amountPence === undefined}
+              onCheckedChange={(checked) => {
+                if (checked === true) {
+                  if (onConfirmPayment) openConfirm();
+                  else if (onTogglePaid) startTransition(() => onTogglePaid(true));
+                } else if (onTogglePaid) {
+                  startTransition(() => onTogglePaid(false));
+                }
+              }}
+              aria-label={paid ? "Mark unpaid" : "Mark paid"}
+            />
+          </span>
         )}
       </div>
-      {confirming && (
-        <form
-          ref={confirmRef}
-          onSubmit={submitConfirm}
-          className="absolute top-full right-0 z-20 mt-1 flex flex-col gap-1 rounded-lg border border-border bg-card p-2 shadow-md"
-        >
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Paid</span>
-            <span className="text-xs text-muted-foreground">{getCurrencySymbol(currency)}</span>
-            <input
-              autoFocus
-              inputMode="decimal"
-              value={confirmValue}
-              onChange={(e) => {
-                setConfirmValue(e.target.value);
-                setConfirmError(null);
-              }}
-              onFocus={(e) => e.currentTarget.select()}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setConfirming(false);
-              }}
-              className="w-16 rounded-md border border-input bg-background px-1.5 py-1 text-right text-sm tabular-nums outline-none"
-            />
-            <Button type="submit" size="sm">
-              Confirm
-            </Button>
-          </div>
-          {confirmError && (
-            <span className="text-xs text-status-critical">{confirmError}</span>
-          )}
-        </form>
-      )}
+      {/* Portal-based (not a hand-rolled `absolute` div) specifically so this
+          never gets clipped by the grid table's own scroll container - an
+          absolutely-positioned popup inside an `overflow-x-auto` ancestor is
+          cropped to that ancestor's bounds regardless of z-index, which was
+          a real bug: the date field (and anything else) could render fully
+          off-screen within the clipped region, forcing a scroll to see it. */}
+      <Popover open={confirming} onOpenChange={setConfirming}>
+        <PopoverPortal>
+          <PopoverPositioner anchor={checkboxAnchorRef} align="end" sideOffset={4}>
+            <PopoverPopup className="w-auto">
+              <form onSubmit={submitConfirm} className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Paid</span>
+                  <span className="text-xs text-muted-foreground">{getCurrencySymbol(currency)}</span>
+                  <input
+                    autoFocus
+                    inputMode="decimal"
+                    value={confirmValue}
+                    onChange={(e) => {
+                      setConfirmValue(e.target.value);
+                      setConfirmError(null);
+                    }}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setConfirming(false);
+                    }}
+                    className="w-16 rounded-md border border-input bg-background px-1.5 py-1 text-right text-sm tabular-nums outline-none"
+                  />
+                  <Button type="submit" size="sm">
+                    Confirm
+                  </Button>
+                </div>
+                <input
+                  type="date"
+                  value={confirmDate}
+                  onChange={(e) => {
+                    setConfirmDate(e.target.value);
+                    setConfirmError(null);
+                  }}
+                  className="w-full max-w-full appearance-none rounded-md border border-input bg-background px-1.5 py-1 text-xs tabular-nums outline-none"
+                />
+                {confirmError && (
+                  <span className="text-xs text-status-critical">{confirmError}</span>
+                )}
+              </form>
+            </PopoverPopup>
+          </PopoverPositioner>
+        </PopoverPortal>
+      </Popover>
       {spentPence > 0 && (
         canViewEntries ? (
           <button
+            ref={paidButtonAnchorRef}
             type="button"
             onClick={() => setViewingEntries((v) => !v)}
             className="pr-7 text-xs tabular-nums text-primary underline-offset-2 hover:underline"
@@ -203,6 +227,7 @@ export function GridCell({
       )}
       {viewingEntries && canViewEntries && (
         <ExpenseEntriesPopover
+          anchorRef={paidButtonAnchorRef}
           categoryId={categoryId!}
           year={year!}
           month={month!}

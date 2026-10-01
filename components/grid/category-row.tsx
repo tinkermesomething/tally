@@ -97,7 +97,9 @@ export function CategoryMonthCell({
       onCommitAmount={(pounds) => updateAmount({ categoryId: category.id, year, month, pounds })}
       onClearAmount={() => clearAmount({ categoryId: category.id, year, month })}
       onTogglePaid={(paid) => togglePaid({ categoryId: category.id, year, month, paid })}
-      onConfirmPayment={(pounds) => confirmPayment({ categoryId: category.id, year, month, pounds })}
+      onConfirmPayment={(pounds, entryDate) =>
+        confirmPayment({ categoryId: category.id, year, month, pounds, entryDate })
+      }
     />
   );
 }

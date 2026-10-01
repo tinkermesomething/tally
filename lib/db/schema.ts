@@ -58,6 +58,14 @@ export const expenseEntries = sqliteTable("expense_entries", {
   // back logged under Misc. Purely for traceability; the actual ledger
   // effect is a separate debt_ledger_entries row created alongside it.
   debtPersonId: integer("debt_person_id").references(() => people.id),
+  // Set when this expense was created by categorizing a staged bank-sync
+  // row, rather than typed in directly - purely for traceability back to
+  // its source (lib/db/bank-sync.ts), same reasoning as debtPersonId
+  // above. Nothing about how this expense behaves in the grid/rollup math
+  // changes once it exists; this is provenance only.
+  importedTransactionId: integer("imported_transaction_id").references(
+    () => importedTransactions.id
+  ),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),
@@ -176,4 +184,90 @@ export const appSettings = sqliteTable("app_settings", {
   dateFormat: text("date_format").notNull().default("dmy"),
   carryOverStartYear: integer("carry_over_start_year"),
   carryOverStartMonth: integer("carry_over_start_month"),
+});
+
+/** A linked bank account (GoCardless for now, provider is a plain string so
+ * a second provider never needs a schema change). One row per real account
+ * - the user has 2, and nothing here assumes just one. consentExpiresAt
+ * drives the same "flag once passed" overdue-style alerting already built
+ * for categories.dueDay, not a new mechanism. archivedAt is soft-delete,
+ * same convention as categories/incomeSources - unlinking an account
+ * never deletes its imported history. */
+export const bankAccounts = sqliteTable("bank_accounts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  provider: text("provider").notNull(),
+  institutionId: text("institution_id").notNull(),
+  requisitionId: text("requisition_id").notNull(),
+  externalAccountId: text("external_account_id").notNull(),
+  displayName: text("display_name").notNull(),
+  consentExpiresAt: integer("consent_expires_at", { mode: "timestamp" }).notNull(),
+  lastSyncedAt: integer("last_synced_at", { mode: "timestamp" }),
+  archivedAt: integer("archived_at", { mode: "timestamp" }),
+});
+
+/** A single staged bank transaction, before (or instead of) becoming a real
+ * expenseEntries row - the review/categorization pool. importedId is the
+ * provider's own transaction id, the real dedup key (exact match only,
+ * deliberately no fuzzy date/amount matching between two imports - see
+ * tally-bank-sync-plan.md for why). amountPence keeps the provider's own
+ * sign convention (negative = money out, positive = money in) rather than
+ * normalizing to Tally's always-positive expense amounts, since a staged
+ * row isn't necessarily an expense yet - that normalization only happens
+ * once it's actually categorized into a real expenseEntries row.
+ * payeeClean is a user/rule-editable cleanup of the raw bank descriptor
+ * (lib/bank-sync/payee.ts), separate from payeeRaw so the original is
+ * never lost. `ignored` covers both "this is a transfer" and "I already
+ * logged this manually" - either way nothing is ever hard-deleted, so
+ * dismissing one is always reversible back to pending_review.
+ * possibleDuplicateExpenseEntryId is a SUGGESTION only, computed once at
+ * import time (same date +/-1 day, same amount, against manually-logged
+ * expenseEntries - there's no provider id to exact-match against those,
+ * unlike imported_id above) - the review UI surfaces it, the user decides;
+ * it's never used to auto-ignore anything. Can go stale if that expense is
+ * later edited/deleted, which is an acceptable imprecision for a "maybe",
+ * not a correctness requirement. */
+export const importedTransactions = sqliteTable(
+  "imported_transactions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    bankAccountId: integer("bank_account_id")
+      .notNull()
+      .references(() => bankAccounts.id),
+    importedId: text("imported_id").notNull(),
+    amountPence: integer("amount_pence").notNull(),
+    bookingDate: text("booking_date").notNull(), // ISO date
+    payeeRaw: text("payee_raw").notNull(),
+    payeeClean: text("payee_clean"),
+    status: text("status", { enum: ["pending_review", "categorized", "ignored"] })
+      .notNull()
+      .default("pending_review"),
+    possibleDuplicateExpenseEntryId: integer("possible_duplicate_expense_entry_id"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    uniqueIndex("imported_transactions_dedup").on(table.bankAccountId, table.importedId),
+  ]
+);
+
+/** An explicit auto-categorization rule (lib/bank-sync/rules.ts) - runs
+ * automatically at import time, before a transaction ever reaches the
+ * review pool, same model as actual-budget's. `value` is stored as text
+ * and parsed per field+operator at match time (e.g. "gt"/"lt" on amount
+ * parse it as pence). debtPersonId is optional: a rule can tag a category
+ * AND a debt repayment/loan in one step, extending the existing debt-tag
+ * mechanism - something actual-budget's own rules engine has no
+ * equivalent of. */
+export const categoryRules = sqliteTable("category_rules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  field: text("field", { enum: ["payee", "amount"] }).notNull(),
+  operator: text("operator", { enum: ["contains", "is", "gt", "lt"] }).notNull(),
+  value: text("value").notNull(),
+  categoryId: integer("category_id")
+    .notNull()
+    .references(() => categories.id),
+  debtPersonId: integer("debt_person_id").references(() => people.id),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
