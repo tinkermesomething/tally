@@ -15,6 +15,15 @@ COPY . .
 # not read at runtime.
 ARG RELEASE_VERSION=dev
 ENV NEXT_PUBLIC_APP_VERSION=$RELEASE_VERSION
+# Next.js salts every Server Action's id with this key at build time. Left
+# unset, it's generated randomly PER BUILD - every redeploy then silently
+# invalidates every Server Action for anyone with an already-open tab
+# ("Failed to find Server Action", confirmed live after a routine redeploy
+# broke the sign-out button mid-session). Must be the SAME value on every
+# build, not just present - sourced from a real GitHub Actions secret, not
+# generated fresh per workflow run.
+ARG NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
+ENV NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=$NEXT_SERVER_ACTIONS_ENCRYPTION_KEY
 # `next build` collects page data by actually loading each route's server
 # module, which opens the sqlite file at import time (see lib/db/index.ts) -
 # give it a directory to create a throwaway build-time db file in.
