@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "./index";
 import { resolvePeriodForDate } from "./pay-period";
+import { getAppSettings } from "./settings";
 import {
   categories,
   categoryEntries,
@@ -71,8 +72,16 @@ export type GridData = {
   availableByMonth: number[];
   /** Sum of only the paid/logged amounts - money that's actually gone. */
   actuallySpentByMonth: number[];
-  /** Income minus actuallySpent - "how much of my wage is still free right
-   * now," a live number that moves as you log/pay things through the month. */
+  /** What rolled into this month from the previous one's own leftToSpend -
+   * compounds across the whole chain (see getYearEndLeftToSpend), never
+   * clamped to zero, so an overspend carries forward as a negative amount
+   * just as a surplus carries forward as a positive one. Surfaced
+   * separately so the UI can show it, not just fold it silently into
+   * leftToSpendByMonth below. */
+  carryOverByMonth: number[];
+  /** Income minus actuallySpent, PLUS whatever carried in from last month -
+   * "how much of my wage is still free right now," a live number that
+   * moves as you log/pay things through the month. */
   leftToSpendByMonth: number[];
   yearTotal: {
     subtotal: number;
@@ -306,6 +315,21 @@ export async function moveCategoryParent(categoryId: number, newParentId: number
     parentId: newParentId,
     effectiveYear: currentYear,
   });
+}
+
+/** December's leftToSpend for `year`, as the carry-over seed for January of
+ * `year + 1` - recurses backward through getGridData itself (which already
+ * seeds ITS OWN January the same way), so the chain compounds correctly
+ * across any number of years. The recursion is bounded by the caller: it
+ * only ever gets invoked for a year at or after the configured carry-over
+ * start point (see the `startIndex` check in getGridData), never
+ * unconditionally walked back through all of history - a user's imported,
+ * pre-tracking data (which this app never asked them to log with the same
+ * precision as live use) must never silently feed a rollover chain they
+ * didn't ask it to. */
+async function getYearEndLeftToSpend(year: number): Promise<number> {
+  const priorYear = await getGridData(year);
+  return priorYear.leftToSpendByMonth[11];
 }
 
 export async function getGridData(year: number): Promise<GridData> {
@@ -546,9 +570,36 @@ export async function getGridData(year: number): Promise<GridData> {
   const availableByMonth = plannedByMonth.map(
     (planned, i) => wagesByMonth[i] - planned
   );
-  const leftToSpendByMonth = actuallySpentByMonth.map(
-    (spent, i) => wagesByMonth[i] - spent
-  );
+
+  // Left to spend carries forward: unspent money doesn't vanish at a period
+  // boundary, it's still sitting in the real account next month. Each
+  // month's carry-in is the PREVIOUS month's own leftToSpend - which
+  // already includes that month's own carry-in - so this compounds
+  // correctly across the whole chain, not just one month back. Can go
+  // negative (carrying an overspend forward) just as easily as positive.
+  //
+  // Bounded by carryOverStartYear/Month (Settings > Preferences): nothing
+  // carries into the configured start period itself, and the chain never
+  // reaches further back than that - a user's older, imported/retroactive
+  // data was never tracked with the precision live use gets, so blindly
+  // compounding it produces a fictional number, not a real one. Months at
+  // or after the start point still compound normally.
+  const { carryOverStartYear, carryOverStartMonth } = await getAppSettings();
+  const startIndex = carryOverStartYear * 12 + carryOverStartMonth;
+  const januaryIndex = year * 12 + 1;
+  const carryOverSeed = januaryIndex > startIndex ? await getYearEndLeftToSpend(year - 1) : 0;
+
+  const carryOverByMonth: number[] = [];
+  const leftToSpendByMonth: number[] = [];
+  let runningCarry = carryOverSeed;
+  for (let i = 0; i < 12; i++) {
+    const monthIndex = year * 12 + (i + 1);
+    const carryIn = monthIndex > startIndex ? runningCarry : 0;
+    carryOverByMonth.push(carryIn);
+    const value = wagesByMonth[i] + carryIn - actuallySpentByMonth[i];
+    leftToSpendByMonth.push(value);
+    runningCarry = value;
+  }
 
   return {
     year,
@@ -559,6 +610,7 @@ export async function getGridData(year: number): Promise<GridData> {
     wagesByMonth,
     availableByMonth,
     actuallySpentByMonth,
+    carryOverByMonth,
     leftToSpendByMonth,
     yearTotal: {
       subtotal: subtotalByMonth.reduce((a, b) => a + b, 0),

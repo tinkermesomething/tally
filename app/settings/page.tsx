@@ -145,7 +145,12 @@ export default async function SettingsPage() {
 
         <TabsContent value="preferences" className="space-y-4 pt-4">
           <p className="text-sm text-muted-foreground">Display preferences for the whole app.</p>
-          <PreferencesSettings currency={appSettings.currency} dateFormat={appSettings.dateFormat} />
+          <PreferencesSettings
+            currency={appSettings.currency}
+            dateFormat={appSettings.dateFormat}
+            carryOverStartYear={appSettings.carryOverStartYear}
+            carryOverStartMonth={appSettings.carryOverStartMonth}
+          />
         </TabsContent>
       </Tabs>
     </div>

@@ -162,9 +162,18 @@ export const debtLedgerEntries = sqliteTable("debt_ledger_entries", {
  * it with these defaults on first read if missing) - app-wide display
  * preferences, not per-category/entry data. currency is an ISO 4217 code
  * fed straight to Intl.NumberFormat; dateFormat is one of DATE_FORMATS in
- * lib/date-format.ts. */
+ * lib/date-format.ts. carryOverStartYear/Month mark the first tracked
+ * period for the Left to spend rollover chain (see
+ * getYearEndLeftToSpend in lib/db/queries.ts) - nothing carries into that
+ * period itself, only out of it going forward. Null means "not configured
+ * yet", which resolves to the CURRENT year/month at read time (always
+ * fresh, not frozen to whenever the settings row happened to be created) -
+ * see getAppSettings - so carry-over is effectively off until the user
+ * deliberately picks a start point. */
 export const appSettings = sqliteTable("app_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   currency: text("currency").notNull().default("GBP"),
   dateFormat: text("date_format").notNull().default("dmy"),
+  carryOverStartYear: integer("carry_over_start_year"),
+  carryOverStartMonth: integer("carry_over_start_month"),
 });

@@ -112,11 +112,11 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                   style={{ backgroundColor: s.color }}
                   aria-hidden
                 />
-                <span className="flex-1 text-left">{s.group}</span>
-                <span className="tabular-nums text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate text-left">{s.group}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
                   {pct.toFixed(0)}%
                 </span>
-                <span className="w-24 text-right tabular-nums font-medium">
+                <span className="w-24 shrink-0 text-right tabular-nums font-medium">
                   {formatPence(s.amountPence, currency)}
                 </span>
               </button>
@@ -146,8 +146,8 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                   selected.categories.map((c) => (
                     <li key={c.name}>
                       <div className="flex items-center justify-between gap-3 py-1">
-                        <span className="font-medium uppercase">{c.name}</span>
-                        <span className="tabular-nums">{formatPence(c.amountPence, currency)}</span>
+                        <span className="min-w-0 truncate font-medium uppercase">{c.name}</span>
+                        <span className="shrink-0 tabular-nums">{formatPence(c.amountPence, currency)}</span>
                       </div>
                       {c.children.length > 0 && (
                         <ul className="ml-3 space-y-0.5 border-l border-border pl-3">
@@ -156,8 +156,8 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                               key={child.name}
                               className="flex items-center justify-between gap-3 py-0.5 text-muted-foreground"
                             >
-                              <span className="uppercase">{child.name}</span>
-                              <span className="tabular-nums">{formatPence(child.amountPence, currency)}</span>
+                              <span className="min-w-0 truncate uppercase">{child.name}</span>
+                              <span className="shrink-0 tabular-nums">{formatPence(child.amountPence, currency)}</span>
                             </li>
                           ))}
                         </ul>

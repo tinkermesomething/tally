@@ -134,7 +134,13 @@ export function LogExpenseDialog({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Stacked, not side-by-side - a native <input type="date"> has an
+              intrinsic min-content width browsers won't shrink below, which
+              overflows this dialog's fixed ~24rem max-width on every screen
+              size, not just narrow ones (iOS Safari also enforces
+              box-sizing:content-box on it specifically, hence appearance-none
+              below too). */}
+          <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="expense-amount">Amount</Label>
               <Input
@@ -152,6 +158,7 @@ export function LogExpenseDialog({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                className="w-full max-w-full appearance-none"
               />
             </div>
           </div>

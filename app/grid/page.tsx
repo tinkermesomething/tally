@@ -50,6 +50,8 @@ export default async function GridPage({
   const wagesNow = data.wagesByMonth[currentMonthIndex];
   const availableNow = data.availableByMonth[currentMonthIndex];
   const leftToSpendNow = data.leftToSpendByMonth[currentMonthIndex];
+  const carryOverNow = data.carryOverByMonth[currentMonthIndex];
+  const prevMonthLabel = MONTHS[(currentMonthIndex + 11) % 12];
 
   // Mobile month pager - independent of the "now" stat cards above, since
   // browsing a different month on a phone shouldn't move those.
@@ -100,6 +102,16 @@ export default async function GridPage({
           tone={leftToSpendNow < 0 ? "critical" : "good"}
         />
       </div>
+
+      {carryOverNow !== 0 && (
+        <p className="text-xs text-muted-foreground">
+          Left to spend {carryOverNow > 0 ? "includes" : "is reduced by"}{" "}
+          <span className={carryOverNow > 0 ? "text-status-good" : "text-status-critical"}>
+            {formatPence(Math.abs(carryOverNow), currency)}
+          </span>{" "}
+          carried over from {prevMonthLabel}.
+        </p>
+      )}
 
       <DesktopGridTables
         categories={data.categories}
