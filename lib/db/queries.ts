@@ -485,15 +485,29 @@ export async function getGridData(year: number): Promise<GridData> {
         const overdue = plannedCells.some((c) => c.overdue);
         months[month] = { amountPence, paid, spentPence, computed: true, overdue };
       } else if (anyChildCellsThisMonth.some((c) => c.spentPence > 0)) {
-        // No complete plan for the month yet, but real money has genuinely
-        // been spent on at least one child - still surface that spending
-        // (amountPence stays undefined, since there's no trustworthy
-        // planned figure to show alongside it).
+        // No COMPLETE plan for the month (not every child has an entry
+        // yet), but don't throw away the real, PARTIAL planned total
+        // either - same "sum whatever's genuinely there" principle
+        // spentPence already uses two lines up. This used to leave
+        // amountPence fully undefined here, which silently zeroed the
+        // WHOLE category's contribution out of plannedByMonth (BUDGETED)
+        // the moment even one child (often a pay-as-you-go one that's
+        // simply unused some months, e.g. "OTHER" or "O2 mobile") had no
+        // entry yet - even when its siblings carried hundreds of pounds
+        // of real plan. Confirmed live: this is exactly what was making
+        // BUDGETED read ~£250-300 short some months. undefined only when
+        // genuinely NO child has a planned figure, matching how an empty
+        // cell is already treated everywhere else.
+        const plannedCells = anyChildCellsThisMonth.filter((c) => c.amountPence !== undefined);
+        const amountPence =
+          plannedCells.length > 0
+            ? plannedCells.reduce((sum, c) => sum + (c.amountPence ?? 0), 0)
+            : undefined;
         const paid = anyChildCellsThisMonth.every(
           (c) => c.paid || effectiveAmountPence(c) === 0
         );
         const overdue = anyChildCellsThisMonth.some((c) => c.overdue);
-        months[month] = { amountPence: undefined, paid, spentPence, computed: true, overdue };
+        months[month] = { amountPence, paid, spentPence, computed: true, overdue };
       } else if (directMonths[month]) {
         months[month] = directMonths[month];
       }
