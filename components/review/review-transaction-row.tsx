@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { Check, X, TriangleAlert, UserRound, Pencil } from "lucide-react";
+import { Check, X, TriangleAlert, UserRound, Pencil, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TableRow, TableCell } from "@/components/ui/table";
@@ -24,7 +24,7 @@ import {
   discardImportedTransactionMatch,
 } from "@/app/review/actions";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
-import { RuleDialog } from "@/components/review/rule-dialog";
+import type { RuleContext } from "@/components/review/rule-dialog";
 
 export type ReviewRow = {
   id: number;
@@ -49,6 +49,7 @@ export function ReviewTransactionRow({
   people,
   selected,
   onToggleSelected,
+  onOpenRule,
 }: {
   transaction: ReviewRow;
   categories: { id: number; name: string }[];
@@ -56,6 +57,8 @@ export function ReviewTransactionRow({
   people: { id: number; name: string }[];
   selected: boolean;
   onToggleSelected: (id: number) => void;
+  /** Opens the list-level Rule window for this transaction. */
+  onOpenRule: (context: Omit<RuleContext, "openId">) => void;
 }) {
   const { currency, dateFormat } = useAppSettings();
   const [pending, startTransition] = useTransition();
@@ -255,15 +258,22 @@ export function ReviewTransactionRow({
             </SelectContent>
           </Select>
         )}
-        <RuleDialog
-          transaction={transaction}
-          isIncome={isIncome}
-          categories={categories}
-          incomeSources={incomeSources}
-          people={people}
-          initialCategoryId={categoryId}
-          initialIncomeSourceId={incomeSourceId}
-        />
+        <Button
+          size="xs"
+          variant="outline"
+          title="Create a rule from this transaction"
+          onClick={() =>
+            onOpenRule({
+              transaction: { payeeRaw: transaction.payeeRaw, payeeClean: transaction.payeeClean },
+              isIncome,
+              initialCategoryId: categoryId,
+              initialIncomeSourceId: incomeSourceId,
+            })
+          }
+        >
+          <Zap className="size-3" />
+          Rule
+        </Button>
         </div>
       </TableCell>
       <TableCell>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
 import { ReviewTransactionRow, type ReviewRow } from "@/components/review/review-transaction-row";
+import { RuleDialog, type RuleContext } from "@/components/review/rule-dialog";
 import {
   bulkIgnoreImportedTransactions,
   bulkCategorizeImportedTransactionsAsExpense,
@@ -34,6 +36,33 @@ export function ReviewList({
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [bulkIncomeSourceId, setBulkIncomeSourceId] = useState("");
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const [, startRefresh] = useTransition();
+  const [ruleContext, setRuleContext] = useState<RuleContext | null>(null);
+  const openCounter = useRef(0);
+
+  const openRule = useCallback((context: Omit<RuleContext, "openId">) => {
+    setRuleContext({ ...context, openId: ++openCounter.current });
+  }, []);
+
+  // The list is refreshed only AFTER the window is closed: saving a rule
+  // categorizes rows, and redrawing thousands of them while the window is
+  // still up froze it on "Done".
+  function closeRule(applied: boolean) {
+    setRuleContext(null);
+    if (applied) startRefresh(() => router.refresh());
+  }
+
+  // Rows that left the list (categorized by a rule, ignored elsewhere) must
+  // not stay selected - a later bulk action would be fed ids that are no
+  // longer pending.
+  useEffect(() => {
+    const ids = new Set(transactions.map((t) => t.id));
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [transactions]);
 
   // A provisional match (pencilled-in draft awaiting Confirm/Discard) needs
   // individual attention - bulk-ignoring or bulk-approving it alongside
@@ -210,10 +239,18 @@ export function ReviewList({
               people={people}
               selected={selected.has(t.id)}
               onToggleSelected={toggle}
+              onOpenRule={openRule}
             />
           ))}
         </TableBody>
       </Table>
+      <RuleDialog
+        context={ruleContext}
+        onClose={closeRule}
+        categories={categories}
+        incomeSources={incomeSources}
+        people={people}
+      />
     </div>
   );
 }

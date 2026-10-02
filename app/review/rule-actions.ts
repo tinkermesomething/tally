@@ -32,7 +32,8 @@ export async function saveRule(input: {
   try {
     const ids = Array.isArray(input.applyToIds) ? input.applyToIds.filter((n) => Number.isInteger(n)) : [];
     const result = await createRuleAndCategorize({ conditions: input.conditions, target: input.target, applyToIds: ids });
-    revalidatePath("/review");
+    // /review is deliberately NOT revalidated here: the Rule window refreshes
+    // it itself once it has closed (see ReviewList.closeRule).
     revalidatePath("/settings");
     revalidatePath("/grid");
     revalidatePath("/entries");

@@ -569,6 +569,11 @@ export async function categorizeTransaction(
 ) {
   const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
   if (!row) throw new Error(`Staged transaction ${id} not found.`);
+  if (row.status !== "pending_review") {
+    // A stale tab or selection must never log a second expense for a
+    // transaction that was already categorized (or deliberately ignored).
+    throw new Error("This transaction was already handled.");
+  }
   if (row.amountPence >= 0) {
     throw new Error("Only money-out (negative amount) transactions can be categorized as an expense.");
   }
@@ -601,6 +606,7 @@ export async function categorizeTransactionAsIncome(
 ) {
   const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
   if (!row) throw new Error(`Staged transaction ${id} not found.`);
+  if (row.status !== "pending_review") throw new Error("This transaction was already handled.");
   if (row.amountPence <= 0) {
     throw new Error("Only money-in (positive amount) transactions can be categorized as income.");
   }
@@ -625,6 +631,19 @@ export async function ignoreTransaction(id: number) {
   await db.update(importedTransactions).set({ status: "ignored" }).where(eq(importedTransactions.id, id));
 }
 
+/** Only ids still waiting in Review are touched: a stale tab or selection
+ * can carry ids that were categorized or ignored since, and those must be
+ * skipped quietly rather than abort the batch partway (or, worse, log a
+ * second expense for something already logged). */
+async function stillPending(ids: number[]): Promise<number[]> {
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: importedTransactions.id })
+    .from(importedTransactions)
+    .where(and(inArray(importedTransactions.id, ids), eq(importedTransactions.status, "pending_review")));
+  return rows.map((r) => r.id);
+}
+
 /** Bulk form of categorizeTransaction/categorizeTransactionAsIncome - for
  * applying one chosen category/source to a whole batch at once (e.g.
  * catching up a big import where many rows share the same payee). Each
@@ -635,13 +654,13 @@ export async function bulkCategorizeTransactionsAsExpense(
   ids: number[],
   input: { categoryId: number; debtPersonId?: number | null }
 ) {
-  for (const id of ids) {
+  for (const id of await stillPending(ids)) {
     await categorizeTransaction(id, input);
   }
 }
 
 export async function bulkCategorizeTransactionsAsIncome(ids: number[], input: { incomeSourceId: number }) {
-  for (const id of ids) {
+  for (const id of await stillPending(ids)) {
     await categorizeTransactionAsIncome(id, input);
   }
 }
@@ -651,7 +670,10 @@ export async function bulkIgnoreTransactions(ids: number[]) {
   // inArray, not or(...ids.map(eq)) - a "select all" bulk-ignore after a
   // large import can mean thousands of ids; one IN clause instead of
   // thousands of OR'd equality terms.
-  await db.update(importedTransactions).set({ status: "ignored" }).where(inArray(importedTransactions.id, ids));
+  await db
+    .update(importedTransactions)
+    .set({ status: "ignored" })
+    .where(and(inArray(importedTransactions.id, ids), eq(importedTransactions.status, "pending_review")));
 }
 
 /** Undo for ignoreTransaction - back to the review pool. Does NOT undo a
