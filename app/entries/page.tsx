@@ -36,7 +36,10 @@ export default async function EntriesPage({
           <MonthSelect year={year} month={month} basePath="/entries" />
         </div>
       </div>
-      <EntriesTable entries={entries} />
+      {/* keyed by period: EntriesTable keeps its rows in state (for instant
+          edits/deletes), which only reads the prop once - without the key,
+          switching month/year updated the dropdown but left the old rows. */}
+      <EntriesTable key={`${year}-${month}`} entries={entries} />
     </div>
   );
 }

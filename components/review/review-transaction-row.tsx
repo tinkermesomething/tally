@@ -244,7 +244,7 @@ export function ReviewTransactionRow({
         <div className="flex items-center gap-1.5">
         {isIncome ? (
           <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? "")}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-60" title={incomeSources.find((s) => String(s.id) === incomeSourceId)?.name}>
               <SelectValue>
                 {(value: string) =>
                   value
@@ -263,7 +263,7 @@ export function ReviewTransactionRow({
           </Select>
         ) : (
           <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-60" title={categories.find((c) => String(c.id) === categoryId)?.name}>
               <SelectValue>
                 {(value: string) =>
                   value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"

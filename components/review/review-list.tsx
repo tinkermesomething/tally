@@ -191,7 +191,7 @@ export function ReviewList({
           )}
           {allSelectedExpense && (
             <Select value={bulkCategoryId} onValueChange={(v) => setBulkCategoryId(v ?? "")}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-60">
                 <SelectValue>
                   {(value: string) =>
                     value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
@@ -209,7 +209,7 @@ export function ReviewList({
           )}
           {allSelectedIncome && (
             <Select value={bulkIncomeSourceId} onValueChange={(v) => setBulkIncomeSourceId(v ?? "")}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-60">
                 <SelectValue>
                   {(value: string) =>
                     value ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value) : "Choose a source"
