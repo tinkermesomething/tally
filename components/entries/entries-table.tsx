@@ -64,9 +64,19 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
         </thead>
         <tbody>
           {rows.map((entry) => (
-            <tr key={entry.id} className="border-t border-border">
+            <tr key={entry.id} className={`border-t border-border ${entry.provisional ? "bg-muted/40" : ""}`}>
               <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(entry.entryDate, dateFormat)}</td>
-              <td className="px-3 py-2 font-medium">{entry.categoryName}</td>
+              <td className="px-3 py-2 font-medium">
+                {entry.categoryName}
+                {entry.provisional && (
+                  <span
+                    className="ml-1.5 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[0.65rem] font-normal text-muted-foreground"
+                    title="Pencilled in from a pending bank transaction - not yet confirmed"
+                  >
+                    pencilled in
+                  </span>
+                )}
+              </td>
               <td className="px-3 py-2 text-right">
                 <input
                   defaultValue={(entry.amountPence / 100).toFixed(2)}

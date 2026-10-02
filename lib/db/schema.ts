@@ -72,6 +72,14 @@ export const expenseEntries = sqliteTable("expense_entries", {
   importedTransactionId: integer("imported_transaction_id").references(
     () => importedTransactions.id
   ),
+  // "Pencilled in" from a pending-at-the-bank preview, before the real
+  // transaction has settled - counts in the grid like any other expense
+  // (that's the point: reflect money that's already earmarked), but is
+  // still a guess, not a confirmed fact, until the matching real
+  // transaction arrives and the user confirms or discards it. Not named
+  // "pending" - that word already means "unsettled at the bank" elsewhere
+  // in this codebase, a different concept.
+  provisional: integer("provisional", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),
@@ -167,6 +175,12 @@ export const debtLedgerEntries = sqliteTable("debt_ledger_entries", {
   amountPence: integer("amount_pence").notNull(),
   direction: text("direction", { enum: ["loan", "repayment"] }).notNull(),
   note: text("note"),
+  // Set only when this ledger entry was created automatically alongside an
+  // expense (see logExpense) - lets discarding a provisional/pencilled-in
+  // expense clean up the matching repayment it created, rather than
+  // leaving the ledger permanently wrong. Null for anything entered
+  // directly on the Debt page.
+  expenseEntryId: integer("expense_entry_id").references(() => expenseEntries.id),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),

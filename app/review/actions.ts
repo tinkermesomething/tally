@@ -9,7 +9,9 @@ import {
   bulkIgnoreTransactions,
   bulkCategorizeTransactionsAsExpense,
   bulkCategorizeTransactionsAsIncome,
+  confirmPencilledMatch,
 } from "@/lib/db/bank-sync";
+import { pencilInExpense, discardPencilledExpense } from "@/lib/db/queries";
 
 export async function categorizeImportedTransaction(
   id: number,
@@ -60,4 +62,38 @@ export async function bulkCategorizeImportedTransactionsAsIncome(
   await bulkCategorizeTransactionsAsIncome(ids, input);
   revalidatePath("/review");
   revalidatePath("/grid");
+}
+
+export async function pencilInPendingExpense(input: {
+  categoryId: number;
+  amountPence: number;
+  // The pending preview's own date, when GoCardless has one yet - null
+  // falls back to today server-side (this is a same-day guess either way).
+  entryDate: string | null;
+  note?: string;
+}) {
+  await pencilInExpense({ ...input, entryDate: input.entryDate ?? new Date().toISOString().slice(0, 10) });
+  revalidatePath("/review");
+  revalidatePath("/grid");
+  revalidatePath("/entries");
+  revalidatePath("/debt");
+}
+
+/** The booked transaction that just synced in matches a pencilled-in guess
+ * - make the draft permanent and mark this bank row already-logged. */
+export async function confirmImportedTransactionMatch(importedTransactionId: number, expenseEntryId: number) {
+  await confirmPencilledMatch(importedTransactionId, expenseEntryId);
+  revalidatePath("/review");
+  revalidatePath("/grid");
+  revalidatePath("/entries");
+}
+
+/** The pencilled-in guess was wrong - discard it, let the real bank
+ * transaction go through normal categorizing. */
+export async function discardImportedTransactionMatch(expenseEntryId: number) {
+  await discardPencilledExpense(expenseEntryId);
+  revalidatePath("/review");
+  revalidatePath("/grid");
+  revalidatePath("/entries");
+  revalidatePath("/debt");
 }

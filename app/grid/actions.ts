@@ -191,6 +191,7 @@ export async function removeExpenseEntry(id: number) {
   await deleteExpenseEntryQuery(id);
   revalidatePath("/grid");
   revalidatePath("/entries");
+  revalidatePath("/debt");
 }
 
 /** Logs an actual income transaction (additive - matches how logExpense

@@ -35,7 +35,15 @@ export function ReviewList({
   const [bulkIncomeSourceId, setBulkIncomeSourceId] = useState("");
   const [pending, startTransition] = useTransition();
 
+  // A provisional match (pencilled-in draft awaiting Confirm/Discard) needs
+  // individual attention - bulk-ignoring or bulk-approving it alongside
+  // other rows would skip that resolution and leave the draft orphaned.
+  const isBulkEligible = (t: ReviewRow) => !t.duplicateOf?.provisional;
+  const eligibleTransactions = transactions.filter(isBulkEligible);
+
   function toggle(id: number) {
+    const transaction = transactions.find((t) => t.id === id);
+    if (!transaction || !isBulkEligible(transaction)) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -45,7 +53,9 @@ export function ReviewList({
   }
 
   function toggleAll() {
-    setSelected((prev) => (prev.size === transactions.length ? new Set() : new Set(transactions.map((t) => t.id))));
+    setSelected((prev) =>
+      prev.size === eligibleTransactions.length ? new Set() : new Set(eligibleTransactions.map((t) => t.id))
+    );
   }
 
   // "Above"/"below" only has one obvious meaning with a single anchor point -
@@ -58,12 +68,12 @@ export function ReviewList({
 
   function selectAbove() {
     if (anchorIndex < 0) return;
-    setSelected(new Set(transactions.slice(0, anchorIndex + 1).map((t) => t.id)));
+    setSelected(new Set(transactions.slice(0, anchorIndex + 1).filter(isBulkEligible).map((t) => t.id)));
   }
 
   function selectBelow() {
     if (anchorIndex < 0) return;
-    setSelected(new Set(transactions.slice(anchorIndex).map((t) => t.id)));
+    setSelected(new Set(transactions.slice(anchorIndex).filter(isBulkEligible).map((t) => t.id)));
   }
 
   function bulkIgnore() {
@@ -177,7 +187,7 @@ export function ReviewList({
           <TableRow>
             <TableHead>
               <Checkbox
-                checked={transactions.length > 0 && selected.size === transactions.length}
+                checked={eligibleTransactions.length > 0 && selected.size === eligibleTransactions.length}
                 onCheckedChange={toggleAll}
                 aria-label="Select all"
               />

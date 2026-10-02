@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import type { ReviewRow } from "@/components/review/review-transaction-row";
+import { PencilInButton } from "@/components/review/pencil-in-button";
 
 export const dynamic = "force-dynamic";
 
@@ -94,8 +95,8 @@ export default async function ReviewPage({
       {pendingPreview.length > 0 && (
         <div className="space-y-1.5 rounded-xl border border-dashed border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Pending at the bank - not yet settled, so not categorizable yet. Shown for visibility only;
-            nothing here is saved.
+            Pending at the bank - not yet settled, so not categorizable yet. Money-out rows can be
+            pencilled in as an expense ahead of settling; everything else is for visibility only.
           </p>
           <div className="space-y-1">
             {pendingPreview.map((t, i) => (
@@ -104,10 +105,15 @@ export default async function ReviewPage({
                   {t.date ? formatDate(t.date, appSettings.dateFormat) : "Date pending"} ·{" "}
                   {t.payeeRaw} · {t.bankAccountName}
                 </span>
-                <span className="shrink-0 tabular-nums">
-                  {t.amountPence > 0 ? "+" : "−"}
-                  {formatPence(Math.abs(t.amountPence), appSettings.currency)}
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="tabular-nums">
+                    {t.amountPence > 0 ? "+" : "−"}
+                    {formatPence(Math.abs(t.amountPence), appSettings.currency)}
+                  </span>
+                  {t.amountPence < 0 && (
+                    <PencilInButton amountPence={t.amountPence} date={t.date} payeeRaw={t.payeeRaw} categories={flatCategories} />
+                  )}
+                </div>
               </div>
             ))}
           </div>

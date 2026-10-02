@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { Check, X, TriangleAlert, UserRound } from "lucide-react";
+import { Check, X, TriangleAlert, UserRound, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TableRow, TableCell } from "@/components/ui/table";
@@ -20,6 +20,8 @@ import {
   categorizeImportedTransaction,
   categorizeImportedTransactionAsIncome,
   ignoreImportedTransaction,
+  confirmImportedTransactionMatch,
+  discardImportedTransactionMatch,
 } from "@/app/review/actions";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
@@ -29,7 +31,14 @@ export type ReviewRow = {
   bookingDate: string;
   payeeRaw: string;
   payeeClean: string | null;
-  duplicateOf: { categoryName: string; amountPence: number; entryDate: string; note: string | null } | null;
+  duplicateOf: {
+    id: number;
+    categoryName: string;
+    amountPence: number;
+    entryDate: string;
+    note: string | null;
+    provisional: boolean;
+  } | null;
 };
 
 export function ReviewTransactionRow({
@@ -107,14 +116,73 @@ export function ReviewTransactionRow({
     startTransition(() => ignoreImportedTransaction(transaction.id));
   }
 
-  const duplicateTitle = transaction.duplicateOf
-    ? `Might already be logged as ${transaction.duplicateOf.categoryName}, ${formatPence(
-        transaction.duplicateOf.amountPence,
+  function handleConfirmMatch() {
+    if (!transaction.duplicateOf) return;
+    startTransition(() => confirmImportedTransactionMatch(transaction.id, transaction.duplicateOf!.id));
+  }
+
+  function handleDiscardMatch() {
+    if (!transaction.duplicateOf) return;
+    startTransition(() => discardImportedTransactionMatch(transaction.duplicateOf!.id));
+  }
+
+  // A provisional match is your own deliberate pencilled-in guess, not a
+  // generic "might be a coincidental dupe" warning - different mental
+  // model, different controls (Confirm/Discard instead of pick-a-category).
+  const provisionalMatch = transaction.duplicateOf?.provisional ? transaction.duplicateOf : null;
+
+  const duplicateTitle = provisionalMatch
+    ? `Pencilled in as ${provisionalMatch.categoryName}, ${formatPence(
+        provisionalMatch.amountPence,
         currency
-      )} on ${formatDate(transaction.duplicateOf.entryDate, dateFormat)}${
-        transaction.duplicateOf.note ? ` ("${transaction.duplicateOf.note}")` : ""
-      }. Only a suggestion.`
-    : undefined;
+      )} on ${formatDate(provisionalMatch.entryDate, dateFormat)}. Confirm if this is it, Discard if not.`
+    : transaction.duplicateOf
+      ? `Might already be logged as ${transaction.duplicateOf.categoryName}, ${formatPence(
+          transaction.duplicateOf.amountPence,
+          currency
+        )} on ${formatDate(transaction.duplicateOf.entryDate, dateFormat)}${
+          transaction.duplicateOf.note ? ` ("${transaction.duplicateOf.note}")` : ""
+        }. Only a suggestion.`
+      : undefined;
+
+  if (provisionalMatch) {
+    return (
+      <TableRow>
+        <TableCell>
+          <Checkbox checked={false} disabled aria-label="Resolve this match first" title="Resolve this match first" />
+        </TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          {formatDate(transaction.bookingDate, dateFormat)}
+        </TableCell>
+        <TableCell className="max-w-48 min-w-0 whitespace-normal">
+          <div className="flex items-center gap-1.5">
+            <span title={duplicateTitle}>
+              <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{transaction.payeeClean ?? transaction.payeeRaw}</p>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className="text-right font-semibold tabular-nums">
+          −{formatPence(Math.abs(transaction.amountPence), currency)}
+        </TableCell>
+        <TableCell className="text-sm text-muted-foreground" colSpan={2}>
+          Pencilled in: {provisionalMatch.categoryName}
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-1">
+            <Button size="icon-xs" onClick={handleConfirmMatch} disabled={pending} title="Confirm match">
+              <Check className="size-3.5" />
+            </Button>
+            <Button size="icon-xs" variant="outline" onClick={handleDiscardMatch} disabled={pending} title="Discard - wasn't a match">
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  }
 
   return (
     <TableRow data-state={selected ? "selected" : undefined}>

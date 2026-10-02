@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db } from "./index";
-import { logExpense, incrementIncomeEntry } from "./queries";
+import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
 import { resolvePeriodForDate } from "./pay-period";
 import {
   bankAccounts,
@@ -525,9 +525,14 @@ export async function getPendingTransactions(filters?: {
  * something displayable. Returns null if the expense was since edited away
  * from matching, or deleted - the hint is advisory, so silently dropping a
  * stale one is correct, not an error. */
-export async function getPossibleDuplicateDetails(
-  expenseEntryId: number
-): Promise<{ id: number; categoryName: string; amountPence: number; entryDate: string; note: string | null } | null> {
+export async function getPossibleDuplicateDetails(expenseEntryId: number): Promise<{
+  id: number;
+  categoryName: string;
+  amountPence: number;
+  entryDate: string;
+  note: string | null;
+  provisional: boolean;
+} | null> {
   const row = await db
     .select({
       id: expenseEntries.id,
@@ -535,12 +540,22 @@ export async function getPossibleDuplicateDetails(
       amountPence: expenseEntries.amountPence,
       entryDate: expenseEntries.entryDate,
       note: expenseEntries.note,
+      provisional: expenseEntries.provisional,
     })
     .from(expenseEntries)
     .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
     .where(eq(expenseEntries.id, expenseEntryId))
     .limit(1);
   return row[0] ?? null;
+}
+
+/** The real transaction settling matches what the user pencilled in -
+ * makes that draft permanent and marks this bank row as already logged
+ * (same "ignored" status as any other already-logged duplicate, see
+ * ignoreTransaction). */
+export async function confirmPencilledMatch(importedTransactionId: number, expenseEntryId: number) {
+  await confirmPencilledExpense(expenseEntryId, importedTransactionId);
+  await ignoreTransaction(importedTransactionId);
 }
 
 /** Creates the real expenseEntries row (via the same logExpense every

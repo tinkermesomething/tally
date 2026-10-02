@@ -3,7 +3,7 @@ import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "./index";
 import { resolvePeriodForDate } from "./pay-period";
 import { getAppSettings } from "./settings";
-import { addDebtEntry } from "./debt";
+import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
 import {
   categories,
   categoryEntries,
@@ -825,6 +825,9 @@ export async function logExpense(input: {
    * row, rather than typed in directly - purely for traceability back to
    * its source (lib/db/bank-sync.ts). */
   importedTransactionId?: number;
+  /** Pencilled in from a pending-at-the-bank preview, not yet confirmed
+   * against the real settled transaction - see pencilInExpense. */
+  provisional?: boolean;
 }) {
   const { year, month } = await resolvePeriodForDate(input.entryDate);
 
@@ -838,16 +841,20 @@ export async function logExpense(input: {
     debtPersonId = category?.linkedDebtPersonId ?? undefined;
   }
 
-  await db.insert(expenseEntries).values({
-    categoryId: input.categoryId,
-    year,
-    month,
-    amountPence: input.amountPence,
-    entryDate: input.entryDate,
-    note: input.note || null,
-    debtPersonId,
-    importedTransactionId: input.importedTransactionId,
-  });
+  const [created] = await db
+    .insert(expenseEntries)
+    .values({
+      categoryId: input.categoryId,
+      year,
+      month,
+      amountPence: input.amountPence,
+      entryDate: input.entryDate,
+      note: input.note || null,
+      debtPersonId,
+      importedTransactionId: input.importedTransactionId,
+      provisional: input.provisional ?? false,
+    })
+    .returning();
 
   // Tagging an expense as a debt repayment must actually move the ledger,
   // not just label the expense for traceability - that was the bug: ticking
@@ -859,13 +866,16 @@ export async function logExpense(input: {
       amountPence: input.amountPence,
       direction: "repayment",
       note: input.note,
+      expenseEntryId: created.id,
     });
   }
 
   // Logging an expense means the money is already gone - that's the same
   // real-world fact as ticking "paid", so mark it here too. Otherwise a
   // logged expense correctly counts toward SUBTOTAL/AVAILABLE but still
-  // shows up in "Remaining to pay" as if it hadn't happened yet.
+  // shows up in "Remaining to pay" as if it hadn't happened yet. A
+  // provisional entry gets the same treatment - that's the point of
+  // pencilling it in: reflect money the bank's already earmarked.
   const existing = await db.query.categoryEntries.findFirst({
     where: categoryEntryMatch(input.categoryId, year, month),
   });
@@ -874,6 +884,8 @@ export async function logExpense(input: {
   } else {
     await db.insert(categoryEntries).values({ categoryId: input.categoryId, year, month, amountPence: 0, paid: true });
   }
+
+  return created;
 }
 
 export type ExpenseEntryRow = {
@@ -885,6 +897,7 @@ export type ExpenseEntryRow = {
   amountPence: number;
   note: string | null;
   entryDate: string;
+  provisional: boolean;
 };
 
 /** Individual logged expenses for one category/month - the breakdown behind
@@ -904,6 +917,7 @@ export async function getExpenseEntriesForCell(
       amountPence: expenseEntries.amountPence,
       note: expenseEntries.note,
       entryDate: expenseEntries.entryDate,
+      provisional: expenseEntries.provisional,
     })
     .from(expenseEntries)
     .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
@@ -935,6 +949,7 @@ export async function getExpenseEntriesForMonth(
       amountPence: expenseEntries.amountPence,
       note: expenseEntries.note,
       entryDate: expenseEntries.entryDate,
+      provisional: expenseEntries.provisional,
     })
     .from(expenseEntries)
     .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
@@ -966,10 +981,14 @@ export async function updateExpenseEntry(
 /** Real, permanent delete - unlike everything else in this app (categories,
  * income sources, people are all soft-deleted), a logged expense is a
  * transaction record: "I entered this wrong" should just remove it, there's
- * no future value in keeping a row around that never happened. */
+ * no future value in keeping a row around that never happened. Also cleans
+ * up any debt-ledger entry this expense auto-created (see logExpense) -
+ * otherwise deleting a debt-tagged expense leaves the ledger permanently
+ * wrong, since debt_ledger_entries doesn't cascade. */
 export async function deleteExpenseEntry(id: number) {
   const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
   if (!entry) return;
+  await deleteDebtEntriesForExpense(id);
   await db.delete(expenseEntries).where(eq(expenseEntries.id, id));
 
   // If that was the last logged expense for this cell, its "paid" status
@@ -988,6 +1007,51 @@ export async function deleteExpenseEntry(id: number) {
       .set({ paid: false })
       .where(categoryEntryMatch(entry.categoryId, entry.year, entry.month));
   }
+}
+
+/** "Pencil in" a pending-at-the-bank transaction as a real expense ahead of
+ * it settling - counts immediately (that's the point), flagged
+ * `provisional` until the matching real transaction arrives and gets
+ * confirmed or discarded (see confirmPencilledExpense/discardPencilledExpense
+ * in lib/db/bank-sync.ts). Expense-only: incoming money needs no equivalent
+ * - the user isn't a business, it just arrives. */
+export async function pencilInExpense(input: {
+  categoryId: number;
+  amountPence: number;
+  entryDate: string;
+  note?: string;
+}) {
+  return logExpense({ ...input, provisional: true });
+}
+
+/** Undo for a pencilled-in expense that turned out wrong (amount never
+ * settled, or settled differently and won't auto-match) - just
+ * deleteExpenseEntry (which already cleans up any debt-ledger entry) with a
+ * guard: refuses to touch a non-provisional entry, since this is for
+ * discarding a guess, not deleting a confirmed one. */
+export async function discardPencilledExpense(id: number) {
+  const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
+  if (!entry) return;
+  if (!entry.provisional) {
+    throw new Error("Not a provisional entry - use the regular delete instead.");
+  }
+  await deleteExpenseEntry(id);
+}
+
+/** The real transaction settled matching what was pencilled in - makes the
+ * draft permanent (just flips the flag; the debt-ledger entry, if any, was
+ * already created correctly when it was pencilled in and needs no change)
+ * and links it back to the real bank transaction for traceability. */
+export async function confirmPencilledExpense(id: number, importedTransactionId: number) {
+  const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
+  if (!entry) return;
+  if (!entry.provisional) {
+    throw new Error("Not a provisional entry.");
+  }
+  await db
+    .update(expenseEntries)
+    .set({ provisional: false, importedTransactionId })
+    .where(eq(expenseEntries.id, id));
 }
 
 export async function upsertIncomeEntry(input: {
