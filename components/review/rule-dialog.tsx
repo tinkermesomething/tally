@@ -103,6 +103,11 @@ function RuleDialogBody({
   const [conditions, setConditions] = useState<EditorCondition[]>(() => [
     newEditorCondition("payee", "contains", (transaction.payeeClean ?? transaction.payeeRaw).replace(/\s+/g, " ").trim()),
   ]);
+  // Categorize routes matches to a category/source; Ignore drops them from
+  // Review (own-account transfers) and matches money in AND out.
+  const [action, setAction] = useState<"categorize" | "ignore">("categorize");
+  const ignoring = action === "ignore";
+  const direction = ignoring ? "ignore" : isIncome ? "income" : "expense";
   const [categoryId, setCategoryId] = useState(context.initialCategoryId);
   const [incomeSourceId, setIncomeSourceId] = useState(context.initialIncomeSourceId);
   const [tagDebt, setTagDebt] = useState(context.initialTagDebt);
@@ -148,7 +153,7 @@ function RuleDialogBody({
     setLoading(true);
     const id = ++requestId.current;
     const timer = setTimeout(async () => {
-      const res = await previewRule({ conditions: parsed.conditions, direction: isIncome ? "income" : "expense" });
+      const res = await previewRule({ conditions: parsed.conditions, direction });
       if (id !== requestId.current) return;
       setLoading(false);
       if (res.ok) setPreview(res.preview);
@@ -157,7 +162,7 @@ function RuleDialogBody({
     return () => clearTimeout(timer);
     // conditionsKey captures every change to the parsed conditions
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conditionsKey, isIncome]);
+  }, [conditionsKey, direction]);
 
   const rows = preview?.rows ?? [];
   const isTicked = (row: RulePreview["rows"][number]) =>
@@ -172,22 +177,24 @@ function RuleDialogBody({
     setOverrides(new Map(selectableRows.map((r) => [r.id, checked])));
   }
 
-  const hasTarget = isIncome ? !!incomeSourceId : !!categoryId;
+  const hasTarget = ignoring || (isIncome ? !!incomeSourceId : !!categoryId);
 
   function submit(apply: boolean) {
     if (!parsed.ok) return setError(parsed.error);
     if (!hasTarget) return setError(isIncome ? "Pick an income source." : "Pick a category.");
-    if (tagDebt && !personId) {
+    if (!ignoring && tagDebt && !personId) {
       return setError(isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
     }
-    if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new person's name.");
+    if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new person's name.");
     setError(null);
     startSaving(async () => {
       try {
-        const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
-        const target = isIncome
-          ? ({ targetType: "income", incomeSourceId: parseInt(incomeSourceId, 10), debtPersonId } as const)
-          : ({ targetType: "expense", categoryId: parseInt(categoryId, 10), debtPersonId } as const);
+        const debtPersonId = !ignoring && tagDebt ? await resolvePersonId() : undefined;
+        const target = ignoring
+          ? ({ targetType: "ignore" } as const)
+          : isIncome
+            ? ({ targetType: "income", incomeSourceId: parseInt(incomeSourceId, 10), debtPersonId } as const)
+            : ({ targetType: "expense", categoryId: parseInt(categoryId, 10), debtPersonId } as const);
         const res = await saveRule({ conditions: parsed.conditions, target, applyToIds: apply ? tickedIds : [] });
         if (res.ok) {
           setResult(res.result);
@@ -208,7 +215,7 @@ function RuleDialogBody({
           <DialogTitle>Rule created</DialogTitle>
           <DialogDescription>
             {result.categorized > 0
-              ? `Categorized ${result.categorized} transaction${result.categorized === 1 ? "" : "s"}. `
+              ? `${ignoring ? "Ignored" : "Categorized"} ${result.categorized} transaction${result.categorized === 1 ? "" : "s"}. `
               : ""}
             It will also apply to future imports.
           </DialogDescription>
@@ -239,8 +246,24 @@ function RuleDialogBody({
         <RuleConditionsEditor conditions={conditions} onChange={setConditions} />
 
         <div className="space-y-2 rounded-lg border border-border p-3">
-          <p className="text-xs font-medium text-muted-foreground">Then categorize as</p>
-          {isIncome ? (
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium text-muted-foreground">Then</p>
+            <Select value={action} onValueChange={(v) => setAction(v === "ignore" ? "ignore" : "categorize")}>
+              <SelectTrigger className="w-40" aria-label="Rule action">
+                <SelectValue>{(v: string) => (v === "ignore" ? "Ignore" : "Categorize as…")}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="categorize">Categorize as…</SelectItem>
+                <SelectItem value="ignore">Ignore</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {ignoring ? (
+            <p className="text-xs text-muted-foreground">
+              Matching transactions leave Review, money in or out - so both halves of a transfer between your
+              own accounts clear. They can be restored later.
+            </p>
+          ) : isIncome ? (
             <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? "")}>
               <SelectTrigger className="w-64" aria-label="Income source">
                 <SelectValue>
@@ -271,13 +294,15 @@ function RuleDialogBody({
               </SelectContent>
             </Select>
           )}
+          {!ignoring && (
           <div className="flex items-center gap-2">
             <Checkbox checked={tagDebt} onCheckedChange={(c) => handleTagDebtChange(c === true)} />
             <Label className="font-normal">
               {isIncome ? "Also record as a loan (add to Debt)" : "Also tag as a debt repayment"}
             </Label>
           </div>
-          {tagDebt && (
+          )}
+          {!ignoring && tagDebt && (
             <PersonPickerField
               idPrefix="rule-dialog"
               label={isIncome ? "Borrowed from" : "Paying back"}
@@ -372,7 +397,7 @@ function RuleDialogBody({
             Create rule
           </Button>
           <Button type="button" disabled={saving || !parsed.ok || tickedIds.length === 0} onClick={() => submit(true)}>
-            {saving ? "Saving…" : `Create rule & categorize ${tickedIds.length}`}
+            {saving ? "Saving…" : `Create rule & ${ignoring ? "ignore" : "categorize"} ${tickedIds.length}`}
           </Button>
         </DialogFooter>
       </div>

@@ -15,7 +15,7 @@ import type { RuleCondition } from "@/lib/rules";
  * shows a hint rather than an error screen. */
 export async function previewRule(input: {
   conditions: RuleCondition[];
-  direction: "expense" | "income";
+  direction: "expense" | "income" | "ignore";
 }): Promise<{ ok: true; preview: RulePreview } | { ok: false; error: string }> {
   try {
     return { ok: true, preview: await previewRuleMatches(input.conditions, input.direction) };

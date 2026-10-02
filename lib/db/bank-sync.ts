@@ -2,13 +2,15 @@ import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm"
 import { db } from "./index";
 import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
 import { addDebtEntry } from "./debt";
-import { resolvePeriodForDate } from "./pay-period";
+import { recordAnchorForWage } from "./pay-period";
+import { parseIsoDate } from "../date";
 import {
   bankAccounts,
   categories,
   categoryRules,
   expenseEntries,
   importedTransactions,
+  incomeSources,
   people,
 } from "./schema";
 import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence } from "../gocardless";
@@ -101,7 +103,7 @@ export async function syncBankAccount(bankAccountId: number): Promise<{ staged: 
   // fetched separately by the Review page - see the schema comment on
   // pendingPreviewJson for why a second live call per page view isn't
   // safe against this endpoint's own rate limit.
-  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName">[] = pending.map((t) => ({
+  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName" | "pencilled">[] = pending.map((t) => ({
     amountPence: gcAmountToPence(t.transactionAmount.amount),
     date: t.bookingDate ?? t.valueDate ?? null,
     payeeRaw: t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee",
@@ -152,6 +154,10 @@ export type PendingPreviewTransaction = {
   // date GoCardless currently has for this", not a settled booking date.
   date: string | null;
   payeeRaw: string;
+  /** Already pencilled in as an expense (a provisional entry with this
+   * amount and payee exists) - the preview comes from the bank's cache, so
+   * without this a refresh offered the pencil again. */
+  pencilled: boolean;
 };
 
 /** Read-only preview of GoCardless's own "pending" transactions (not yet
@@ -172,6 +178,14 @@ export type PendingPreviewTransaction = {
 export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> {
   const accounts = await getBankAccounts();
   const results: PendingPreviewTransaction[] = [];
+  // pencilInExpense stores the preview's payee as the note and its amount as
+  // a positive figure. Each provisional entry covers ONE preview row, so two
+  // identical pending rows with one pencilled show one pencil.
+  const provisional = await db
+    .select({ amountPence: expenseEntries.amountPence, note: expenseEntries.note })
+    .from(expenseEntries)
+    .where(eq(expenseEntries.provisional, true));
+  const claimed = provisional.map((e) => ({ ...e, used: false }));
   for (const account of accounts) {
     if (!account.pendingPreviewJson) continue;
     let parsed: unknown;
@@ -190,12 +204,18 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
       ) {
         continue;
       }
+      const match =
+        t.amountPence < 0
+          ? claimed.find((e) => !e.used && e.amountPence === Math.abs(t.amountPence) && e.note === t.payeeRaw)
+          : undefined;
+      if (match) match.used = true;
       results.push({
         bankAccountId: account.id,
         bankAccountName: account.displayName,
         amountPence: t.amountPence,
         date: typeof t.date === "string" ? t.date : null,
         payeeRaw: t.payeeRaw,
+        pencilled: !!match,
       });
     }
   }
@@ -215,7 +235,11 @@ export async function getCategoryRules(): Promise<CategoryRule[]> {
 
 export type RuleTarget =
   | { targetType: "expense"; categoryId: number; debtPersonId?: number }
-  | { targetType: "income"; incomeSourceId: number; debtPersonId?: number };
+  | { targetType: "income"; incomeSourceId: number; debtPersonId?: number }
+  // Matching rows are ignored instead of categorized - e.g. money moved
+  // between your own accounts. Applies to money in AND out, so both halves
+  // of a transfer clear.
+  | { targetType: "ignore" };
 
 /** Stored conditions are all-must-match. field/operator/value mirror the
  * first condition so the single-condition columns stay valid (they're NOT
@@ -230,7 +254,9 @@ export async function addCategoryRule(input: { conditions: RuleCondition[] } & R
   const target =
     input.targetType === "expense"
       ? { targetType: "expense" as const, categoryId: input.categoryId, debtPersonId: input.debtPersonId }
-      : { targetType: "income" as const, incomeSourceId: input.incomeSourceId, debtPersonId: input.debtPersonId };
+      : input.targetType === "income"
+        ? { targetType: "income" as const, incomeSourceId: input.incomeSourceId, debtPersonId: input.debtPersonId }
+        : { targetType: "ignore" as const };
   const [created] = await db
     .insert(categoryRules)
     .values({
@@ -251,7 +277,8 @@ export async function deactivateCategoryRule(id: number) {
 
 export type RuleMatch =
   | { targetType: "expense"; categoryId: number; debtPersonId: number | null }
-  | { targetType: "income"; incomeSourceId: number; debtPersonId: number | null };
+  | { targetType: "income"; incomeSourceId: number; debtPersonId: number | null }
+  | { targetType: "ignore" };
 
 /** Pure function, no DB access - evaluates rules in order, first match
  * wins. Matches actual-budget's own model: condition (field/operator/
@@ -284,10 +311,13 @@ export function matchCategoryRule(
   if (transaction.amountPence === 0) return null;
   const direction: "expense" | "income" = transaction.amountPence < 0 ? "expense" : "income";
   for (const rule of rules) {
-    if (rule.targetType !== direction) continue;
+    // Ignore rules are direction-free (both halves of a transfer).
+    if (rule.targetType !== "ignore" && rule.targetType !== direction) continue;
 
     const matched = allConditionsMatch(ruleConditionsOf(rule), transaction);
     if (!matched) continue;
+
+    if (rule.targetType === "ignore") return { targetType: "ignore" };
 
     if (rule.targetType === "expense") {
       // categoryId is NOT NULL at the application level for an "expense"
@@ -436,6 +466,15 @@ export async function stageImportedTransactions(
     .onConflictDoNothing({ target: [importedTransactions.bankAccountId, importedTransactions.importedId] })
     .returning();
 
+  // Oldest first, money in before money out within a day: a wage must
+  // record its anchor before the expenses that follow it are filed, or they
+  // land in the wrong month (and would need re-filing).
+  inserted.sort(
+    (a, b) =>
+      a.bookingDate.localeCompare(b.bookingDate) ||
+      Math.sign(b.amountPence) - Math.sign(a.amountPence) ||
+      a.id - b.id
+  );
   const results = [];
   for (const row of inserted) {
     results.push(await autoProcessStagedTransaction(row.id));
@@ -465,7 +504,9 @@ async function autoProcessStagedTransaction(id: number) {
   const rules = await getCategoryRules();
   const ruleMatch = matchCategoryRule(row, rules);
   if (ruleMatch) {
-    if (ruleMatch.targetType === "expense") {
+    if (ruleMatch.targetType === "ignore") {
+      await ignoreTransaction(id);
+    } else if (ruleMatch.targetType === "expense") {
       // ruleMatch.debtPersonId is null when the RULE itself has no debt tag
       // - that must not override the category's own linkedDebtPersonId, so
       // pass undefined (no explicit choice) rather than null (opt-out).
@@ -631,7 +672,14 @@ export async function categorizeTransactionAsIncome(
   }
   await assertPersonExists(input.debtPersonId);
 
-  const { year, month } = await resolvePeriodForDate(row.bookingDate);
+  // Only the pay-anchor source (Wages) follows the anchors: its deposit
+  // records one from the bank timestamp and is filed in the month it funds.
+  // Every other income keeps its plain bank-date calendar month - anchors
+  // only ever re-file expenses.
+  const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, input.incomeSourceId) });
+  const { year, month } = source?.isPayAnchor
+    ? await recordAnchorForWage(input.incomeSourceId, row.bookingDate)
+    : parseIsoDate(row.bookingDate);
   await incrementIncomeEntry({
     incomeSourceId: input.incomeSourceId,
     year,
@@ -748,7 +796,7 @@ export type RulePreview = {
  * by the target: expense rules only see money out, income only money in. */
 export async function previewRuleMatches(
   conditionsInput: RuleCondition[],
-  direction: "expense" | "income"
+  direction: "expense" | "income" | "ignore"
 ): Promise<RulePreview> {
   const conditions = validateConditions(conditionsInput);
   const pending = await db
@@ -757,7 +805,11 @@ export async function previewRuleMatches(
     .where(
       and(
         eq(importedTransactions.status, "pending_review"),
-        direction === "expense" ? sql`${importedTransactions.amountPence} < 0` : sql`${importedTransactions.amountPence} > 0`
+        direction === "expense"
+          ? sql`${importedTransactions.amountPence} < 0`
+          : direction === "income"
+            ? sql`${importedTransactions.amountPence} > 0`
+            : sql`${importedTransactions.amountPence} != 0`
       )
     )
     .orderBy(sql`${importedTransactions.bookingDate} desc`, sql`${importedTransactions.id} desc`);
@@ -834,7 +886,9 @@ export async function createRuleAndCategorize(input: {
       continue;
     }
     try {
-      if (input.target.targetType === "expense") {
+      if (input.target.targetType === "ignore") {
+        await ignoreTransaction(id);
+      } else if (input.target.targetType === "expense") {
         await categorizeTransaction(id, { categoryId: input.target.categoryId, debtPersonId: input.target.debtPersonId });
       } else {
         await categorizeTransactionAsIncome(id, {

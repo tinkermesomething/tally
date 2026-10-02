@@ -1,17 +1,30 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { editExpenseEntry, removeExpenseEntry } from "@/app/grid/actions";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { ExpenseEntryRow } from "@/lib/db/queries";
+import { amountText, fuzzyScore } from "@/lib/fuzzy";
 
 export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
   const { currency, dateFormat } = useAppSettings();
   const [rows, setRows] = useState(entries);
   const [, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
+
+  // Best matches first while searching; original order when not. Only this
+  // period's loaded entries are searched.
+  const shown = useMemo(() => {
+    if (query.trim() === "") return rows;
+    return rows
+      .map((r, i) => ({ r, i, s: fuzzyScore(query, [r.categoryName, r.note, amountText(r.amountPence), r.entryDate]) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s || a.i - b.i)
+      .map((x) => x.r);
+  }, [rows, query]);
 
   /** Returns the canonical "10.00"-formatted value to redisplay on a valid
    * edit, or null on invalid input - the input is uncontrolled (defaultValue
@@ -51,6 +64,22 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
   }
 
   return (
+    <div className="space-y-2">
+    <div className="flex items-center gap-2">
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search category, note, amount…"
+        aria-label="Search entries"
+        className="h-8 w-64 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
+      />
+      {query.trim() !== "" && (
+        <span className="text-xs text-muted-foreground" data-testid="entries-filter-count">
+          Showing {shown.length} of {rows.length}
+        </span>
+      )}
+    </div>
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <table className="w-full text-sm">
         <thead>
@@ -63,7 +92,14 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((entry) => (
+          {shown.length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                No entries match.
+              </td>
+            </tr>
+          )}
+          {shown.map((entry) => (
             <tr key={entry.id} className={`border-t border-border ${entry.provisional ? "bg-muted/40" : ""}`}>
               <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(entry.entryDate, dateFormat)}</td>
               <td className="px-3 py-2 font-medium">
@@ -119,15 +155,16 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
         <tfoot>
           <tr className="border-t border-border bg-secondary font-medium">
             <td className="px-3 py-2" colSpan={2}>
-              Total
+              Total{shown.length !== rows.length ? ` (${shown.length} of ${rows.length} shown)` : ""}
             </td>
             <td className="px-3 py-2 text-right tabular-nums">
-              {formatPence(rows.reduce((sum, r) => sum + r.amountPence, 0), currency)}
+              {formatPence(shown.reduce((sum, r) => sum + r.amountPence, 0), currency)}
             </td>
             <td colSpan={2} />
           </tr>
         </tfoot>
       </table>
+    </div>
     </div>
   );
 }

@@ -335,7 +335,7 @@ export const categoryRules = sqliteTable("category_rules", {
   // single-condition columns keep working; see ruleConditionsOf in
   // lib/rules.ts, the only reader that matters.
   conditions: text("conditions"),
-  targetType: text("target_type", { enum: ["expense", "income"] })
+  targetType: text("target_type", { enum: ["expense", "income", "ignore"] })
     .notNull()
     .default("expense"),
   categoryId: integer("category_id").references(() => categories.id),

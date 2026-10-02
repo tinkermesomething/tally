@@ -210,9 +210,11 @@ export default async function SettingsPage({
                       value: c.field === "amount" ? (parseInt(c.value, 10) / 100).toFixed(2) : c.value,
                     }))}
                     targetName={
-                      r.targetType === "income"
-                        ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
-                        : (categoryNameById.get(r.categoryId!) ?? "Unknown category")
+                      r.targetType === "ignore"
+                        ? "Ignore"
+                        : r.targetType === "income"
+                          ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
+                          : (categoryNameById.get(r.categoryId!) ?? "Unknown category")
                     }
                     debtPersonName={r.debtPersonId ? (personNameById.get(r.debtPersonId) ?? null) : null}
                     debtKind={r.targetType === "income" ? "loan" : "repayment"}

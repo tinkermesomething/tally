@@ -1,6 +1,6 @@
-import { desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lt, lte } from "drizzle-orm";
 import { db } from "./index";
-import { incomeSources, payPeriodAnchors } from "./schema";
+import { categoryEntries, expenseEntries, incomeSources, payPeriodAnchors } from "./schema";
 import { parseIsoDate } from "../date";
 
 /** Resolves which (year, month) budget period a real calendar date falls
@@ -55,4 +55,100 @@ export async function recordPayPeriodAnchor(input: {
 
 export async function listPayPeriodAnchors() {
   return db.select().from(payPeriodAnchors).orderBy(desc(payPeriodAnchors.receivedDate));
+}
+
+/** The budget month a pay deposit funds: the month most of the 30 days
+ * AFTER it fall in, i.e. the month of (date + 15 days). No cutoff day -
+ * 30 Sep -> Oct, 28 Aug -> Sep, 31 Jul -> Aug, 3 Oct -> Oct. */
+export function periodForReceivedDate(receivedDate: string): { year: number; month: number } {
+  parseIsoDate(receivedDate); // rejects malformed input
+  const d = new Date(`${receivedDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 15);
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+}
+
+/** Records the anchor for a pay deposit categorized into the pay-anchor
+ * source (auto rule, by hand or bulk), then re-files the expenses that the
+ * new boundary moves. Returns the funded month, which is also the month
+ * the deposit's own income entry belongs in. Skips the insert when the
+ * latest anchor for that date already says the same thing, so re-running
+ * for the same deposit never piles up duplicates. */
+export async function recordAnchorForWage(incomeSourceId: number, receivedDate: string) {
+  const period = periodForReceivedDate(receivedDate);
+  const latestSameDay = await db.query.payPeriodAnchors.findFirst({
+    where: eq(payPeriodAnchors.receivedDate, receivedDate),
+    orderBy: (a, { desc }) => [desc(a.id)],
+  });
+  if (!latestSameDay || latestSameDay.year !== period.year || latestSameDay.month !== period.month) {
+    await recordPayPeriodAnchor({ incomeSourceId, receivedDate, ...period });
+    await refileExpensesFromAnchor(receivedDate);
+  }
+  return period;
+}
+
+/** Stored expense year/month are fixed at insert time, so a new anchor
+ * does not move expenses that were already filed. This does: every expense
+ * dated from `fromDate` up to the next later anchor is re-resolved and
+ * moved when its period changed. The paid placeholders follow the same
+ * rules as logExpense / deleteExpenseEntry: the destination cell is paid,
+ * and the old cell reverts to unpaid when no expense is left in it.
+ * Returns how many expenses moved. */
+export async function refileExpensesFromAnchor(fromDate: string): Promise<number> {
+  const next = await db.query.payPeriodAnchors.findFirst({
+    where: gt(payPeriodAnchors.receivedDate, fromDate),
+    orderBy: (a, { asc }) => [asc(a.receivedDate)],
+  });
+  const rows = await db
+    .select()
+    .from(expenseEntries)
+    .where(
+      and(
+        gte(expenseEntries.entryDate, fromDate),
+        next ? lt(expenseEntries.entryDate, next.receivedDate) : undefined
+      )
+    );
+
+  let moved = 0;
+  for (const e of rows) {
+    const { year, month } = await resolvePeriodForDate(e.entryDate);
+    if (year === e.year && month === e.month) continue;
+    await db.update(expenseEntries).set({ year, month }).where(eq(expenseEntries.id, e.id));
+
+    const dest = await db.query.categoryEntries.findFirst({
+      where: and(
+        eq(categoryEntries.categoryId, e.categoryId),
+        eq(categoryEntries.year, year),
+        eq(categoryEntries.month, month)
+      ),
+    });
+    if (dest) {
+      await db.update(categoryEntries).set({ paid: true }).where(eq(categoryEntries.id, dest.id));
+    } else {
+      await db
+        .insert(categoryEntries)
+        .values({ categoryId: e.categoryId, year, month, amountPence: 0, paid: true });
+    }
+
+    const left = await db.query.expenseEntries.findFirst({
+      where: and(
+        eq(expenseEntries.categoryId, e.categoryId),
+        eq(expenseEntries.year, e.year),
+        eq(expenseEntries.month, e.month)
+      ),
+    });
+    if (!left) {
+      await db
+        .update(categoryEntries)
+        .set({ paid: false })
+        .where(
+          and(
+            eq(categoryEntries.categoryId, e.categoryId),
+            eq(categoryEntries.year, e.year),
+            eq(categoryEntries.month, e.month)
+          )
+        );
+    }
+    moved++;
+  }
+  return moved;
 }

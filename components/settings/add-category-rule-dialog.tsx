@@ -25,7 +25,7 @@ import { RuleConditionsEditor, newEditorCondition, type EditorCondition } from "
 import { parseConditionInputs } from "@/lib/rules";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
-type TargetType = "expense" | "income";
+type TargetType = "expense" | "income" | "ignore";
 
 export function AddCategoryRuleDialog({
   categories,
@@ -76,7 +76,7 @@ export function AddCategoryRuleDialog({
       setError("Pick an income source.");
       return;
     }
-    if (tagDebt && !personId) {
+    if (targetType !== "ignore" && tagDebt && !personId) {
       setError(targetType === "income" ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
       return;
     }
@@ -87,7 +87,9 @@ export function AddCategoryRuleDialog({
     setError(null);
     startTransition(async () => {
       try {
-        if (targetType === "expense") {
+        if (targetType === "ignore") {
+          await createCategoryRule({ conditions: parsed.conditions, targetType: "ignore" });
+        } else if (targetType === "expense") {
           const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
           await createCategoryRule({
             conditions: parsed.conditions,
@@ -140,18 +142,19 @@ export function AddCategoryRuleDialog({
               onValueChange={(v) => handleTargetTypeChange((v as TargetType) ?? "expense")}
             >
               <SelectTrigger id="rule-target-type" className="w-full">
-                <SelectValue>{(v: string) => (v === "income" ? "Income source" : "Expense category")}</SelectValue>
+                <SelectValue>{(v: string) => (v === "income" ? "Income source" : v === "ignore" ? "Ignore" : "Expense category")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="expense">Expense category</SelectItem>
                 <SelectItem value="income">Income source</SelectItem>
+                <SelectItem value="ignore">Ignore (money in or out)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <RuleConditionsEditor conditions={conditions} onChange={setConditions} />
 
-          {targetType === "expense" ? (
+          {targetType === "ignore" ? null : targetType === "expense" ? (
             <div className="space-y-1.5">
               <Label htmlFor="rule-category">Category</Label>
               <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
@@ -191,14 +194,16 @@ export function AddCategoryRuleDialog({
             </div>
           )}
 
+          {targetType !== "ignore" && (
           <div className="flex items-center gap-2">
             <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
             <Label className="font-normal">
               {targetType === "income" ? "Also record as a loan (add to Debt)" : "Also tag as a debt repayment"}
             </Label>
           </div>
+          )}
 
-          {tagDebt && (
+          {targetType !== "ignore" && tagDebt && (
             <PersonPickerField
               idPrefix="rule"
               label={targetType === "income" ? "Borrowed from" : "Paying back"}

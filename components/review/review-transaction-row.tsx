@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Check, X, TriangleAlert, Pencil, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,6 +33,8 @@ export type ReviewRow = {
   bookingDate: string;
   payeeRaw: string;
   payeeClean: string | null;
+  accountId: number;
+  accountName: string;
   duplicateOf: {
     id: number;
     categoryName: string;
@@ -50,7 +52,12 @@ export function ReviewTransactionRow({
   people,
   selected,
   onToggleSelected,
+  onSelect,
+  onPick,
+  onRegisterApprove,
   onOpenRule,
+  hidden = false,
+  showAccount = false,
 }: {
   transaction: ReviewRow;
   categories: { id: number; name: string }[];
@@ -58,6 +65,18 @@ export function ReviewTransactionRow({
   people: { id: number; name: string }[];
   selected: boolean;
   onToggleSelected: (id: number) => void;
+  /** Ticks this row (never unticks) - called when a category/source is picked. */
+  onSelect: (id: number) => void;
+  /** Tells the list whether this row currently has a category/source chosen. */
+  onPick: (id: number, picked: boolean) => void;
+  /** Hands the list this row's approve action, so "Approve selected" can
+   * approve each ticked row with its own pick. Null when the row goes away. */
+  onRegisterApprove: (id: number, approve: (() => Promise<string | null>) | null) => void;
+  /** Filtered out: stays mounted (so a category already picked here isn't
+   * lost) but not shown. */
+  hidden?: boolean;
+  /** Show which bank account this came from (only useful with several). */
+  showAccount?: boolean;
   /** Opens the list-level Rule window for this transaction. */
   onOpenRule: (context: Omit<RuleContext, "openId">) => void;
 }) {
@@ -85,57 +104,58 @@ export function ReviewTransactionRow({
     }
   }
 
-  function handleCategorize() {
-    if (isIncome) {
-      if (!incomeSourceId) {
-        setError("Pick an income source first.");
-        return;
-      }
-      if (tagDebt && !personId) {
-        setError("Pick who you borrowed this from, or turn off the loan tag.");
-        return;
-      }
-      if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
-        setError("Enter the new person's name.");
-        return;
-      }
-      setError(null);
-      startTransition(async () => {
-        try {
-          const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
-          await categorizeImportedTransactionAsIncome(transaction.id, {
-            incomeSourceId: parseInt(incomeSourceId, 10),
-            debtPersonId,
-          });
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to categorize.");
-        }
-      });
-      return;
-    }
-
-    if (!categoryId) {
-      setError("Pick a category first.");
-      return;
+  /** Validates and categorizes this row with its own pick. Resolves to an
+   * error message, or null when it worked. */
+  async function approve(): Promise<string | null> {
+    if (isIncome ? !incomeSourceId : !categoryId) {
+      return isIncome ? "Pick an income source first." : "Pick a category first.";
     }
     if (tagDebt && !personId) {
-      setError("Pick who this repayment is to, or turn off the debt tag.");
-      return;
+      return isIncome
+        ? "Pick who you borrowed this from, or turn off the loan tag."
+        : "Pick who this repayment is to, or turn off the debt tag.";
     }
     if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
-      setError("Enter the new person's name.");
-      return;
+      return "Enter the new person's name.";
     }
-    setError(null);
-    startTransition(async () => {
-      try {
-        const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
+    try {
+      const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
+      if (isIncome) {
+        await categorizeImportedTransactionAsIncome(transaction.id, {
+          incomeSourceId: parseInt(incomeSourceId, 10),
+          debtPersonId,
+        });
+      } else {
         await categorizeImportedTransaction(transaction.id, { categoryId: parseInt(categoryId, 10), debtPersonId });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to categorize.");
       }
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Failed to categorize.";
+    }
+  }
+
+  function handleCategorize() {
+    startTransition(async () => {
+      setError(await approve());
     });
   }
+
+  // A provisional match is resolved with Confirm/Discard, never approved.
+  const isProvisional = !!transaction.duplicateOf?.provisional;
+  const pick = isIncome ? incomeSourceId : categoryId;
+  useEffect(() => {
+    onPick(transaction.id, !isProvisional && !!pick);
+    return () => onPick(transaction.id, false);
+  }, [transaction.id, isProvisional, pick, onPick]);
+  useEffect(() => {
+    if (isProvisional) return;
+    onRegisterApprove(transaction.id, async () => {
+      const err = await approve();
+      setError(err);
+      return err;
+    });
+    return () => onRegisterApprove(transaction.id, null);
+  });
 
   function handleIgnore() {
     startTransition(() => ignoreImportedTransaction(transaction.id));
@@ -172,12 +192,13 @@ export function ReviewTransactionRow({
 
   if (provisionalMatch) {
     return (
-      <TableRow>
+      <TableRow className={hidden ? "hidden" : undefined}>
         <TableCell>
           <Checkbox checked={false} disabled aria-label="Resolve this match first" title="Resolve this match first" />
         </TableCell>
         <TableCell className="text-xs text-muted-foreground">
           {formatDate(transaction.bookingDate, dateFormat)}
+          {showAccount && <span className="block truncate" data-testid="row-account">{transaction.accountName}</span>}
         </TableCell>
         <TableCell className="max-w-48 min-w-0 whitespace-normal">
           <div className="flex items-center gap-1.5">
@@ -210,7 +231,7 @@ export function ReviewTransactionRow({
   }
 
   return (
-    <TableRow data-state={selected ? "selected" : undefined}>
+    <TableRow data-state={selected ? "selected" : undefined} className={hidden ? "hidden" : undefined}>
       <TableCell>
         <Checkbox
           checked={selected}
@@ -220,6 +241,7 @@ export function ReviewTransactionRow({
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {formatDate(transaction.bookingDate, dateFormat)}
+        {showAccount && <span className="block truncate" data-testid="row-account">{transaction.accountName}</span>}
       </TableCell>
       <TableCell className="max-w-48 min-w-0 whitespace-normal">
         <div className="flex items-center gap-1.5">
@@ -243,7 +265,15 @@ export function ReviewTransactionRow({
       <TableCell>
         <div className="flex items-center gap-1.5">
         {isIncome ? (
-          <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? "")}>
+          <Select
+            value={incomeSourceId}
+            onValueChange={(v) => {
+              setIncomeSourceId(v ?? "");
+              // Picking a source ticks the row, so several categorized rows
+              // can be approved together without ticking each one by hand.
+              if (v) onSelect(transaction.id);
+            }}
+          >
             <SelectTrigger className="w-60" title={incomeSources.find((s) => String(s.id) === incomeSourceId)?.name}>
               <SelectValue>
                 {(value: string) =>
@@ -262,7 +292,13 @@ export function ReviewTransactionRow({
             </SelectContent>
           </Select>
         ) : (
-          <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+          <Select
+            value={categoryId}
+            onValueChange={(v) => {
+              setCategoryId(v ?? "");
+              if (v) onSelect(transaction.id);
+            }}
+          >
             <SelectTrigger className="w-60" title={categories.find((c) => String(c.id) === categoryId)?.name}>
               <SelectValue>
                 {(value: string) =>

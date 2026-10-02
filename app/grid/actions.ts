@@ -27,7 +27,7 @@ import {
   upsertIncomeEntry,
 } from "@/lib/db/queries";
 import { addDebtEntry } from "@/lib/db/debt";
-import { recordPayPeriodAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
+import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { parseIsoDate } from "@/lib/date";
 
@@ -236,6 +236,7 @@ export async function logIncome(input: {
       year,
       month,
     });
+    await refileExpensesFromAnchor(input.entryDate);
   } else {
     ({ year, month } = parseIsoDate(input.entryDate));
   }
@@ -249,6 +250,7 @@ export async function logIncome(input: {
       direction: "loan",
     });
   }
+  revalidatePath("/entries");
   revalidatePath("/grid");
   revalidatePath("/debt");
 }

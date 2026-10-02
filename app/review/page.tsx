@@ -42,6 +42,16 @@ export default async function ReviewPage({
     ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
   ]);
 
+  // Two linked accounts can share a name (e.g. two Revolut pots) - add the
+  // id so the filter can tell them apart.
+  const nameCount = new Map<string, number>();
+  for (const a of bankAccounts) nameCount.set(a.displayName, (nameCount.get(a.displayName) ?? 0) + 1);
+  const accounts = bankAccounts.map((a) => ({
+    id: a.id,
+    name: (nameCount.get(a.displayName) ?? 0) > 1 ? `${a.displayName} (#${a.id})` : a.displayName,
+  }));
+  const accountName = new Map(accounts.map((a) => [a.id, a.name]));
+
   const transactions: ReviewRow[] = await Promise.all(
     pending.map(async (t) => ({
       id: t.id,
@@ -49,6 +59,8 @@ export default async function ReviewPage({
       bookingDate: t.bookingDate,
       payeeRaw: t.payeeRaw,
       payeeClean: t.payeeClean,
+      accountId: t.bankAccountId,
+      accountName: accountName.get(t.bankAccountId) ?? "Unknown account",
       duplicateOf:
         t.possibleDuplicateExpenseEntryId !== null
           ? await getPossibleDuplicateDetails(t.possibleDuplicateExpenseEntryId)
@@ -110,7 +122,8 @@ export default async function ReviewPage({
                     {t.amountPence > 0 ? "+" : "−"}
                     {formatPence(Math.abs(t.amountPence), appSettings.currency)}
                   </span>
-                  {t.amountPence < 0 && (
+                  {t.pencilled && <span className="text-xs">Pencilled in</span>}
+                  {t.amountPence < 0 && !t.pencilled && (
                     <PencilInButton amountPence={t.amountPence} date={t.date} payeeRaw={t.payeeRaw} categories={flatCategories} />
                   )}
                 </div>
@@ -122,6 +135,7 @@ export default async function ReviewPage({
 
       <ReviewList
         transactions={transactions}
+        accounts={accounts}
         categories={flatCategories}
         incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
         people={people.map((p) => ({ id: p.id, name: p.name }))}
