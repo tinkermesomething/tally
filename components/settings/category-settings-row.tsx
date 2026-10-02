@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { EditableDueDay } from "@/components/grid/editable-due-day";
+import { EditableDebtLink } from "@/components/grid/editable-debt-link";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { MoveCategoryButton } from "@/components/settings/move-category-button";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
@@ -16,6 +17,7 @@ export function CategorySettingsRow({
   color,
   existingGroups,
   topLevelCategories,
+  people,
 }: {
   category: CategoryTreeNode;
   color: string;
@@ -23,6 +25,7 @@ export function CategorySettingsRow({
   /** Every top-level category (including this one) - used to populate the
    * "move to" target list for this row and its children. */
   topLevelCategories: { id: number; name: string }[];
+  people: { id: number; name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -42,11 +45,18 @@ export function CategorySettingsRow({
         />
         <EditableDueDay categoryId={category.id} dueDay={category.dueDay} />
         {category.children.length === 0 && (
-          <MoveCategoryButton
-            categoryId={category.id}
-            currentParentId={null}
-            topLevelCategories={topLevelCategories}
-          />
+          <>
+            <EditableDebtLink
+              categoryId={category.id}
+              linkedDebtPersonId={category.linkedDebtPersonId}
+              people={people}
+            />
+            <MoveCategoryButton
+              categoryId={category.id}
+              currentParentId={null}
+              topLevelCategories={topLevelCategories}
+            />
+          </>
         )}
         <AddSubcategoryDialog parentId={category.id} parentName={category.name} />
         <Button
@@ -71,6 +81,11 @@ export function CategorySettingsRow({
                 onCommit={(next) => renameCategory(child.id, next)}
               />
               <EditableDueDay categoryId={child.id} dueDay={child.dueDay} />
+              <EditableDebtLink
+                categoryId={child.id}
+                linkedDebtPersonId={child.linkedDebtPersonId}
+                people={people}
+              />
               <MoveCategoryButton
                 categoryId={child.id}
                 currentParentId={category.id}

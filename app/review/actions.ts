@@ -7,13 +7,15 @@ import {
   ignoreTransaction,
   restoreTransaction,
   bulkIgnoreTransactions,
+  bulkCategorizeTransactionsAsExpense,
+  bulkCategorizeTransactionsAsIncome,
 } from "@/lib/db/bank-sync";
 
 export async function categorizeImportedTransaction(
   id: number,
   input: { categoryId: number; debtPersonId?: number }
 ) {
-  await categorizeTransaction(id, { categoryId: input.categoryId, debtPersonId: input.debtPersonId ?? null });
+  await categorizeTransaction(id, { categoryId: input.categoryId, debtPersonId: input.debtPersonId });
   revalidatePath("/review");
   revalidatePath("/grid");
   revalidatePath("/entries");
@@ -38,4 +40,24 @@ export async function restoreImportedTransaction(id: number) {
 export async function bulkIgnoreImportedTransactions(ids: number[]) {
   await bulkIgnoreTransactions(ids);
   revalidatePath("/review");
+}
+
+export async function bulkCategorizeImportedTransactionsAsExpense(
+  ids: number[],
+  input: { categoryId: number }
+) {
+  await bulkCategorizeTransactionsAsExpense(ids, input);
+  revalidatePath("/review");
+  revalidatePath("/grid");
+  revalidatePath("/entries");
+  revalidatePath("/debt");
+}
+
+export async function bulkCategorizeImportedTransactionsAsIncome(
+  ids: number[],
+  input: { incomeSourceId: number }
+) {
+  await bulkCategorizeTransactionsAsIncome(ids, input);
+  revalidatePath("/review");
+  revalidatePath("/grid");
 }

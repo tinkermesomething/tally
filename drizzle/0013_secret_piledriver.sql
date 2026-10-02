@@ -1,0 +1,1 @@
+ALTER TABLE `categories` ADD `linked_debt_person_id` integer REFERENCES people(id);

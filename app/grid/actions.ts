@@ -20,6 +20,7 @@ import {
   unarchiveCategory as unarchiveCategoryQuery,
   unarchiveIncomeSource as unarchiveIncomeSourceQuery,
   updateCategoryDueDay as updateCategoryDueDayQuery,
+  updateCategoryDebtLink as updateCategoryDebtLinkQuery,
   updateCategoryGroup as updateCategoryGroupQuery,
   updateExpenseEntry as updateExpenseEntryQuery,
   upsertCategoryEntry,
@@ -145,9 +146,10 @@ export async function logExpense(input: {
   pounds: number;
   entryDate: string;
   note?: string;
-  /** Set when this expense is also paying someone back - creates the real
-   * debt-ledger "repayment" entry too (mirrors addLedgerEntry's own
-   * repayment+categoryId branch, just entered from the expense side). */
+  /** Set when this expense is also paying someone back. logExpenseQuery
+   * itself creates the real debt-ledger "repayment" entry (and falls back
+   * to the category's own linkedDebtPersonId if this is omitted) - don't
+   * duplicate that here. */
   debtPersonId?: number;
 }) {
   if (input.pounds <= 0) {
@@ -161,15 +163,6 @@ export async function logExpense(input: {
     note: input.note,
     debtPersonId: input.debtPersonId,
   });
-  if (input.debtPersonId) {
-    await addDebtEntry({
-      personId: input.debtPersonId,
-      entryDate: input.entryDate,
-      amountPence,
-      direction: "repayment",
-      note: input.note,
-    });
-  }
   revalidatePath("/grid");
   revalidatePath("/debt");
 }
@@ -314,6 +307,11 @@ export async function updateCategoryDueDay(categoryId: number, dueDay: number | 
   }
   await updateCategoryDueDayQuery(categoryId, dueDay);
   revalidatePath("/grid");
+  revalidatePath("/settings");
+}
+
+export async function updateCategoryDebtLink(categoryId: number, linkedDebtPersonId: number | null) {
+  await updateCategoryDebtLinkQuery(categoryId, linkedDebtPersonId);
   revalidatePath("/settings");
 }
 

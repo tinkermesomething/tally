@@ -15,6 +15,12 @@ export const categories = sqliteTable("categories", {
   isAnnual: integer("is_annual", { mode: "boolean" }).notNull().default(false),
   annualMonth: integer("annual_month"),
   dueDay: integer("due_day"), // 1-31, day of the month this is due
+  // When set, logging an expense against this category auto-creates a debt
+  // repayment for this person too (unless the caller already passed an
+  // explicit debtPersonId, which always wins). For categories that only ever
+  // mean "pay this one person back" (e.g. "Roberto"), so it's not a
+  // per-transaction tickbox someone has to remember.
+  linkedDebtPersonId: integer("linked_debt_person_id").references(() => people.id),
   // Null = active. Set = hidden from the grid/rollups for any year AFTER the
   // one archivedAt falls in, but still visible and counted for that year and
   // every year before it - archiving something today must not rewrite what a

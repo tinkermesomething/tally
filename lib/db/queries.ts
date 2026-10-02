@@ -3,6 +3,7 @@ import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "./index";
 import { resolvePeriodForDate } from "./pay-period";
 import { getAppSettings } from "./settings";
+import { addDebtEntry } from "./debt";
 import {
   categories,
   categoryEntries,
@@ -664,6 +665,7 @@ export type CategoryTreeNode = {
   isAnnual: boolean;
   annualMonth: number | null;
   dueDay: number | null;
+  linkedDebtPersonId: number | null;
   children: CategoryTreeNode[];
 };
 
@@ -697,6 +699,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
       isAnnual: c.isAnnual,
       annualMonth: c.annualMonth,
       dueDay: c.dueDay,
+      linkedDebtPersonId: c.linkedDebtPersonId,
       children: (childrenByParent.get(c.id) ?? []).map((child) => ({
         id: child.id,
         name: child.name,
@@ -704,6 +707,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
         isAnnual: child.isAnnual,
         annualMonth: child.annualMonth,
         dueDay: child.dueDay,
+        linkedDebtPersonId: child.linkedDebtPersonId,
         children: [],
       })),
     }));
@@ -711,6 +715,10 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
 
 export async function updateCategoryDueDay(categoryId: number, dueDay: number | null) {
   await db.update(categories).set({ dueDay }).where(eq(categories.id, categoryId));
+}
+
+export async function updateCategoryDebtLink(categoryId: number, linkedDebtPersonId: number | null) {
+  await db.update(categories).set({ linkedDebtPersonId }).where(eq(categories.id, categoryId));
 }
 
 function categoryEntryMatch(categoryId: number, year: number, month: number) {
@@ -808,15 +816,28 @@ export async function logExpense(input: {
   amountPence: number;
   entryDate: string; // ISO date, e.g. "2026-09-26"
   note?: string;
-  /** Set when this expense is also a debt repayment - purely for
-   * traceability; the actual ledger effect is a separate row. */
-  debtPersonId?: number;
+  /** Set when this expense is also a debt repayment. Explicit value always
+   * wins; omit (not null) to fall back to the category's own
+   * linkedDebtPersonId, if it has one. Pass null to force "no debt tag" even
+   * if the category has a link. */
+  debtPersonId?: number | null;
   /** Set when this expense was created by categorizing a staged bank-sync
    * row, rather than typed in directly - purely for traceability back to
    * its source (lib/db/bank-sync.ts). */
   importedTransactionId?: number;
 }) {
   const { year, month } = await resolvePeriodForDate(input.entryDate);
+
+  let debtPersonId: number | undefined;
+  if (input.debtPersonId !== undefined) {
+    debtPersonId = input.debtPersonId ?? undefined;
+  } else {
+    const category = await db.query.categories.findFirst({
+      where: eq(categories.id, input.categoryId),
+    });
+    debtPersonId = category?.linkedDebtPersonId ?? undefined;
+  }
+
   await db.insert(expenseEntries).values({
     categoryId: input.categoryId,
     year,
@@ -824,9 +845,22 @@ export async function logExpense(input: {
     amountPence: input.amountPence,
     entryDate: input.entryDate,
     note: input.note || null,
-    debtPersonId: input.debtPersonId,
+    debtPersonId,
     importedTransactionId: input.importedTransactionId,
   });
+
+  // Tagging an expense as a debt repayment must actually move the ledger,
+  // not just label the expense for traceability - that was the bug: ticking
+  // the box looked like it worked but never touched debt_ledger_entries.
+  if (debtPersonId) {
+    await addDebtEntry({
+      personId: debtPersonId,
+      entryDate: input.entryDate,
+      amountPence: input.amountPence,
+      direction: "repayment",
+      note: input.note,
+    });
+  }
 
   // Logging an expense means the money is already gone - that's the same
   // real-world fact as ticking "paid", so mark it here too. Otherwise a

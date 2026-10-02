@@ -102,6 +102,7 @@ export default async function SettingsPage({
                 color={groupColors.get(category.groupName ?? UNGROUPED)!}
                 existingGroups={existingGroups}
                 topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
+                people={people.map((p) => ({ id: p.id, name: p.name }))}
               />
             ))}
           </div>

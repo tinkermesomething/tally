@@ -464,7 +464,13 @@ async function autoProcessStagedTransaction(id: number) {
   const ruleMatch = matchCategoryRule(row, rules);
   if (ruleMatch) {
     if (ruleMatch.targetType === "expense") {
-      await categorizeTransaction(id, ruleMatch);
+      // ruleMatch.debtPersonId is null when the RULE itself has no debt tag
+      // - that must not override the category's own linkedDebtPersonId, so
+      // pass undefined (no explicit choice) rather than null (opt-out).
+      await categorizeTransaction(id, {
+        categoryId: ruleMatch.categoryId,
+        debtPersonId: ruleMatch.debtPersonId ?? undefined,
+      });
     } else {
       await categorizeTransactionAsIncome(id, ruleMatch);
     }
@@ -478,7 +484,7 @@ async function autoProcessStagedTransaction(id: number) {
     if (row.amountPence < 0) {
       const learnedCategoryId = await suggestCategoryFromHistory(row.payeeClean);
       if (learnedCategoryId !== null) {
-        await categorizeTransaction(id, { categoryId: learnedCategoryId, debtPersonId: null });
+        await categorizeTransaction(id, { categoryId: learnedCategoryId });
         return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
       }
     } else {
@@ -542,7 +548,9 @@ export async function getPossibleDuplicateDetails(
  * way) and marks the staged row categorized, linked back for traceability. */
 export async function categorizeTransaction(
   id: number,
-  input: { categoryId: number; debtPersonId: number | null }
+  // debtPersonId omitted (not null) falls back to the category's own
+  // linkedDebtPersonId, if any - see logExpense.
+  input: { categoryId: number; debtPersonId?: number | null }
 ) {
   const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
   if (!row) throw new Error(`Staged transaction ${id} not found.`);
@@ -555,7 +563,7 @@ export async function categorizeTransaction(
     amountPence: Math.abs(row.amountPence),
     entryDate: row.bookingDate,
     note: row.payeeClean ?? row.payeeRaw,
-    debtPersonId: input.debtPersonId ?? undefined,
+    debtPersonId: input.debtPersonId,
     importedTransactionId: id,
   });
 
@@ -600,6 +608,27 @@ export async function categorizeTransactionAsIncome(
  * Covers both "this is a transfer" and "I already logged this manually". */
 export async function ignoreTransaction(id: number) {
   await db.update(importedTransactions).set({ status: "ignored" }).where(eq(importedTransactions.id, id));
+}
+
+/** Bulk form of categorizeTransaction/categorizeTransactionAsIncome - for
+ * applying one chosen category/source to a whole batch at once (e.g.
+ * catching up a big import where many rows share the same payee). Each
+ * transaction still becomes its own real expense/income row; this is just a
+ * loop, not a different code path - so rollup math and the debt-link
+ * fallback behave identically to categorizing one at a time. */
+export async function bulkCategorizeTransactionsAsExpense(
+  ids: number[],
+  input: { categoryId: number; debtPersonId?: number | null }
+) {
+  for (const id of ids) {
+    await categorizeTransaction(id, input);
+  }
+}
+
+export async function bulkCategorizeTransactionsAsIncome(ids: number[], input: { incomeSourceId: number }) {
+  for (const id of ids) {
+    await categorizeTransactionAsIncome(id, input);
+  }
 }
 
 export async function bulkIgnoreTransactions(ids: number[]) {

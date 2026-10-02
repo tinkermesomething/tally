@@ -4,9 +4,20 @@ import { useState, useTransition } from "react";
 import { Inbox } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
 import { ReviewTransactionRow, type ReviewRow } from "@/components/review/review-transaction-row";
-import { bulkIgnoreImportedTransactions } from "@/app/review/actions";
+import {
+  bulkIgnoreImportedTransactions,
+  bulkCategorizeImportedTransactionsAsExpense,
+  bulkCategorizeImportedTransactionsAsIncome,
+} from "@/app/review/actions";
 
 export function ReviewList({
   transactions,
@@ -20,6 +31,8 @@ export function ReviewList({
   people: { id: number; name: string }[];
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkCategoryId, setBulkCategoryId] = useState("");
+  const [bulkIncomeSourceId, setBulkIncomeSourceId] = useState("");
   const [pending, startTransition] = useTransition();
 
   function toggle(id: number) {
@@ -61,6 +74,27 @@ export function ReviewList({
     });
   }
 
+  const selectedTransactions = transactions.filter((t) => selected.has(t.id));
+  const allSelectedExpense = selectedTransactions.length > 0 && selectedTransactions.every((t) => t.amountPence < 0);
+  const allSelectedIncome = selectedTransactions.length > 0 && selectedTransactions.every((t) => t.amountPence > 0);
+
+  function bulkApprove() {
+    const ids = Array.from(selected);
+    if (allSelectedExpense && bulkCategoryId) {
+      startTransition(async () => {
+        await bulkCategorizeImportedTransactionsAsExpense(ids, { categoryId: parseInt(bulkCategoryId, 10) });
+        setSelected(new Set());
+        setBulkCategoryId("");
+      });
+    } else if (allSelectedIncome && bulkIncomeSourceId) {
+      startTransition(async () => {
+        await bulkCategorizeImportedTransactionsAsIncome(ids, { incomeSourceId: parseInt(bulkIncomeSourceId, 10) });
+        setSelected(new Set());
+        setBulkIncomeSourceId("");
+      });
+    }
+  }
+
   if (transactions.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
@@ -84,6 +118,54 @@ export function ReviewList({
                 Select all below
               </Button>
             </>
+          )}
+          {allSelectedExpense && (
+            <Select value={bulkCategoryId} onValueChange={(v) => setBulkCategoryId(v ?? "")}>
+              <SelectTrigger className="w-44">
+                <SelectValue>
+                  {(value: string) =>
+                    value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {allSelectedIncome && (
+            <Select value={bulkIncomeSourceId} onValueChange={(v) => setBulkIncomeSourceId(v ?? "")}>
+              <SelectTrigger className="w-44">
+                <SelectValue>
+                  {(value: string) =>
+                    value ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value) : "Choose a source"
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {incomeSources.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {(allSelectedExpense || allSelectedIncome) && (
+            <Button
+              size="sm"
+              onClick={bulkApprove}
+              disabled={pending || (allSelectedExpense ? !bulkCategoryId : !bulkIncomeSourceId)}
+            >
+              Approve selected
+            </Button>
+          )}
+          {!allSelectedExpense && !allSelectedIncome && (
+            <span className="text-xs text-muted-foreground">Select only money-out or only money-in to bulk-approve</span>
           )}
           <Button size="sm" variant="outline" onClick={bulkIgnore} disabled={pending}>
             Ignore selected
