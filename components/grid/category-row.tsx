@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, CalendarClock, AlertCircle } from "lucide-react";
+import { ChevronRight, CalendarClock } from "lucide-react";
 import { GridCell } from "@/components/grid/grid-cell";
+import { OverdueAlert } from "@/components/grid/overdue-alert";
+import { overdueItemsFor, type OverdueItem } from "@/lib/overdue";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
@@ -39,21 +41,21 @@ function AnnualBadge({ annualMonth }: { annualMonth: number | null }) {
 function ComputedCell({
   amountPence,
   spentPence,
-  overdue,
+  overdueItems,
+  year,
+  month,
 }: {
   amountPence: number | undefined;
   spentPence: number;
-  overdue: boolean;
+  overdueItems: OverdueItem[];
+  year: number;
+  month: number;
 }) {
   const { currency } = useAppSettings();
   return (
     <div className="flex flex-col items-end gap-0.5 px-1.5 py-1">
       <div className="flex items-center gap-1">
-        {overdue && (
-          <span title="Overdue">
-            <AlertCircle className="size-3.5 shrink-0 text-status-critical" aria-label="Overdue" />
-          </span>
-        )}
+        {overdueItems.length > 0 && <OverdueAlert items={overdueItems} year={year} month={month} />}
         <span className={cn("text-[0.925rem] tabular-nums", budgetValueColorClass(amountPence, spentPence))}>
           {amountPence !== undefined ? formatPence(amountPence, currency) : "—"}
         </span>
@@ -75,12 +77,15 @@ export function CategoryMonthCell({
   month: number;
 }) {
   const cell = category.months[month];
+  const overdueItems = overdueItemsFor(category, month);
   if (cell?.computed) {
     return (
       <ComputedCell
         amountPence={cell.amountPence}
         spentPence={cell.spentPence}
-        overdue={cell.overdue}
+        overdueItems={overdueItems}
+        year={year}
+        month={month}
       />
     );
   }
@@ -90,7 +95,7 @@ export function CategoryMonthCell({
       paid={cell?.paid ?? false}
       spentPence={cell?.spentPence ?? 0}
       previousAmountPence={cell?.previousAmountPence}
-      overdue={cell?.overdue ?? false}
+      overdueItems={overdueItems}
       categoryId={category.id}
       year={year}
       month={month}

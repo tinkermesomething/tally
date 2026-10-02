@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Undo2, AlertCircle } from "lucide-react";
+import { Undo2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { cn, budgetValueColorClass } from "@/lib/utils";
 import { formatPence, getCurrencySymbol } from "@/lib/money";
 import { defaultEntryDateFor } from "@/lib/date";
 import { ExpenseEntriesPopover } from "@/components/grid/expense-entries-popover";
+import { OverdueAlert } from "@/components/grid/overdue-alert";
+import type { OverdueItem } from "@/lib/overdue";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import {
   Popover,
@@ -22,7 +24,7 @@ export function GridCell({
   spentPence = 0,
   previousAmountPence,
   showPaidToggle = true,
-  overdue = false,
+  overdueItems = [],
   categoryId,
   year,
   month,
@@ -36,7 +38,9 @@ export function GridCell({
   spentPence?: number;
   previousAmountPence?: number;
   showPaidToggle?: boolean;
-  overdue?: boolean;
+  /** What the red alert is about (see overdueItemsFor) - empty means no
+   * alert. Needs year/month too, to say when it was due. */
+  overdueItems?: OverdueItem[];
   /** Set on leaf category cells only (not income, not computed rollup
    * cells) - lets "Paid £X" open the individual logged-entries breakdown.
    * Omitting any of the three just hides that affordance. */
@@ -119,10 +123,8 @@ export function GridCell({
   return (
     <div className="relative flex flex-col items-end gap-0.5">
       <div className="flex items-center justify-end gap-1.5">
-        {overdue && (
-          <span title="Overdue">
-            <AlertCircle className="size-3.5 shrink-0 text-status-critical" aria-label="Overdue" />
-          </span>
+        {overdueItems.length > 0 && year !== undefined && month !== undefined && (
+          <OverdueAlert items={overdueItems} year={year} month={month} />
         )}
         <input
           inputMode="decimal"

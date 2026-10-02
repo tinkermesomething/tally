@@ -387,6 +387,12 @@ export async function getGridData(year: number): Promise<GridData> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // First tracked period (Settings > Preferences) - the same boundary the
+  // Left to spend carry-over chain starts from, see below. Used to decide
+  // whether a parent's own logged spending counts (see ownLoggedSpentPence).
+  const { carryOverStartYear, carryOverStartMonth } = await getAppSettings();
+  const startIndex = carryOverStartYear * 12 + carryOverStartMonth;
+
   const subtotalByMonth = Array(12).fill(0);
   const plannedByMonth = Array(12).fill(0);
   const actuallySpentByMonth = Array(12).fill(0);
@@ -434,6 +440,19 @@ export async function getGridData(year: number): Promise<GridData> {
     const months: Record<number, MonthCell> = {};
     const childById = new Map(children.map((c) => [c.id, c]));
 
+    // Money logged straight against a PARENT category (e.g. a bank
+    // transaction categorized to "personal expenses" itself rather than one
+    // of its sub-categories) is real spending, and has to count even when
+    // the parent's cell is a children-driven rollup - otherwise it silently
+    // vanishes from actually-spent/left-to-spend (confirmed live: a real
+    // 47.00). Counts only logged expenses (spentPence), never the
+    // "ticked paid" fallback of a legacy lump-sum plan, and only from the
+    // first tracked period onward: before that, parents still carry old
+    // lump-sum "confirm payment" entries that overlap their sub-categories'
+    // own spending, so history is left exactly as it was calculated.
+    const ownLoggedSpentPence = (month: number): number =>
+      year * 12 + month >= startIndex ? (directMonths[month]?.spentPence ?? 0) : 0;
+
     // Annual children (e.g. a once-a-year subscription) are expected to be
     // empty most months - they shouldn't gate whether the *regular* children
     // add up to a full month. Require every regular (non-annual) child to
@@ -443,17 +462,6 @@ export async function getGridData(year: number): Promise<GridData> {
     const regularChildCats = childCats.filter((c) => !c.isAnnual);
 
     for (let month = 1; month <= 12; month++) {
-      // A parent can carry its OWN direct entries for a month on top of its
-      // children's (e.g. general spending logged straight against the
-      // parent while one specific child is also broken out separately) -
-      // ownDirect is that contribution, folded additively into every
-      // branch below. Previously a rollup branch firing (computed: true)
-      // meant the parent's own direct entry was silently dropped entirely
-      // - confirmed live: this was hiding a real £47 of already-spent
-      // money from actuallySpentByMonth/leftToSpendByMonth the moment a
-      // child of that same parent also got an entry that month.
-      const ownDirect = directMonths[month];
-
       const regularChildCellsThisMonth = regularChildCats
         .map((c) => childById.get(c.id)?.months[month])
         .filter((cell): cell is MonthCell => cell?.amountPence !== undefined);
@@ -472,58 +480,55 @@ export async function getGridData(year: number): Promise<GridData> {
       // month) has nothing yet is actively misleading, not conservative -
       // it makes "Left to spend" overstate how much money is really still
       // free. Sum whatever's genuinely there, across every child
-      // (annual or not) plus the parent's own direct entry, with no gate
-      // at all.
+      // (annual or not), with no gate at all.
       const anyChildCellsThisMonth = children
         .map((c) => c.months[month])
         .filter((cell): cell is MonthCell => cell !== undefined);
       const spentPence =
-        anyChildCellsThisMonth.reduce((sum, c) => sum + c.spentPence, 0) + (ownDirect?.spentPence ?? 0);
-
-      // A contributor (child or the parent's own direct entry) with
-      // nothing actually charged or planned this month has nothing to be
-      // "paid" about - it shouldn't be able to block the whole parent just
-      // because nobody explicitly ticked it (e.g. a pay-as-you-go
-      // subscription untouched this month). Only contributors that
-      // actually carry money have to be confirmed paid.
-      const ownDirectSettled = !ownDirect || ownDirect.paid || effectiveAmountPence(ownDirect) === 0;
-      const ownDirectOverdue = ownDirect?.overdue ?? false;
+        anyChildCellsThisMonth.reduce((sum, c) => sum + c.spentPence, 0) + ownLoggedSpentPence(month);
 
       if (allRegularChildrenHaveEntries) {
         const plannedCells = children
           .map((c) => c.months[month])
           .filter((cell): cell is MonthCell => cell?.amountPence !== undefined);
-        const amountPence =
-          plannedCells.reduce((sum, c) => sum + (c.amountPence ?? 0), 0) + (ownDirect?.amountPence ?? 0);
-        const paid = plannedCells.every((c) => c.paid || effectiveAmountPence(c) === 0) && ownDirectSettled;
-        const overdue = plannedCells.some((c) => c.overdue) || ownDirectOverdue;
+        const amountPence = plannedCells.reduce(
+          (sum, c) => sum + (c.amountPence ?? 0),
+          0
+        );
+        // A child with nothing actually charged or planned this month has
+        // nothing to be "paid" about - it shouldn't be able to block the
+        // whole parent just because nobody explicitly ticked it (e.g. a
+        // pay-as-you-go subscription untouched this month). Only children
+        // that actually carry money have to be confirmed paid.
+        const paid = plannedCells.every(
+          (c) => c.paid || effectiveAmountPence(c) === 0
+        );
+        const overdue = plannedCells.some((c) => c.overdue);
         months[month] = { amountPence, paid, spentPence, computed: true, overdue };
-      } else if (anyChildCellsThisMonth.some((c) => c.spentPence > 0) || (ownDirect && ownDirect.spentPence > 0)) {
+      } else if (anyChildCellsThisMonth.some((c) => c.spentPence > 0)) {
         // No COMPLETE plan for the month (not every child has an entry
         // yet), but don't throw away the real, PARTIAL planned total
         // either - same "sum whatever's genuinely there" principle
-        // spentPence already uses two lines up. This used to leave
-        // amountPence fully undefined here, which silently zeroed the
-        // WHOLE category's contribution out of plannedByMonth (BUDGETED)
-        // the moment even one child (often a pay-as-you-go one that's
-        // simply unused some months, e.g. "OTHER" or "O2 mobile") had no
-        // entry yet - even when its siblings carried hundreds of pounds
-        // of real plan. Confirmed live: this is exactly what was making
-        // BUDGETED read ~£250-300 short some months. undefined only when
-        // genuinely NO contributor has a planned figure, matching how an
-        // empty cell is already treated everywhere else.
+        // spentPence already uses above. This used to leave amountPence
+        // fully undefined here, which silently zeroed the WHOLE category's
+        // contribution out of plannedByMonth (BUDGETED) the moment even
+        // one child (often a pay-as-you-go one that's simply unused some
+        // months, e.g. "OTHER" or "O2 mobile") had no entry yet - even
+        // when its siblings carried hundreds of pounds of real plan.
+        // undefined only when genuinely NO child has a planned figure,
+        // matching how an empty cell is already treated everywhere else.
         const plannedCells = anyChildCellsThisMonth.filter((c) => c.amountPence !== undefined);
-        const amountPenceParts = [
-          ...plannedCells.map((c) => c.amountPence ?? 0),
-          ...(ownDirect?.amountPence !== undefined ? [ownDirect.amountPence] : []),
-        ];
         const amountPence =
-          amountPenceParts.length > 0 ? amountPenceParts.reduce((sum, a) => sum + a, 0) : undefined;
-        const paid = anyChildCellsThisMonth.every((c) => c.paid || effectiveAmountPence(c) === 0) && ownDirectSettled;
-        const overdue = anyChildCellsThisMonth.some((c) => c.overdue) || ownDirectOverdue;
+          plannedCells.length > 0
+            ? plannedCells.reduce((sum, c) => sum + (c.amountPence ?? 0), 0)
+            : undefined;
+        const paid = anyChildCellsThisMonth.every(
+          (c) => c.paid || effectiveAmountPence(c) === 0
+        );
+        const overdue = anyChildCellsThisMonth.some((c) => c.overdue);
         months[month] = { amountPence, paid, spentPence, computed: true, overdue };
-      } else if (ownDirect) {
-        months[month] = ownDirect;
+      } else if (directMonths[month]) {
+        months[month] = directMonths[month];
       }
     }
 
@@ -556,6 +561,7 @@ export async function getGridData(year: number): Promise<GridData> {
           if (!childCell) continue;
           actuallySpentByMonth[month - 1] += confirmedSpentPence(childCell);
         }
+        actuallySpentByMonth[month - 1] += ownLoggedSpentPence(month);
       } else {
         actuallySpentByMonth[month - 1] += confirmedSpentPence(cell);
       }
@@ -612,8 +618,6 @@ export async function getGridData(year: number): Promise<GridData> {
   // data was never tracked with the precision live use gets, so blindly
   // compounding it produces a fictional number, not a real one. Months at
   // or after the start point still compound normally.
-  const { carryOverStartYear, carryOverStartMonth } = await getAppSettings();
-  const startIndex = carryOverStartYear * 12 + carryOverStartMonth;
   const januaryIndex = year * 12 + 1;
   const carryOverSeed = januaryIndex > startIndex ? await getYearEndLeftToSpend(year - 1) : 0;
 

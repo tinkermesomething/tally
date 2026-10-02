@@ -47,8 +47,8 @@ export function BankSyncSchedule({
         <div>
           <p className="text-sm">Sync automatically</p>
           <p className="text-xs text-muted-foreground">
-            Off by default - GoCardless limits how often each account can be checked, so pick a
-            frequency you&apos;re comfortable with.
+            Off by default - GoCardless limits how often each account can be checked, and manual
+            syncs count toward the same limit, so pick a frequency you&apos;re comfortable with.
           </p>
         </div>
         <Switch checked={localEnabled} onCheckedChange={handleToggle} />
