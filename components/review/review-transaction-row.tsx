@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Check, X, TriangleAlert } from "lucide-react";
+import { useState, useTransition, useRef } from "react";
+import { Check, X, TriangleAlert, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TableRow, TableCell } from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverPortal, PopoverPositioner, PopoverPopup } from "@/components/ui/popover";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -50,14 +52,15 @@ export function ReviewTransactionRow({
   const [categoryId, setCategoryId] = useState("");
   const [incomeSourceId, setIncomeSourceId] = useState("");
   const [tagDebt, setTagDebt] = useState(false);
+  const [debtPopoverOpen, setDebtPopoverOpen] = useState(false);
   const { personId, setPersonId, newPersonName, setNewPersonName, resolvePersonId } = usePersonSelection();
   const [error, setError] = useState<string | null>(null);
+  const debtAnchorRef = useRef<HTMLButtonElement>(null);
 
   // Staging imports both directions - money in (positive) can only ever
   // become income, money out (negative) only ever an expense. Debt-tagging
   // is expense-only (the debt ledger already models a repayment TO you as
-  // its own entry, unconnected to bank-sync), so it's simply not offered
-  // here for an incoming transaction.
+  // its own entry, unconnected to bank-sync).
   const isIncome = transaction.amountPence > 0;
 
   function handleCategorize() {
@@ -104,52 +107,55 @@ export function ReviewTransactionRow({
     startTransition(() => ignoreImportedTransaction(transaction.id));
   }
 
+  const duplicateTitle = transaction.duplicateOf
+    ? `Might already be logged as ${transaction.duplicateOf.categoryName}, ${formatPence(
+        transaction.duplicateOf.amountPence,
+        currency
+      )} on ${formatDate(transaction.duplicateOf.entryDate, dateFormat)}${
+        transaction.duplicateOf.note ? ` ("${transaction.duplicateOf.note}")` : ""
+      }. Only a suggestion.`
+    : undefined;
+
   return (
-    <div className="space-y-2 rounded-xl border border-border bg-card p-3 shadow-sm">
-      <div className="flex items-start gap-2">
+    <TableRow data-state={selected ? "selected" : undefined}>
+      <TableCell>
         <Checkbox
           checked={selected}
           onCheckedChange={() => onToggleSelected(transaction.id)}
-          className="mt-1 shrink-0"
           aria-label="Select for bulk action"
         />
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <p className="truncate font-medium">{transaction.payeeClean ?? transaction.payeeRaw}</p>
-          {transaction.payeeClean && (
-            <p className="truncate text-xs text-muted-foreground">{transaction.payeeRaw}</p>
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground">
+        {formatDate(transaction.bookingDate, dateFormat)}
+      </TableCell>
+      <TableCell className="max-w-48 min-w-0 whitespace-normal">
+        <div className="flex items-center gap-1.5">
+          {transaction.duplicateOf && (
+            <span title={duplicateTitle}>
+              <TriangleAlert className="size-3.5 shrink-0 text-status-critical" />
+            </span>
           )}
-          <p className="text-xs text-muted-foreground">{formatDate(transaction.bookingDate, dateFormat)}</p>
+          <div className="min-w-0">
+            <p className="truncate font-medium">{transaction.payeeClean ?? transaction.payeeRaw}</p>
+            {transaction.payeeClean && (
+              <p className="truncate text-xs text-muted-foreground">{transaction.payeeRaw}</p>
+            )}
+          </div>
         </div>
-        <span
-          className={`shrink-0 text-right font-semibold tabular-nums ${isIncome ? "text-status-good" : ""}`}
-        >
-          {isIncome ? "+" : "−"}
-          {formatPence(Math.abs(transaction.amountPence), currency)}
-        </span>
-      </div>
-
-      {transaction.duplicateOf && (
-        <div className="flex items-start gap-2 rounded-lg border border-status-critical/30 bg-status-critical/10 p-2 text-xs">
-          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-status-critical" />
-          <p>
-            Might already be logged as <strong>{transaction.duplicateOf.categoryName}</strong>,{" "}
-            {formatPence(transaction.duplicateOf.amountPence, currency)} on{" "}
-            {formatDate(transaction.duplicateOf.entryDate, dateFormat)}
-            {transaction.duplicateOf.note ? ` (“${transaction.duplicateOf.note}”)` : ""}. Only a suggestion -
-            categorize normally if this is genuinely separate.
-          </p>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
+      </TableCell>
+      <TableCell className={`text-right font-semibold tabular-nums ${isIncome ? "text-status-good" : ""}`}>
+        {isIncome ? "+" : "−"}
+        {formatPence(Math.abs(transaction.amountPence), currency)}
+      </TableCell>
+      <TableCell>
         {isIncome ? (
           <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? "")}>
-            <SelectTrigger className="w-full sm:w-56">
+            <SelectTrigger className="w-44">
               <SelectValue>
                 {(value: string) =>
                   value
                     ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value)
-                    : "Choose an income source"
+                    : "Choose a source"
                 }
               </SelectValue>
             </SelectTrigger>
@@ -162,55 +168,74 @@ export function ReviewTransactionRow({
             </SelectContent>
           </Select>
         ) : (
+          <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+            <SelectTrigger className="w-44">
+              <SelectValue>
+                {(value: string) =>
+                  value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </TableCell>
+      <TableCell>
+        {!isIncome && (
           <>
-            <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-              <SelectTrigger className="w-full sm:w-56">
-                <SelectValue>
-                  {(value: string) =>
-                    value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
-              Paying someone back
-            </label>
+            <Button
+              ref={debtAnchorRef}
+              size="icon-xs"
+              variant={tagDebt ? "secondary" : "ghost"}
+              title={tagDebt ? "Paying someone back - click to edit" : "Tag as paying someone back"}
+              onClick={() => setDebtPopoverOpen((v) => !v)}
+            >
+              <UserRound className="size-3.5" />
+            </Button>
+            <Popover open={debtPopoverOpen} onOpenChange={setDebtPopoverOpen}>
+              <PopoverPortal>
+                <PopoverPositioner anchor={debtAnchorRef} align="start" sideOffset={4}>
+                  <PopoverPopup>
+                    <div className="flex items-center gap-2 pb-2">
+                      <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
+                      <span className="text-sm">Paying someone back</span>
+                    </div>
+                    {tagDebt && (
+                      <PersonPickerField
+                        idPrefix={`review-${transaction.id}`}
+                        label="Paying back"
+                        placeholder="Choose who"
+                        people={people}
+                        personId={personId}
+                        onPersonIdChange={setPersonId}
+                        newPersonName={newPersonName}
+                        onNewPersonNameChange={setNewPersonName}
+                      />
+                    )}
+                  </PopoverPopup>
+                </PopoverPositioner>
+              </PopoverPortal>
+            </Popover>
           </>
         )}
-
-        <Button size="sm" onClick={handleCategorize} disabled={pending}>
-          <Check className="size-3.5" />
-          Categorize
-        </Button>
-        <Button size="sm" variant="outline" onClick={handleIgnore} disabled={pending}>
-          <X className="size-3.5" />
-          Ignore
-        </Button>
-      </div>
-
-      {!isIncome && tagDebt && (
-        <PersonPickerField
-          idPrefix={`review-${transaction.id}`}
-          label="Paying back"
-          placeholder="Choose who"
-          people={people}
-          personId={personId}
-          onPersonIdChange={setPersonId}
-          newPersonName={newPersonName}
-          onNewPersonNameChange={setNewPersonName}
-        />
-      )}
-
-      {error && <p className="text-xs text-status-critical">{error}</p>}
-    </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Button size="icon-xs" onClick={handleCategorize} disabled={pending} title="Categorize">
+            <Check className="size-3.5" />
+          </Button>
+          <Button size="icon-xs" variant="outline" onClick={handleIgnore} disabled={pending} title="Ignore">
+            <X className="size-3.5" />
+          </Button>
+        </div>
+        {error && <p className="mt-1 max-w-32 text-xs text-status-critical">{error}</p>}
+      </TableCell>
+    </TableRow>
   );
 }

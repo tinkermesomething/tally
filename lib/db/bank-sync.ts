@@ -9,7 +9,7 @@ import {
   expenseEntries,
   importedTransactions,
 } from "./schema";
-import { getAccountTransactions, toRawImportedTransaction } from "../gocardless";
+import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence } from "../gocardless";
 
 // ---- Bank accounts ----
 
@@ -102,6 +102,48 @@ export async function syncAllBankAccounts(): Promise<{ bankAccountId: number; di
   for (const account of accounts) {
     const { staged } = await syncBankAccount(account.id);
     results.push({ bankAccountId: account.id, displayName: account.displayName, staged });
+  }
+  return results;
+}
+
+export type PendingPreviewTransaction = {
+  bankAccountId: number;
+  bankAccountName: string;
+  amountPence: number;
+  // Not necessarily a real booking date - a pending transaction has no
+  // bookingDate at all (see the GcTransaction comment in lib/gocardless.ts),
+  // only valueDate. Named generically since what's shown here is "the best
+  // date GoCardless currently has for this", not a settled booking date.
+  date: string | null;
+  payeeRaw: string;
+};
+
+/** Read-only preview of GoCardless's own "pending" transactions (not yet
+ * settled/booked) - fetched fresh on every call, NEVER written to the
+ * database. This is deliberate: some banks change a transaction's id when
+ * it settles from pending to booked (confirmed via research, not assumed),
+ * so staging pending rows the same way booked ones are staged risks a
+ * genuine double-count once the same real transaction reappears as booked
+ * under a different id. Showing them here solves the actual complaint
+ * (a real purchase invisible for ~1-3 days while it settles) without that
+ * risk, since nothing here is ever deduped against anything - there's
+ * nothing persisted to dedupe against. Does NOT reuse toRawImportedTransaction
+ * - that throws on exactly the missing-bookingDate case every pending
+ * transaction hits. */
+export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> {
+  const accounts = await getBankAccounts();
+  const results: PendingPreviewTransaction[] = [];
+  for (const account of accounts) {
+    const { pending } = await getAccountTransactions(account.externalAccountId);
+    for (const t of pending) {
+      results.push({
+        bankAccountId: account.id,
+        bankAccountName: account.displayName,
+        amountPence: gcAmountToPence(t.transactionAmount.amount),
+        date: t.bookingDate ?? t.valueDate ?? null,
+        payeeRaw: t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee",
+      });
+    }
   }
   return results;
 }

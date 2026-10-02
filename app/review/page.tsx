@@ -1,9 +1,17 @@
-import { getPendingTransactions, getPossibleDuplicateDetails, getBankAccounts } from "@/lib/db/bank-sync";
+import {
+  getPendingTransactions,
+  getPossibleDuplicateDetails,
+  getBankAccounts,
+  getPendingPreview,
+} from "@/lib/db/bank-sync";
 import { getCategoryTree, getIncomeSourceList } from "@/lib/db/queries";
 import { getPeopleWithBalances } from "@/lib/db/debt";
+import { getAppSettings } from "@/lib/db/settings";
 import { ReviewList } from "@/components/review/review-list";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatPence } from "@/lib/money";
+import { formatDate } from "@/lib/date-format";
 import type { ReviewRow } from "@/components/review/review-transaction-row";
 
 export const dynamic = "force-dynamic";
@@ -15,12 +23,17 @@ export default async function ReviewPage({
 }) {
   const { from, to } = await searchParams;
 
-  const [pending, categoryTree, incomeSources, people, bankAccounts] = await Promise.all([
+  const [pending, categoryTree, incomeSources, people, bankAccounts, pendingPreview, appSettings] = await Promise.all([
     getPendingTransactions({ dateFrom: from, dateTo: to }),
     getCategoryTree(),
     getIncomeSourceList(),
     getPeopleWithBalances(),
     getBankAccounts(),
+    // Returns [] naturally if there are no linked accounts - no need to
+    // gate this on bankAccounts.length, which also isn't available yet
+    // here (it's resolved from this SAME Promise.all).
+    getPendingPreview(),
+    getAppSettings(),
   ]);
 
   const flatCategories = categoryTree.flatMap((c) => [
@@ -77,6 +90,29 @@ export default async function ReviewPage({
           </a>
         )}
       </form>
+
+      {pendingPreview.length > 0 && (
+        <div className="space-y-1.5 rounded-xl border border-dashed border-border p-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            Pending at the bank - not yet settled, so not categorizable yet. Shown for visibility only;
+            nothing here is saved.
+          </p>
+          <div className="space-y-1">
+            {pendingPreview.map((t, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+                <span className="truncate">
+                  {t.date ? formatDate(t.date, appSettings.dateFormat) : "Date pending"} ·{" "}
+                  {t.payeeRaw} · {t.bankAccountName}
+                </span>
+                <span className="shrink-0 tabular-nums">
+                  {t.amountPence > 0 ? "+" : "−"}
+                  {formatPence(Math.abs(t.amountPence), appSettings.currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <ReviewList
         transactions={transactions}

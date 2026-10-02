@@ -143,7 +143,13 @@ export async function getAccountMeta(accountId: string): Promise<GcAccountMeta> 
 
 export type GcTransaction = {
   transactionId: string;
-  bookingDate: string; // already ISO YYYY-MM-DD
+  // bookingDate is only present on BOOKED transactions - a pending one
+  // hasn't been recorded/posted yet, so it has no booking date at all,
+  // only valueDate (confirmed via GoCardless's own docs, not assumed -
+  // this type is shared between both arrays getAccountTransactions
+  // returns). Both already ISO YYYY-MM-DD.
+  bookingDate?: string;
+  valueDate?: string;
   transactionAmount: { amount: string; currency: string };
   remittanceInformationUnstructured?: string;
   creditorName?: string;
@@ -179,7 +185,15 @@ function payeeFromTransaction(t: GcTransaction): string {
   return t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee";
 }
 
+/** Only for BOOKED transactions - a pending one has no bookingDate at all
+ * (see the GcTransaction comment), so this throws rather than silently
+ * writing an "undefined" date into expense_entries/category_entries. The
+ * staging pipeline (syncBankAccount) only ever calls this on the `booked`
+ * array for exactly this reason. */
 export function toRawImportedTransaction(t: GcTransaction) {
+  if (!t.bookingDate) {
+    throw new Error(`Transaction ${t.transactionId} has no bookingDate - only booked transactions should reach this.`);
+  }
   return {
     importedId: t.transactionId,
     amountPence: gcAmountToPence(t.transactionAmount.amount),
