@@ -1,0 +1,1 @@
+ALTER TABLE `bank_accounts` ADD `pending_preview_json` text;

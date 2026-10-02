@@ -152,9 +152,15 @@ them into the Review queue (`/review` in the UI) - exact-id deduped against
 anything already staged, auto-categorized where an explicit rule or learned
 pattern matches, otherwise left `pending_review`. Not automatic - nothing
 else triggers this, so hit it manually or from a cron job.
+
+One account failing (most commonly: its consent expired) does not stop the
+others from syncing - check `ok` per result, don't assume the whole call
+succeeded just because the response came back `200`.
 ```json
-{ "results": [{ "bankAccountId": 1, "displayName": "NatWest - current",
-  "staged": 4 }] }
+{ "results": [
+  { "bankAccountId": 1, "displayName": "NatWest - current", "ok": true, "staged": 4 },
+  { "bankAccountId": 2, "displayName": "Revolut", "ok": false, "error": "GoCardless API error on /accounts/.../transactions/: 401 ..." }
+] }
 ```
 
 ## Notes for an agent using this API

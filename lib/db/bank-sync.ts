@@ -1,4 +1,4 @@
-import { and, eq, gte, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db } from "./index";
 import { logExpense, incrementIncomeEntry } from "./queries";
 import { resolvePeriodForDate } from "./pay-period";
@@ -74,10 +74,6 @@ export async function archiveBankAccount(id: number) {
   await db.update(bankAccounts).set({ archivedAt: new Date() }).where(eq(bankAccounts.id, id));
 }
 
-export async function markBankAccountSynced(id: number) {
-  await db.update(bankAccounts).set({ lastSyncedAt: new Date() }).where(eq(bankAccounts.id, id));
-}
-
 /** The actual fetch-from-GoCardless-and-stage step - everything else in
  * this file (rules, learned patterns, duplicate suggestion, the review
  * pool) only does anything once rows actually land via this. Narrows to
@@ -90,18 +86,50 @@ export async function syncBankAccount(bankAccountId: number): Promise<{ staged: 
   if (!account) throw new Error(`Bank account ${bankAccountId} not found.`);
 
   const dateFrom = account.lastSyncedAt ? account.lastSyncedAt.toISOString().slice(0, 10) : undefined;
-  const { booked } = await getAccountTransactions(account.externalAccountId, dateFrom);
+  const { booked, pending } = await getAccountTransactions(account.externalAccountId, dateFrom);
   const staged = await stageImportedTransactions(bankAccountId, booked.map(toRawImportedTransaction));
-  await markBankAccountSynced(bankAccountId);
+
+  // Cached here (one call, shared with the real sync) rather than
+  // fetched separately by the Review page - see the schema comment on
+  // pendingPreviewJson for why a second live call per page view isn't
+  // safe against this endpoint's own rate limit.
+  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName">[] = pending.map((t) => ({
+    amountPence: gcAmountToPence(t.transactionAmount.amount),
+    date: t.bookingDate ?? t.valueDate ?? null,
+    payeeRaw: t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee",
+  }));
+
+  await db
+    .update(bankAccounts)
+    .set({ lastSyncedAt: new Date(), pendingPreviewJson: JSON.stringify(pendingPreview) })
+    .where(eq(bankAccounts.id, bankAccountId));
+
   return { staged: staged.length };
 }
 
-export async function syncAllBankAccounts(): Promise<{ bankAccountId: number; displayName: string; staged: number }[]> {
+export type SyncResult =
+  | { bankAccountId: number; displayName: string; ok: true; staged: number }
+  | { bankAccountId: number; displayName: string; ok: false; error: string };
+
+/** One account's consent expiring (a normal, EXPECTED recurring event - not
+ * a bug) must not block every other account from syncing - each account's
+ * sync is isolated so one failure is reported, not thrown, letting the
+ * loop continue. */
+export async function syncAllBankAccounts(): Promise<SyncResult[]> {
   const accounts = await getBankAccounts();
-  const results = [];
+  const results: SyncResult[] = [];
   for (const account of accounts) {
-    const { staged } = await syncBankAccount(account.id);
-    results.push({ bankAccountId: account.id, displayName: account.displayName, staged });
+    try {
+      const { staged } = await syncBankAccount(account.id);
+      results.push({ bankAccountId: account.id, displayName: account.displayName, ok: true, staged });
+    } catch (err) {
+      results.push({
+        bankAccountId: account.id,
+        displayName: account.displayName,
+        ok: false,
+        error: err instanceof Error ? err.message : "Sync failed",
+      });
+    }
   }
   return results;
 }
@@ -119,29 +147,47 @@ export type PendingPreviewTransaction = {
 };
 
 /** Read-only preview of GoCardless's own "pending" transactions (not yet
- * settled/booked) - fetched fresh on every call, NEVER written to the
- * database. This is deliberate: some banks change a transaction's id when
- * it settles from pending to booked (confirmed via research, not assumed),
- * so staging pending rows the same way booked ones are staged risks a
- * genuine double-count once the same real transaction reappears as booked
- * under a different id. Showing them here solves the actual complaint
- * (a real purchase invisible for ~1-3 days while it settles) without that
- * risk, since nothing here is ever deduped against anything - there's
- * nothing persisted to dedupe against. Does NOT reuse toRawImportedTransaction
- * - that throws on exactly the missing-bookingDate case every pending
- * transaction hits. */
+ * settled/booked). Reads the cache syncBankAccount writes - deliberately
+ * NOT a live GoCardless call (see the schema comment on
+ * pendingPreviewJson for why a second live call per page view isn't safe
+ * against that endpoint's rate limit). Showing pending transactions at
+ * all (rather than staging them like booked ones) is itself deliberate:
+ * some banks change a transaction's id when it settles from pending to
+ * booked (confirmed via research, not assumed), so staging pending rows
+ * the same way booked ones are staged would risk a genuine double-count
+ * once the same real transaction reappears as booked under a different
+ * id - nothing here is ever written to imported_transactions, so there's
+ * nothing to double-count. Safe to call on every page render regardless,
+ * since it's a plain DB read. A row with no cache yet (never synced) or
+ * malformed JSON is skipped rather than thrown on - this is a best-effort
+ * visibility aid, not load-bearing. */
 export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> {
   const accounts = await getBankAccounts();
   const results: PendingPreviewTransaction[] = [];
   for (const account of accounts) {
-    const { pending } = await getAccountTransactions(account.externalAccountId);
-    for (const t of pending) {
+    if (!account.pendingPreviewJson) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(account.pendingPreviewJson);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed)) continue;
+    for (const t of parsed) {
+      if (
+        typeof t !== "object" ||
+        t === null ||
+        typeof t.amountPence !== "number" ||
+        typeof t.payeeRaw !== "string"
+      ) {
+        continue;
+      }
       results.push({
         bankAccountId: account.id,
         bankAccountName: account.displayName,
-        amountPence: gcAmountToPence(t.transactionAmount.amount),
-        date: t.bookingDate ?? t.valueDate ?? null,
-        payeeRaw: t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee",
+        amountPence: t.amountPence,
+        date: typeof t.date === "string" ? t.date : null,
+        payeeRaw: t.payeeRaw,
       });
     }
   }
@@ -558,10 +604,10 @@ export async function ignoreTransaction(id: number) {
 
 export async function bulkIgnoreTransactions(ids: number[]) {
   if (ids.length === 0) return;
-  await db
-    .update(importedTransactions)
-    .set({ status: "ignored" })
-    .where(or(...ids.map((id) => eq(importedTransactions.id, id))));
+  // inArray, not or(...ids.map(eq)) - a "select all" bulk-ignore after a
+  // large import can mean thousands of ids; one IN clause instead of
+  // thousands of OR'd equality terms.
+  await db.update(importedTransactions).set({ status: "ignored" }).where(inArray(importedTransactions.id, ids));
 }
 
 /** Undo for ignoreTransaction - back to the review pool. Does NOT undo a

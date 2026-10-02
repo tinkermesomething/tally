@@ -85,6 +85,13 @@
       "when": 1790889906981,
       "tag": "0011_burly_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790930480818,
+      "tag": "0012_perpetual_proteus",
+      "breakpoints": true
     }
   ]
 }

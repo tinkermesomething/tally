@@ -203,6 +203,18 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   consentExpiresAt: integer("consent_expires_at", { mode: "timestamp" }).notNull(),
   lastSyncedAt: integer("last_synced_at", { mode: "timestamp" }),
   archivedAt: integer("archived_at", { mode: "timestamp" }),
+  // Cached from the LAST real sync's own `pending` array (JSON) - the
+  // Review page's pending-visibility preview reads this instead of
+  // calling GoCardless's transactions endpoint itself. That endpoint is
+  // rate-limited to as few as 4 calls/day PER ACCOUNT (confirmed via
+  // GoCardless's own published limits, not assumed) and is the SAME
+  // endpoint the real sync depends on - a separate live call on every
+  // single /review page view (which happens on every categorize/ignore
+  // too, via revalidatePath) would burn through that tiny shared quota
+  // in minutes and then break real syncing for the rest of the day.
+  // Freshness is tied to whenever the account last synced, which is the
+  // right cadence anyway - this was never meant to be live-live.
+  pendingPreviewJson: text("pending_preview_json"),
 });
 
 /** A single staged bank transaction, before (or instead of) becoming a real
