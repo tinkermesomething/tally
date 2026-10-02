@@ -15,6 +15,8 @@ export type AppSettings = {
    * start point in Settings. */
   carryOverStartYear: number;
   carryOverStartMonth: number;
+  bankSyncEnabled: boolean;
+  bankSyncFrequencyHours: number;
 };
 
 const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat };
@@ -37,6 +39,8 @@ export async function getAppSettings(): Promise<AppSettings> {
       dateFormat: isDateFormat(row.dateFormat) ? row.dateFormat : DEFAULTS.dateFormat,
       carryOverStartYear: row.carryOverStartYear ?? thisYear,
       carryOverStartMonth: row.carryOverStartMonth ?? thisMonth,
+      bankSyncEnabled: row.bankSyncEnabled,
+      bankSyncFrequencyHours: row.bankSyncFrequencyHours,
     };
   }
   const [created] = await db.insert(appSettings).values({}).returning();
@@ -45,14 +49,20 @@ export async function getAppSettings(): Promise<AppSettings> {
     dateFormat: DEFAULTS.dateFormat,
     carryOverStartYear: thisYear,
     carryOverStartMonth: thisMonth,
+    bankSyncEnabled: created.bankSyncEnabled,
+    bankSyncFrequencyHours: created.bankSyncFrequencyHours,
   };
 }
+
+const VALID_SYNC_FREQUENCIES = [6, 12, 24];
 
 export async function updateAppSettings(input: {
   currency?: string;
   dateFormat?: DateFormat;
   carryOverStartYear?: number;
   carryOverStartMonth?: number;
+  bankSyncEnabled?: boolean;
+  bankSyncFrequencyHours?: number;
 }) {
   if (input.currency !== undefined && !isCurrencyCode(input.currency)) {
     throw new Error(`Unrecognized currency code: "${input.currency}"`);
@@ -63,6 +73,9 @@ export async function updateAppSettings(input: {
   if (input.carryOverStartMonth !== undefined && (input.carryOverStartMonth < 1 || input.carryOverStartMonth > 12)) {
     throw new Error(`carryOverStartMonth must be 1-12, got ${input.carryOverStartMonth}`);
   }
+  if (input.bankSyncFrequencyHours !== undefined && !VALID_SYNC_FREQUENCIES.includes(input.bankSyncFrequencyHours)) {
+    throw new Error(`bankSyncFrequencyHours must be one of ${VALID_SYNC_FREQUENCIES.join(", ")}, got ${input.bankSyncFrequencyHours}`);
+  }
   await getAppSettings(); // ensures the row exists before updating it
   const row = await db.query.appSettings.findFirst();
   await db
@@ -72,6 +85,8 @@ export async function updateAppSettings(input: {
       ...(input.dateFormat !== undefined ? { dateFormat: input.dateFormat } : {}),
       ...(input.carryOverStartYear !== undefined ? { carryOverStartYear: input.carryOverStartYear } : {}),
       ...(input.carryOverStartMonth !== undefined ? { carryOverStartMonth: input.carryOverStartMonth } : {}),
+      ...(input.bankSyncEnabled !== undefined ? { bankSyncEnabled: input.bankSyncEnabled } : {}),
+      ...(input.bankSyncFrequencyHours !== undefined ? { bankSyncFrequencyHours: input.bankSyncFrequencyHours } : {}),
     })
     .where(eq(appSettings.id, row!.id));
 }

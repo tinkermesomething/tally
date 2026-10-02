@@ -20,6 +20,7 @@ import { BankAccountSettingsRow } from "@/components/settings/bank-account-setti
 import { CategoryRuleSettingsRow } from "@/components/settings/category-rule-settings-row";
 import { AddCategoryRuleDialog } from "@/components/settings/add-category-rule-dialog";
 import { ConnectBankAccountDialog } from "@/components/settings/connect-bank-account-dialog";
+import { BankSyncSchedule } from "@/components/settings/bank-sync-schedule";
 import { ArchivedList } from "@/components/settings/archived-list";
 import {
   unarchiveCategory,
@@ -196,6 +197,11 @@ export default async function SettingsPage({
               closed partway through.
             </p>
           )}
+
+          <BankSyncSchedule
+            enabled={appSettings.bankSyncEnabled}
+            frequencyHours={appSettings.bankSyncFrequencyHours}
+          />
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">

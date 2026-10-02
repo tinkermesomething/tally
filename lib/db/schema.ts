@@ -204,6 +204,14 @@ export const appSettings = sqliteTable("app_settings", {
   dateFormat: text("date_format").notNull().default("dmy"),
   carryOverStartYear: integer("carry_over_start_year"),
   carryOverStartMonth: integer("carry_over_start_month"),
+  // Opt-in - off by default so a fresh install never starts burning
+  // through GoCardless's per-account rate limit (as few as 4-10 calls/day)
+  // without the user deliberately choosing to. Frequency is a plain
+  // interval in hours rather than a cron expression - the only sane
+  // choices are bounded by that same rate limit, so a free-text schedule
+  // would just be more ways to misconfigure it.
+  bankSyncEnabled: integer("bank_sync_enabled", { mode: "boolean" }).notNull().default(false),
+  bankSyncFrequencyHours: integer("bank_sync_frequency_hours").notNull().default(24),
 });
 
 /** A linked bank account (GoCardless for now, provider is a plain string so

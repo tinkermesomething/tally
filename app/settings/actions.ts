@@ -9,6 +9,8 @@ export async function updatePreferences(input: {
   dateFormat?: DateFormat;
   carryOverStartYear?: number;
   carryOverStartMonth?: number;
+  bankSyncEnabled?: boolean;
+  bankSyncFrequencyHours?: number;
 }) {
   await updateAppSettings(input);
   // The root layout is what fetches these - bust it, not individual page

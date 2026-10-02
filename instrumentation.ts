@@ -7,5 +7,8 @@ export async function register() {
     const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
     const { db } = await import("./lib/db");
     migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+
+    const { startScheduledSync } = await import("./lib/scheduled-sync");
+    startScheduledSync();
   }
 }
