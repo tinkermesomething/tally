@@ -8,22 +8,25 @@ import { removeCategoryRule } from "@/app/settings/bank-sync-actions";
 const OPERATOR_LABEL: Record<string, string> = {
   contains: "contains",
   is: "is",
-  gt: ">",
-  lt: "<",
+  gt: "is more than",
+  lt: "is less than",
+};
+
+export type RuleConditionDisplay = {
+  field: "payee" | "amount";
+  operator: "contains" | "is" | "gt" | "lt";
+  /** Already display-ready - amounts formatted, not raw pence. */
+  value: string;
 };
 
 export function CategoryRuleSettingsRow({
   id,
-  field,
-  operator,
-  value,
+  conditions,
   targetName,
   debtPersonName,
 }: {
   id: number;
-  field: "payee" | "amount";
-  operator: "contains" | "is" | "gt" | "lt";
-  value: string;
+  conditions: RuleConditionDisplay[];
   /** The expense category or income source this rule routes to - whichever
    * it is, this is already the resolved display name, not an id. */
   targetName: string;
@@ -34,8 +37,15 @@ export function CategoryRuleSettingsRow({
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
       <p>
-        If <span className="font-medium">{field}</span> {OPERATOR_LABEL[operator]}{" "}
-        <span className="font-medium">&ldquo;{value}&rdquo;</span> → <span className="font-medium">{targetName}</span>
+        If{" "}
+        {conditions.map((c, i) => (
+          <span key={i}>
+            {i > 0 && <span className="text-muted-foreground"> and </span>}
+            <span className="font-medium">{c.field}</span> {OPERATOR_LABEL[c.operator]}{" "}
+            <span className="font-medium">&ldquo;{c.value}&rdquo;</span>
+          </span>
+        ))}{" "}
+        → <span className="font-medium">{targetName}</span>
         {debtPersonName && <span className="text-muted-foreground"> (repayment to {debtPersonName})</span>}
       </p>
       <Button

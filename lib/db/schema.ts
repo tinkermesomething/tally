@@ -329,6 +329,12 @@ export const categoryRules = sqliteTable("category_rules", {
   field: text("field", { enum: ["payee", "amount"] }).notNull(),
   operator: text("operator", { enum: ["contains", "is", "gt", "lt"] }).notNull(),
   value: text("value").notNull(),
+  // JSON array of {field, operator, value} - ALL must match (stacked
+  // conditions). field/operator/value above always mirror the FIRST
+  // condition, so older rows (no JSON) and anything still reading the
+  // single-condition columns keep working; see ruleConditionsOf in
+  // lib/rules.ts, the only reader that matters.
+  conditions: text("conditions"),
   targetType: text("target_type", { enum: ["expense", "income"] })
     .notNull()
     .default("expense"),

@@ -10,6 +10,12 @@ import {
   importedTransactions,
 } from "./schema";
 import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence } from "../gocardless";
+import {
+  validateConditions,
+  allConditionsMatch,
+  ruleConditionsOf,
+  type RuleCondition,
+} from "../rules";
 
 // ---- Bank accounts ----
 
@@ -205,30 +211,34 @@ export async function getCategoryRules(): Promise<CategoryRule[]> {
   });
 }
 
-export async function addCategoryRule(
-  input:
-    | {
-        field: "payee" | "amount";
-        operator: "contains" | "is" | "gt" | "lt";
-        value: string;
-        targetType: "expense";
-        categoryId: number;
-        debtPersonId?: number;
-      }
-    | {
-        field: "payee" | "amount";
-        operator: "contains" | "is" | "gt" | "lt";
-        value: string;
-        targetType: "income";
-        incomeSourceId: number;
-      }
-) {
+export type RuleTarget =
+  | { targetType: "expense"; categoryId: number; debtPersonId?: number }
+  | { targetType: "income"; incomeSourceId: number };
+
+/** Stored conditions are all-must-match. field/operator/value mirror the
+ * first condition so the single-condition columns stay valid (they're NOT
+ * NULL) - see the schema comment on `conditions`. New rules go to the end
+ * of the order: first match wins, same as before. */
+export async function addCategoryRule(input: { conditions: RuleCondition[] } & RuleTarget) {
+  const conditions = validateConditions(input.conditions);
   const [maxRow] = await db
     .select({ max: sql<number>`max(${categoryRules.sortOrder})` })
     .from(categoryRules);
+  const first = conditions[0];
+  const target =
+    input.targetType === "expense"
+      ? { targetType: "expense" as const, categoryId: input.categoryId, debtPersonId: input.debtPersonId }
+      : { targetType: "income" as const, incomeSourceId: input.incomeSourceId };
   const [created] = await db
     .insert(categoryRules)
-    .values({ ...input, sortOrder: (maxRow?.max ?? -1) + 1 })
+    .values({
+      field: first.field,
+      operator: first.operator,
+      value: first.value,
+      conditions: JSON.stringify(conditions),
+      ...target,
+      sortOrder: (maxRow?.max ?? -1) + 1,
+    })
     .returning();
   return created;
 }
@@ -271,20 +281,10 @@ export function matchCategoryRule(
   // own claim of making the mid-batch crash impossible would have a hole.
   if (transaction.amountPence === 0) return null;
   const direction: "expense" | "income" = transaction.amountPence < 0 ? "expense" : "income";
-  const payee = (transaction.payeeClean ?? transaction.payeeRaw).toLowerCase();
   for (const rule of rules) {
     if (rule.targetType !== direction) continue;
 
-    let matched: boolean;
-    if (rule.field === "payee") {
-      const value = rule.value.toLowerCase();
-      matched = rule.operator === "contains" ? payee.includes(value) : payee === value;
-    } else {
-      const value = parseInt(rule.value, 10);
-      if (rule.operator === "gt") matched = transaction.amountPence > value;
-      else if (rule.operator === "lt") matched = transaction.amountPence < value;
-      else matched = transaction.amountPence === value;
-    }
+    const matched = allConditionsMatch(ruleConditionsOf(rule), transaction);
     if (!matched) continue;
 
     if (rule.targetType === "expense") {
@@ -659,4 +659,135 @@ export async function bulkIgnoreTransactions(ids: number[]) {
  * it is a normal expense delete, not an undo of the import step). */
 export async function restoreTransaction(id: number) {
   await db.update(importedTransactions).set({ status: "pending_review" }).where(eq(importedTransactions.id, id));
+}
+
+// ---- Rule preview + apply (Review "Rule" window) ----
+
+const MAX_PREVIEW_ROWS = 1000;
+
+export type RulePreviewRow = {
+  id: number;
+  bookingDate: string;
+  payeeRaw: string;
+  payeeClean: string | null;
+  amountPence: number;
+  /** Matches the rule but can't (or shouldn't) be bulk-applied: a
+   * pencilled-in draft has to be confirmed/discarded on its own row;
+   * a possible duplicate is shown but left unticked by default. */
+  blocked: "pencilled-match" | "possible-duplicate" | null;
+};
+
+export type RulePreview = {
+  rows: RulePreviewRow[];
+  /** Real number of matches - rows is capped, this isn't. */
+  total: number;
+  /** How many of the matches an EXISTING rule would already claim on
+   * import (first match wins, so the new rule wouldn't fire for those). */
+  alreadyCoveredByEarlierRule: number;
+};
+
+/** Every transaction still waiting in Review that these conditions would
+ * catch - searches the WHOLE pending pool (not just whatever date filter
+ * the page is showing) and uses the exact matcher imports use, so what
+ * the preview shows is what the rule will really do. Direction is fixed
+ * by the target: expense rules only see money out, income only money in. */
+export async function previewRuleMatches(
+  conditionsInput: RuleCondition[],
+  direction: "expense" | "income"
+): Promise<RulePreview> {
+  const conditions = validateConditions(conditionsInput);
+  const pending = await db
+    .select()
+    .from(importedTransactions)
+    .where(
+      and(
+        eq(importedTransactions.status, "pending_review"),
+        direction === "expense" ? sql`${importedTransactions.amountPence} < 0` : sql`${importedTransactions.amountPence} > 0`
+      )
+    )
+    .orderBy(sql`${importedTransactions.bookingDate} desc`, sql`${importedTransactions.id} desc`);
+
+  const matches = pending.filter((t) => allConditionsMatch(conditions, t));
+
+  const duplicateIds = matches
+    .map((t) => t.possibleDuplicateExpenseEntryId)
+    .filter((id): id is number => id !== null);
+  const provisionalById = new Map<number, boolean>();
+  if (duplicateIds.length > 0) {
+    const entries = await db
+      .select({ id: expenseEntries.id, provisional: expenseEntries.provisional })
+      .from(expenseEntries)
+      .where(inArray(expenseEntries.id, duplicateIds));
+    for (const e of entries) provisionalById.set(e.id, e.provisional);
+  }
+
+  const existingRules = await getCategoryRules();
+  let alreadyCoveredByEarlierRule = 0;
+  const rows: RulePreviewRow[] = [];
+  for (const t of matches) {
+    if (matchCategoryRule(t, existingRules)) alreadyCoveredByEarlierRule++;
+    if (rows.length >= MAX_PREVIEW_ROWS) continue;
+    const dupId = t.possibleDuplicateExpenseEntryId;
+    const dupStillExists = dupId !== null && provisionalById.has(dupId);
+    rows.push({
+      id: t.id,
+      bookingDate: t.bookingDate,
+      payeeRaw: t.payeeRaw,
+      payeeClean: t.payeeClean,
+      amountPence: t.amountPence,
+      blocked: !dupStillExists ? null : provisionalById.get(dupId!) ? "pencilled-match" : "possible-duplicate",
+    });
+  }
+  return { rows, total: matches.length, alreadyCoveredByEarlierRule };
+}
+
+export type CreateRuleAndApplyResult = {
+  ruleId: number;
+  categorized: number;
+  /** Ids that were asked for but not applied (no longer matching, no
+   * longer pending, pencilled-in, or failed) - with why, never silent. */
+  skipped: { id: number; reason: string }[];
+};
+
+/** Saves the rule, then (optionally) categorizes the chosen matches with
+ * the same target. The ids are only a request: each one is re-checked
+ * against what the rule really matches RIGHT NOW, so a stale tab, a row
+ * categorized elsewhere in the meantime, or a tampered request can't push
+ * a non-matching transaction into the wrong category. */
+export async function createRuleAndCategorize(input: {
+  conditions: RuleCondition[];
+  target: RuleTarget;
+  applyToIds: number[];
+}): Promise<CreateRuleAndApplyResult> {
+  const conditions = validateConditions(input.conditions);
+  const rule = await addCategoryRule({ conditions, ...input.target });
+
+  const skipped: { id: number; reason: string }[] = [];
+  let categorized = 0;
+  if (input.applyToIds.length === 0) return { ruleId: rule.id, categorized, skipped };
+
+  const preview = await previewRuleMatches(conditions, input.target.targetType);
+  const eligible = new Map(preview.rows.map((r) => [r.id, r]));
+  for (const id of new Set(input.applyToIds)) {
+    const row = eligible.get(id);
+    if (!row) {
+      skipped.push({ id, reason: "no longer matches or is no longer waiting in Review" });
+      continue;
+    }
+    if (row.blocked === "pencilled-match") {
+      skipped.push({ id, reason: "matches a pencilled-in entry - confirm or discard it on its own row" });
+      continue;
+    }
+    try {
+      if (input.target.targetType === "expense") {
+        await categorizeTransaction(id, { categoryId: input.target.categoryId, debtPersonId: input.target.debtPersonId });
+      } else {
+        await categorizeTransactionAsIncome(id, { incomeSourceId: input.target.incomeSourceId });
+      }
+      categorized++;
+    } catch (err) {
+      skipped.push({ id, reason: err instanceof Error ? err.message : "failed" });
+    }
+  }
+  return { ruleId: rule.id, categorized, skipped };
 }

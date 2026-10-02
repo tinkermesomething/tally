@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -22,23 +21,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createCategoryRule } from "@/app/settings/bank-sync-actions";
+import { RuleConditionsEditor, newEditorCondition, type EditorCondition } from "@/components/rules/rule-conditions-editor";
+import { parseConditionInputs } from "@/lib/rules";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
-type Field = "payee" | "amount";
-type Operator = "contains" | "is" | "gt" | "lt";
 type TargetType = "expense" | "income";
-
-const OPERATORS_BY_FIELD: Record<Field, { value: Operator; label: string }[]> = {
-  payee: [
-    { value: "contains", label: "contains" },
-    { value: "is", label: "is exactly" },
-  ],
-  amount: [
-    { value: "gt", label: "is more than" },
-    { value: "lt", label: "is less than" },
-    { value: "is", label: "is exactly" },
-  ],
-};
 
 export function AddCategoryRuleDialog({
   categories,
@@ -50,9 +37,7 @@ export function AddCategoryRuleDialog({
   people: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
-  const [field, setField] = useState<Field>("payee");
-  const [operator, setOperator] = useState<Operator>("contains");
-  const [value, setValue] = useState("");
+  const [conditions, setConditions] = useState<EditorCondition[]>(() => [newEditorCondition()]);
   const [targetType, setTargetType] = useState<TargetType>("expense");
   const [categoryId, setCategoryId] = useState("");
   const [incomeSourceId, setIncomeSourceId] = useState("");
@@ -63,20 +48,13 @@ export function AddCategoryRuleDialog({
   const [pending, startTransition] = useTransition();
 
   function reset() {
-    setField("payee");
-    setOperator("contains");
-    setValue("");
+    setConditions([newEditorCondition()]);
     setTargetType("expense");
     setCategoryId("");
     setIncomeSourceId("");
     setTagDebt(false);
     resetPerson();
     setError(null);
-  }
-
-  function handleFieldChange(next: Field) {
-    setField(next);
-    setOperator(OPERATORS_BY_FIELD[next][0].value);
   }
 
   function handleTargetTypeChange(next: TargetType) {
@@ -90,12 +68,9 @@ export function AddCategoryRuleDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!value.trim()) {
-      setError("Enter a value to match.");
-      return;
-    }
-    if (field === "amount" && Number.isNaN(parseFloat(value))) {
-      setError("Amount must be a number (in pounds).");
+    const parsed = parseConditionInputs(conditions);
+    if (!parsed.ok) {
+      setError(parsed.error);
       return;
     }
     if (targetType === "expense" && !categoryId) {
@@ -117,24 +92,17 @@ export function AddCategoryRuleDialog({
     setError(null);
     startTransition(async () => {
       try {
-        // Rules match against pence, same as everything else stored in
-        // this app - the form takes pounds like every other amount input.
-        const matchValue = field === "amount" ? String(Math.round(parseFloat(value) * 100)) : value;
         if (targetType === "expense") {
           const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
           await createCategoryRule({
-            field,
-            operator,
-            value: matchValue,
+            conditions: parsed.conditions,
             targetType: "expense",
             categoryId: parseInt(categoryId, 10),
             debtPersonId,
           });
         } else {
           await createCategoryRule({
-            field,
-            operator,
-            value: matchValue,
+            conditions: parsed.conditions,
             targetType: "income",
             incomeSourceId: parseInt(incomeSourceId, 10),
           });
@@ -163,7 +131,7 @@ export function AddCategoryRuleDialog({
           </Button>
         }
       />
-      <DialogContent>
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>New auto-categorization rule</DialogTitle>
         </DialogHeader>
@@ -184,47 +152,7 @@ export function AddCategoryRuleDialog({
             </Select>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="rule-field">If</Label>
-            <Select value={field} onValueChange={(v) => handleFieldChange((v as Field) ?? "payee")}>
-              <SelectTrigger id="rule-field" className="w-full">
-                <SelectValue>{(v: string) => (v === "payee" ? "Payee" : "Amount")}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="payee">Payee</SelectItem>
-                <SelectItem value="amount">Amount</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="rule-operator">Condition</Label>
-            <Select value={operator} onValueChange={(v) => setOperator((v as Operator) ?? operator)}>
-              <SelectTrigger id="rule-operator" className="w-full">
-                <SelectValue>
-                  {(v: string) => OPERATORS_BY_FIELD[field].find((o) => o.value === v)?.label ?? v}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {OPERATORS_BY_FIELD[field].map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="rule-value">{field === "payee" ? "Text" : "Amount (£)"}</Label>
-            <Input
-              id="rule-value"
-              placeholder={field === "payee" ? "e.g. netflix" : "e.g. 50.00"}
-              inputMode={field === "amount" ? "decimal" : "text"}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-            />
-          </div>
+          <RuleConditionsEditor conditions={conditions} onChange={setConditions} />
 
           {targetType === "expense" ? (
             <div className="space-y-1.5">

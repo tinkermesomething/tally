@@ -1,0 +1,1 @@
+ALTER TABLE `category_rules` ADD `conditions` text;

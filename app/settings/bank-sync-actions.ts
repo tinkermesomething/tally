@@ -1,10 +1,12 @@
 "use server";
 
 import { cookies } from "next/headers";
+import type { RuleCondition } from "@/lib/rules";
 import { revalidatePath } from "next/cache";
 import {
   archiveBankAccount,
   addCategoryRule,
+  type RuleTarget,
   deactivateCategoryRule,
   syncBankAccount,
 } from "@/lib/db/bank-sync";
@@ -88,26 +90,11 @@ export async function startBankConnection(institution: {
 }
 
 export async function createCategoryRule(
-  input:
-    | {
-        field: "payee" | "amount";
-        operator: "contains" | "is" | "gt" | "lt";
-        value: string;
-        targetType: "expense";
-        categoryId: number;
-        debtPersonId?: number;
-      }
-    | {
-        field: "payee" | "amount";
-        operator: "contains" | "is" | "gt" | "lt";
-        value: string;
-        targetType: "income";
-        incomeSourceId: number;
-      }
+  input: { conditions: RuleCondition[] } & RuleTarget
 ) {
-  const trimmedValue = input.value.trim();
-  if (!trimmedValue) throw new Error("Enter a value for the rule to match against.");
-  await addCategoryRule({ ...input, value: trimmedValue });
+  // addCategoryRule validates the conditions itself (and throws a
+  // readable message) - this is just the revalidating wrapper.
+  await addCategoryRule(input);
   revalidatePath("/settings");
 }
 

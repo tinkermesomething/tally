@@ -24,7 +24,7 @@ import {
   discardImportedTransactionMatch,
 } from "@/app/review/actions";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
-import { CreateRuleButton } from "@/components/review/create-rule-button";
+import { RuleDialog } from "@/components/review/rule-dialog";
 
 export type ReviewRow = {
   id: number;
@@ -217,6 +217,7 @@ export function ReviewTransactionRow({
         {formatPence(Math.abs(transaction.amountPence), currency)}
       </TableCell>
       <TableCell>
+        <div className="flex items-center gap-1.5">
         {isIncome ? (
           <Select value={incomeSourceId} onValueChange={(v) => setIncomeSourceId(v ?? "")}>
             <SelectTrigger className="w-44">
@@ -254,6 +255,16 @@ export function ReviewTransactionRow({
             </SelectContent>
           </Select>
         )}
+        <RuleDialog
+          transaction={transaction}
+          isIncome={isIncome}
+          categories={categories}
+          incomeSources={incomeSources}
+          people={people}
+          initialCategoryId={categoryId}
+          initialIncomeSourceId={incomeSourceId}
+        />
+        </div>
       </TableCell>
       <TableCell>
         {!isIncome && (
@@ -302,27 +313,6 @@ export function ReviewTransactionRow({
           <Button size="icon-xs" variant="outline" onClick={handleIgnore} disabled={pending} title="Ignore">
             <X className="size-3.5" />
           </Button>
-          {isIncome
-            ? incomeSourceId && (
-                <CreateRuleButton
-                  payeeClean={transaction.payeeClean}
-                  payeeRaw={transaction.payeeRaw}
-                  amountPence={transaction.amountPence}
-                  target={{ targetType: "income", incomeSourceId: parseInt(incomeSourceId, 10) }}
-                />
-              )
-            : categoryId && (
-                <CreateRuleButton
-                  payeeClean={transaction.payeeClean}
-                  payeeRaw={transaction.payeeRaw}
-                  amountPence={transaction.amountPence}
-                  target={{
-                    targetType: "expense",
-                    categoryId: parseInt(categoryId, 10),
-                    resolveDebtPersonId: async () => (tagDebt ? await resolvePersonId() : undefined),
-                  }}
-                />
-              )}
         </div>
         {error && <p className="mt-1 max-w-32 text-xs text-status-critical">{error}</p>}
       </TableCell>

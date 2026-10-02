@@ -7,6 +7,7 @@ import {
 import { getPeopleWithBalances, getArchivedPeople } from "@/lib/db/debt";
 import { getAppSettings } from "@/lib/db/settings";
 import { getBankAccounts, getCategoryRules } from "@/lib/db/bank-sync";
+import { ruleConditionsOf } from "@/lib/rules";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
@@ -248,9 +249,11 @@ export default async function SettingsPage({
                   <CategoryRuleSettingsRow
                     key={r.id}
                     id={r.id}
-                    field={r.field}
-                    operator={r.operator}
-                    value={r.field === "amount" ? (parseInt(r.value, 10) / 100).toFixed(2) : r.value}
+                    conditions={ruleConditionsOf(r).map((c) => ({
+                      field: c.field,
+                      operator: c.operator,
+                      value: c.field === "amount" ? (parseInt(c.value, 10) / 100).toFixed(2) : c.value,
+                    }))}
                     targetName={
                       r.targetType === "income"
                         ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
