@@ -59,11 +59,6 @@ export function AddCategoryRuleDialog({
 
   function handleTargetTypeChange(next: TargetType) {
     setTargetType(next);
-    // Debt-tagging a rule only makes sense alongside an expense category -
-    // the debt ledger already models someone repaying you as its own
-    // entry, unconnected to bank-sync, so there's nothing for an
-    // income-targeted rule to tag.
-    if (next === "income") setTagDebt(false);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -82,7 +77,7 @@ export function AddCategoryRuleDialog({
       return;
     }
     if (tagDebt && !personId) {
-      setError("Pick who this repayment is to, or turn off the debt tag.");
+      setError(targetType === "income" ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
       return;
     }
     if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
@@ -101,10 +96,12 @@ export function AddCategoryRuleDialog({
             debtPersonId,
           });
         } else {
+          const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
           await createCategoryRule({
             conditions: parsed.conditions,
             targetType: "income",
             incomeSourceId: parseInt(incomeSourceId, 10),
+            debtPersonId,
           });
         }
         reset();
@@ -194,26 +191,24 @@ export function AddCategoryRuleDialog({
             </div>
           )}
 
-          {targetType === "expense" && (
-            <>
-              <div className="flex items-center gap-2">
-                <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
-                <Label className="font-normal">Also tag as a debt repayment</Label>
-              </div>
+          <div className="flex items-center gap-2">
+            <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
+            <Label className="font-normal">
+              {targetType === "income" ? "Also record as a loan (add to Debt)" : "Also tag as a debt repayment"}
+            </Label>
+          </div>
 
-              {tagDebt && (
-                <PersonPickerField
-                  idPrefix="rule"
-                  label="Paying back"
-                  placeholder="Choose who"
-                  people={people}
-                  personId={personId}
-                  onPersonIdChange={setPersonId}
-                  newPersonName={newPersonName}
-                  onNewPersonNameChange={setNewPersonName}
-                />
-              )}
-            </>
+          {tagDebt && (
+            <PersonPickerField
+              idPrefix="rule"
+              label={targetType === "income" ? "Borrowed from" : "Paying back"}
+              placeholder="Choose who"
+              people={people}
+              personId={personId}
+              onPersonIdChange={setPersonId}
+              newPersonName={newPersonName}
+              onNewPersonNameChange={setNewPersonName}
+            />
           )}
 
           {error && <p className="text-sm text-status-critical">{error}</p>}

@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db } from "./index";
 import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
+import { addDebtEntry } from "./debt";
 import { resolvePeriodForDate } from "./pay-period";
 import {
   bankAccounts,
@@ -8,6 +9,7 @@ import {
   categoryRules,
   expenseEntries,
   importedTransactions,
+  people,
 } from "./schema";
 import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence } from "../gocardless";
 import {
@@ -213,7 +215,7 @@ export async function getCategoryRules(): Promise<CategoryRule[]> {
 
 export type RuleTarget =
   | { targetType: "expense"; categoryId: number; debtPersonId?: number }
-  | { targetType: "income"; incomeSourceId: number };
+  | { targetType: "income"; incomeSourceId: number; debtPersonId?: number };
 
 /** Stored conditions are all-must-match. field/operator/value mirror the
  * first condition so the single-condition columns stay valid (they're NOT
@@ -228,7 +230,7 @@ export async function addCategoryRule(input: { conditions: RuleCondition[] } & R
   const target =
     input.targetType === "expense"
       ? { targetType: "expense" as const, categoryId: input.categoryId, debtPersonId: input.debtPersonId }
-      : { targetType: "income" as const, incomeSourceId: input.incomeSourceId };
+      : { targetType: "income" as const, incomeSourceId: input.incomeSourceId, debtPersonId: input.debtPersonId };
   const [created] = await db
     .insert(categoryRules)
     .values({
@@ -249,7 +251,7 @@ export async function deactivateCategoryRule(id: number) {
 
 export type RuleMatch =
   | { targetType: "expense"; categoryId: number; debtPersonId: number | null }
-  | { targetType: "income"; incomeSourceId: number };
+  | { targetType: "income"; incomeSourceId: number; debtPersonId: number | null };
 
 /** Pure function, no DB access - evaluates rules in order, first match
  * wins. Matches actual-budget's own model: condition (field/operator/
@@ -295,7 +297,7 @@ export function matchCategoryRule(
       // papering over a real gap.
       return { targetType: "expense", categoryId: rule.categoryId!, debtPersonId: rule.debtPersonId ?? null };
     }
-    return { targetType: "income", incomeSourceId: rule.incomeSourceId! };
+    return { targetType: "income", incomeSourceId: rule.incomeSourceId!, debtPersonId: rule.debtPersonId ?? null };
   }
   return null;
 }
@@ -472,7 +474,10 @@ async function autoProcessStagedTransaction(id: number) {
         debtPersonId: ruleMatch.debtPersonId ?? undefined,
       });
     } else {
-      await categorizeTransactionAsIncome(id, ruleMatch);
+      await categorizeTransactionAsIncome(id, {
+        incomeSourceId: ruleMatch.incomeSourceId,
+        debtPersonId: ruleMatch.debtPersonId ?? undefined,
+      });
     }
     return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
   }
@@ -558,6 +563,16 @@ export async function confirmPencilledMatch(importedTransactionId: number, expen
   await ignoreTransaction(importedTransactionId);
 }
 
+/** A person must exist BEFORE anything is written for them: the loan/
+ * repayment row is inserted after the income/expense one, so a bad id
+ * would otherwise fail midway and leave the money recorded but the row
+ * still waiting in Review (and double-counted on retry). */
+async function assertPersonExists(personId: number | null | undefined) {
+  if (!personId) return;
+  const person = await db.query.people.findFirst({ where: eq(people.id, personId) });
+  if (!person) throw new Error("That person no longer exists - pick someone else.");
+}
+
 /** Creates the real expenseEntries row (via the same logExpense every
  * other expense goes through, so rollup/AVAILABLE math is identical either
  * way) and marks the staged row categorized, linked back for traceability. */
@@ -577,6 +592,7 @@ export async function categorizeTransaction(
   if (row.amountPence >= 0) {
     throw new Error("Only money-out (negative amount) transactions can be categorized as an expense.");
   }
+  await assertPersonExists(input.debtPersonId);
 
   await logExpense({
     categoryId: input.categoryId,
@@ -602,7 +618,10 @@ export async function categorizeTransaction(
  * of a reverse FK from income_entries (see the schema comment on it). */
 export async function categorizeTransactionAsIncome(
   id: number,
-  input: { incomeSourceId: number }
+  // debtPersonId: this money is a LOAN from that person - recorded on the
+  // Debt ledger as well as counting as income (it's really in the bank),
+  // exactly like "This is a loan" in the grid's Add income dialog.
+  input: { incomeSourceId: number; debtPersonId?: number }
 ) {
   const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
   if (!row) throw new Error(`Staged transaction ${id} not found.`);
@@ -610,6 +629,7 @@ export async function categorizeTransactionAsIncome(
   if (row.amountPence <= 0) {
     throw new Error("Only money-in (positive amount) transactions can be categorized as income.");
   }
+  await assertPersonExists(input.debtPersonId);
 
   const { year, month } = await resolvePeriodForDate(row.bookingDate);
   await incrementIncomeEntry({
@@ -618,6 +638,16 @@ export async function categorizeTransactionAsIncome(
     month,
     amountPence: row.amountPence,
   });
+
+  if (input.debtPersonId) {
+    await addDebtEntry({
+      personId: input.debtPersonId,
+      entryDate: row.bookingDate,
+      amountPence: row.amountPence,
+      direction: "loan",
+      note: row.payeeClean ?? row.payeeRaw,
+    });
+  }
 
   await db
     .update(importedTransactions)
@@ -659,7 +689,10 @@ export async function bulkCategorizeTransactionsAsExpense(
   }
 }
 
-export async function bulkCategorizeTransactionsAsIncome(ids: number[], input: { incomeSourceId: number }) {
+export async function bulkCategorizeTransactionsAsIncome(
+  ids: number[],
+  input: { incomeSourceId: number; debtPersonId?: number }
+) {
   for (const id of await stillPending(ids)) {
     await categorizeTransactionAsIncome(id, input);
   }
@@ -804,7 +837,10 @@ export async function createRuleAndCategorize(input: {
       if (input.target.targetType === "expense") {
         await categorizeTransaction(id, { categoryId: input.target.categoryId, debtPersonId: input.target.debtPersonId });
       } else {
-        await categorizeTransactionAsIncome(id, { incomeSourceId: input.target.incomeSourceId });
+        await categorizeTransactionAsIncome(id, {
+          incomeSourceId: input.target.incomeSourceId,
+          debtPersonId: input.target.debtPersonId,
+        });
       }
       categorized++;
     } catch (err) {

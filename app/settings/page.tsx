@@ -215,6 +215,7 @@ export default async function SettingsPage({
                         : (categoryNameById.get(r.categoryId!) ?? "Unknown category")
                     }
                     debtPersonName={r.debtPersonId ? (personNameById.get(r.debtPersonId) ?? null) : null}
+                    debtKind={r.targetType === "income" ? "loan" : "repayment"}
                   />
                 ))}
               </div>

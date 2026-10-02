@@ -23,10 +23,14 @@ export async function categorizeImportedTransaction(
   revalidatePath("/entries");
 }
 
-export async function categorizeImportedTransactionAsIncome(id: number, input: { incomeSourceId: number }) {
+export async function categorizeImportedTransactionAsIncome(
+  id: number,
+  input: { incomeSourceId: number; debtPersonId?: number }
+) {
   await categorizeTransactionAsIncome(id, input);
   revalidatePath("/review");
   revalidatePath("/grid");
+  revalidatePath("/debt");
 }
 
 export async function ignoreImportedTransaction(id: number) {
@@ -46,7 +50,7 @@ export async function bulkIgnoreImportedTransactions(ids: number[]) {
 
 export async function bulkCategorizeImportedTransactionsAsExpense(
   ids: number[],
-  input: { categoryId: number }
+  input: { categoryId: number; debtPersonId?: number }
 ) {
   await bulkCategorizeTransactionsAsExpense(ids, input);
   revalidatePath("/review");
@@ -57,11 +61,12 @@ export async function bulkCategorizeImportedTransactionsAsExpense(
 
 export async function bulkCategorizeImportedTransactionsAsIncome(
   ids: number[],
-  input: { incomeSourceId: number }
+  input: { incomeSourceId: number; debtPersonId?: number }
 ) {
   await bulkCategorizeTransactionsAsIncome(ids, input);
   revalidatePath("/review");
   revalidatePath("/grid");
+  revalidatePath("/debt");
 }
 
 export async function pencilInPendingExpense(input: {

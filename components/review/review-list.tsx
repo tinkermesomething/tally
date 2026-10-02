@@ -15,6 +15,9 @@ import {
 import { Table, TableHeader, TableBody, TableRow, TableHead } from "@/components/ui/table";
 import { ReviewTransactionRow, type ReviewRow } from "@/components/review/review-transaction-row";
 import { RuleDialog, type RuleContext } from "@/components/review/rule-dialog";
+import { DebtTagControl } from "@/components/review/debt-tag-control";
+import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
+import { findLoansSourceId } from "@/lib/loans";
 import {
   bulkIgnoreImportedTransactions,
   bulkCategorizeImportedTransactionsAsExpense,
@@ -35,6 +38,9 @@ export function ReviewList({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [bulkIncomeSourceId, setBulkIncomeSourceId] = useState("");
+  const [bulkTagDebt, setBulkTagDebt] = useState(false);
+  const bulkPerson = usePersonSelection();
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const [, startRefresh] = useTransition();
@@ -117,21 +123,46 @@ export function ReviewList({
   const allSelectedExpense = selectedTransactions.length > 0 && selectedTransactions.every((t) => t.amountPence < 0);
   const allSelectedIncome = selectedTransactions.length > 0 && selectedTransactions.every((t) => t.amountPence > 0);
 
+  function handleBulkTagChange(next: boolean) {
+    setBulkTagDebt(next);
+    setBulkError(null);
+    // Same suggestion as on a single row: a loan defaults to the loans
+    // income source, only when none is chosen yet.
+    if (next && allSelectedIncome && !bulkIncomeSourceId) {
+      const loansId = findLoansSourceId(incomeSources);
+      if (loansId) setBulkIncomeSourceId(loansId);
+    }
+  }
+
   function bulkApprove() {
     const ids = Array.from(selected);
-    if (allSelectedExpense && bulkCategoryId) {
-      startTransition(async () => {
-        await bulkCategorizeImportedTransactionsAsExpense(ids, { categoryId: parseInt(bulkCategoryId, 10) });
-        setSelected(new Set());
-        setBulkCategoryId("");
-      });
-    } else if (allSelectedIncome && bulkIncomeSourceId) {
-      startTransition(async () => {
-        await bulkCategorizeImportedTransactionsAsIncome(ids, { incomeSourceId: parseInt(bulkIncomeSourceId, 10) });
-        setSelected(new Set());
-        setBulkIncomeSourceId("");
-      });
+    if (!(allSelectedExpense ? bulkCategoryId : allSelectedIncome ? bulkIncomeSourceId : "")) return;
+    if (bulkTagDebt && !bulkPerson.personId) {
+      setBulkError(allSelectedIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
+      return;
     }
+    if (bulkTagDebt && bulkPerson.personId === NEW_PERSON && !bulkPerson.newPersonName.trim()) {
+      setBulkError("Enter the new person's name.");
+      return;
+    }
+    setBulkError(null);
+    startTransition(async () => {
+      try {
+        const debtPersonId = bulkTagDebt ? await bulkPerson.resolvePersonId() : undefined;
+        if (allSelectedExpense) {
+          await bulkCategorizeImportedTransactionsAsExpense(ids, { categoryId: parseInt(bulkCategoryId, 10), debtPersonId });
+          setBulkCategoryId("");
+        } else {
+          await bulkCategorizeImportedTransactionsAsIncome(ids, { incomeSourceId: parseInt(bulkIncomeSourceId, 10), debtPersonId });
+          setBulkIncomeSourceId("");
+        }
+        setSelected(new Set());
+        setBulkTagDebt(false);
+        bulkPerson.reset();
+      } catch (err) {
+        setBulkError(err instanceof Error ? err.message : "Failed to approve.");
+      }
+    });
   }
 
   if (transactions.length === 0) {
@@ -195,6 +226,19 @@ export function ReviewList({
             </Select>
           )}
           {(allSelectedExpense || allSelectedIncome) && (
+            <DebtTagControl
+              kind={allSelectedIncome ? "loan" : "repayment"}
+              idPrefix="bulk"
+              tagDebt={bulkTagDebt}
+              onTagDebtChange={handleBulkTagChange}
+              people={people}
+              personId={bulkPerson.personId}
+              onPersonIdChange={bulkPerson.setPersonId}
+              newPersonName={bulkPerson.newPersonName}
+              onNewPersonNameChange={bulkPerson.setNewPersonName}
+            />
+          )}
+          {(allSelectedExpense || allSelectedIncome) && (
             <Button
               size="sm"
               onClick={bulkApprove}
@@ -206,6 +250,7 @@ export function ReviewList({
           {!allSelectedExpense && !allSelectedIncome && (
             <span className="text-xs text-muted-foreground">Select only money-out or only money-in to bulk-approve</span>
           )}
+          {bulkError && <span className="text-xs text-status-critical">{bulkError}</span>}
           <Button size="sm" variant="outline" onClick={bulkIgnore} disabled={pending}>
             Ignore selected
           </Button>

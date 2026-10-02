@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
-import { Check, X, TriangleAlert, UserRound, Pencil, Zap } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Check, X, TriangleAlert, Pencil, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TableRow, TableCell } from "@/components/ui/table";
@@ -12,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Popover, PopoverPortal, PopoverPositioner, PopoverPopup } from "@/components/ui/popover";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -23,8 +22,10 @@ import {
   confirmImportedTransactionMatch,
   discardImportedTransactionMatch,
 } from "@/app/review/actions";
-import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
+import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
 import type { RuleContext } from "@/components/review/rule-dialog";
+import { DebtTagControl } from "@/components/review/debt-tag-control";
+import { findLoansSourceId } from "@/lib/loans";
 
 export type ReviewRow = {
   id: number;
@@ -65,16 +66,24 @@ export function ReviewTransactionRow({
   const [categoryId, setCategoryId] = useState("");
   const [incomeSourceId, setIncomeSourceId] = useState("");
   const [tagDebt, setTagDebt] = useState(false);
-  const [debtPopoverOpen, setDebtPopoverOpen] = useState(false);
   const { personId, setPersonId, newPersonName, setNewPersonName, resolvePersonId } = usePersonSelection();
   const [error, setError] = useState<string | null>(null);
-  const debtAnchorRef = useRef<HTMLButtonElement>(null);
 
   // Staging imports both directions - money in (positive) can only ever
-  // become income, money out (negative) only ever an expense. Debt-tagging
-  // is expense-only (the debt ledger already models a repayment TO you as
-  // its own entry, unconnected to bank-sync).
+  // become income, money out (negative) only ever an expense. Either can
+  // carry a person: an expense as a repayment to them, income as a loan
+  // from them (both land on the Debt ledger).
   const isIncome = transaction.amountPence > 0;
+
+  function handleTagDebtChange(next: boolean) {
+    setTagDebt(next);
+    // Tagging incoming money as a loan suggests the loans income source,
+    // but only when nothing is chosen yet - never overrides a deliberate pick.
+    if (next && isIncome && !incomeSourceId) {
+      const loansId = findLoansSourceId(incomeSources);
+      if (loansId) setIncomeSourceId(loansId);
+    }
+  }
 
   function handleCategorize() {
     if (isIncome) {
@@ -82,10 +91,22 @@ export function ReviewTransactionRow({
         setError("Pick an income source first.");
         return;
       }
+      if (tagDebt && !personId) {
+        setError("Pick who you borrowed this from, or turn off the loan tag.");
+        return;
+      }
+      if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
+        setError("Enter the new person's name.");
+        return;
+      }
       setError(null);
       startTransition(async () => {
         try {
-          await categorizeImportedTransactionAsIncome(transaction.id, { incomeSourceId: parseInt(incomeSourceId, 10) });
+          const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
+          await categorizeImportedTransactionAsIncome(transaction.id, {
+            incomeSourceId: parseInt(incomeSourceId, 10),
+            debtPersonId,
+          });
         } catch (err) {
           setError(err instanceof Error ? err.message : "Failed to categorize.");
         }
@@ -268,6 +289,8 @@ export function ReviewTransactionRow({
               isIncome,
               initialCategoryId: categoryId,
               initialIncomeSourceId: incomeSourceId,
+              initialTagDebt: tagDebt && !!personId && personId !== NEW_PERSON,
+              initialPersonId: personId !== NEW_PERSON ? personId : "",
             })
           }
         >
@@ -277,43 +300,17 @@ export function ReviewTransactionRow({
         </div>
       </TableCell>
       <TableCell>
-        {!isIncome && (
-          <>
-            <Button
-              ref={debtAnchorRef}
-              size="icon-xs"
-              variant={tagDebt ? "secondary" : "ghost"}
-              title={tagDebt ? "Paying someone back - click to edit" : "Tag as paying someone back"}
-              onClick={() => setDebtPopoverOpen((v) => !v)}
-            >
-              <UserRound className="size-3.5" />
-            </Button>
-            <Popover open={debtPopoverOpen} onOpenChange={setDebtPopoverOpen}>
-              <PopoverPortal>
-                <PopoverPositioner anchor={debtAnchorRef} align="start" sideOffset={4}>
-                  <PopoverPopup>
-                    <div className="flex items-center gap-2 pb-2">
-                      <Checkbox checked={tagDebt} onCheckedChange={(checked) => setTagDebt(checked === true)} />
-                      <span className="text-sm">Paying someone back</span>
-                    </div>
-                    {tagDebt && (
-                      <PersonPickerField
-                        idPrefix={`review-${transaction.id}`}
-                        label="Paying back"
-                        placeholder="Choose who"
-                        people={people}
-                        personId={personId}
-                        onPersonIdChange={setPersonId}
-                        newPersonName={newPersonName}
-                        onNewPersonNameChange={setNewPersonName}
-                      />
-                    )}
-                  </PopoverPopup>
-                </PopoverPositioner>
-              </PopoverPortal>
-            </Popover>
-          </>
-        )}
+        <DebtTagControl
+          kind={isIncome ? "loan" : "repayment"}
+          idPrefix={`review-${transaction.id}`}
+          tagDebt={tagDebt}
+          onTagDebtChange={handleTagDebtChange}
+          people={people}
+          personId={personId}
+          onPersonIdChange={setPersonId}
+          newPersonName={newPersonName}
+          onNewPersonNameChange={setNewPersonName}
+        />
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1">

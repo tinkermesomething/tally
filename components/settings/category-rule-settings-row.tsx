@@ -24,6 +24,7 @@ export function CategoryRuleSettingsRow({
   conditions,
   targetName,
   debtPersonName,
+  debtKind = "repayment",
 }: {
   id: number;
   conditions: RuleConditionDisplay[];
@@ -31,6 +32,8 @@ export function CategoryRuleSettingsRow({
    * it is, this is already the resolved display name, not an id. */
   targetName: string;
   debtPersonName: string | null;
+  /** repayment = money out paying them back; loan = money in borrowed from them. */
+  debtKind?: "repayment" | "loan";
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -46,7 +49,12 @@ export function CategoryRuleSettingsRow({
           </span>
         ))}{" "}
         → <span className="font-medium">{targetName}</span>
-        {debtPersonName && <span className="text-muted-foreground"> (repayment to {debtPersonName})</span>}
+        {debtPersonName && (
+          <span className="text-muted-foreground">
+            {" "}
+            ({debtKind === "loan" ? "loan from" : "repayment to"} {debtPersonName})
+          </span>
+        )}
       </p>
       <Button
         size="icon-xs"

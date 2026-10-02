@@ -25,6 +25,7 @@ import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { previewRule, saveRule } from "@/app/review/rule-actions";
 import { parseConditionInputs } from "@/lib/rules";
+import { findLoansSourceId } from "@/lib/loans";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import type { RulePreview, CreateRuleAndApplyResult } from "@/lib/db/bank-sync";
@@ -39,6 +40,9 @@ export type RuleContext = {
   isIncome: boolean;
   initialCategoryId: string;
   initialIncomeSourceId: string;
+  /** The row's own person tag, carried over (an existing person only). */
+  initialTagDebt: boolean;
+  initialPersonId: string;
 };
 
 type Lists = {
@@ -101,8 +105,22 @@ function RuleDialogBody({
   ]);
   const [categoryId, setCategoryId] = useState(context.initialCategoryId);
   const [incomeSourceId, setIncomeSourceId] = useState(context.initialIncomeSourceId);
-  const [tagDebt, setTagDebt] = useState(false);
+  const [tagDebt, setTagDebt] = useState(context.initialTagDebt);
   const { personId, setPersonId, newPersonName, setNewPersonName, resolvePersonId } = usePersonSelection();
+  useEffect(() => {
+    if (context.initialTagDebt && context.initialPersonId) setPersonId(context.initialPersonId);
+    // once, on open - the body remounts for every open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleTagDebtChange(next: boolean) {
+    setTagDebt(next);
+    // A loan suggests the loans income source - only when none is chosen.
+    if (next && isIncome && !incomeSourceId) {
+      const loansId = findLoansSourceId(incomeSources);
+      if (loansId) setIncomeSourceId(loansId);
+    }
+  }
   const [preview, setPreview] = useState<RulePreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -159,14 +177,16 @@ function RuleDialogBody({
   function submit(apply: boolean) {
     if (!parsed.ok) return setError(parsed.error);
     if (!hasTarget) return setError(isIncome ? "Pick an income source." : "Pick a category.");
-    if (!isIncome && tagDebt && !personId) return setError("Pick who this repayment is to, or turn off the debt tag.");
-    if (!isIncome && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new person's name.");
+    if (tagDebt && !personId) {
+      return setError(isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
+    }
+    if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new person's name.");
     setError(null);
     startSaving(async () => {
       try {
-        const debtPersonId = !isIncome && tagDebt ? await resolvePersonId() : undefined;
+        const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
         const target = isIncome
-          ? ({ targetType: "income", incomeSourceId: parseInt(incomeSourceId, 10) } as const)
+          ? ({ targetType: "income", incomeSourceId: parseInt(incomeSourceId, 10), debtPersonId } as const)
           : ({ targetType: "expense", categoryId: parseInt(categoryId, 10), debtPersonId } as const);
         const res = await saveRule({ conditions: parsed.conditions, target, applyToIds: apply ? tickedIds : [] });
         if (res.ok) {
@@ -236,38 +256,38 @@ function RuleDialogBody({
               </SelectContent>
             </Select>
           ) : (
-            <>
-              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-                <SelectTrigger className="w-64" aria-label="Category">
-                  <SelectValue>
-                    {(v: string) => (v ? (categories.find((c) => String(c.id) === v)?.name ?? v) : "Choose a category")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex items-center gap-2">
-                <Checkbox checked={tagDebt} onCheckedChange={(c) => setTagDebt(c === true)} />
-                <Label className="font-normal">Also tag as a debt repayment</Label>
-              </div>
-              {tagDebt && (
-                <PersonPickerField
-                  idPrefix="rule-dialog"
-                  label="Paying back"
-                  placeholder="Choose who"
-                  people={people}
-                  personId={personId}
-                  onPersonIdChange={setPersonId}
-                  newPersonName={newPersonName}
-                  onNewPersonNameChange={setNewPersonName}
-                />
-              )}
-            </>
+            <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+              <SelectTrigger className="w-64" aria-label="Category">
+                <SelectValue>
+                  {(v: string) => (v ? (categories.find((c) => String(c.id) === v)?.name ?? v) : "Choose a category")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="flex items-center gap-2">
+            <Checkbox checked={tagDebt} onCheckedChange={(c) => handleTagDebtChange(c === true)} />
+            <Label className="font-normal">
+              {isIncome ? "Also record as a loan (add to Debt)" : "Also tag as a debt repayment"}
+            </Label>
+          </div>
+          {tagDebt && (
+            <PersonPickerField
+              idPrefix="rule-dialog"
+              label={isIncome ? "Borrowed from" : "Paying back"}
+              placeholder="Choose who"
+              people={people}
+              personId={personId}
+              onPersonIdChange={setPersonId}
+              newPersonName={newPersonName}
+              onNewPersonNameChange={setNewPersonName}
+            />
           )}
         </div>
 
