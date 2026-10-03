@@ -46,6 +46,7 @@ export type RuleContext = {
 };
 
 type Lists = {
+  accounts?: { id: number; name: string }[];
   categories: { id: number; name: string }[];
   incomeSources: { id: number; name: string }[];
   people: { id: number; name: string }[];
@@ -94,6 +95,7 @@ function RuleDialogBody({
   categories,
   incomeSources,
   people,
+  accounts = [],
   onApplied,
   onDone,
 }: { context: RuleContext; onApplied: () => void; onDone: () => void } & Lists) {
@@ -243,7 +245,7 @@ function RuleDialogBody({
           </DialogDescription>
         </DialogHeader>
 
-        <RuleConditionsEditor conditions={conditions} onChange={setConditions} />
+        <RuleConditionsEditor conditions={conditions} onChange={setConditions} accounts={accounts} />
 
         <div className="space-y-2 rounded-lg border border-border p-3">
           <div className="flex items-center gap-2">

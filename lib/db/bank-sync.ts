@@ -245,18 +245,23 @@ export type RuleTarget =
  * first condition so the single-condition columns stay valid (they're NOT
  * NULL) - see the schema comment on `conditions`. New rules go to the end
  * of the order: first match wins, same as before. */
+/** An account condition must point at a real linked account. */
+async function assertConditionAccountsExist(conditions: RuleCondition[]) {
+  for (const c of conditions) {
+    if (c.field !== "account") continue;
+    const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, parseInt(c.value, 10)) });
+    if (!account) throw new Error("That bank account no longer exists.");
+  }
+}
+
 export async function addCategoryRule(input: { conditions: RuleCondition[] } & RuleTarget) {
   const conditions = validateConditions(input.conditions);
+  await assertConditionAccountsExist(conditions);
   const [maxRow] = await db
     .select({ max: sql<number>`max(${categoryRules.sortOrder})` })
     .from(categoryRules);
   const first = conditions[0];
-  const target =
-    input.targetType === "expense"
-      ? { targetType: "expense" as const, categoryId: input.categoryId, debtPersonId: input.debtPersonId }
-      : input.targetType === "income"
-        ? { targetType: "income" as const, incomeSourceId: input.incomeSourceId, debtPersonId: input.debtPersonId }
-        : { targetType: "ignore" as const };
+  const target = ruleTargetColumns(input);
   const [created] = await db
     .insert(categoryRules)
     .values({
@@ -269,6 +274,44 @@ export async function addCategoryRule(input: { conditions: RuleCondition[] } & R
     })
     .returning();
   return created;
+}
+
+/** The target columns for a rule - the ones that don't apply are set to
+ * null explicitly, so editing a rule from one target type to another never
+ * leaves a stale category/source/person behind. */
+function ruleTargetColumns(t: RuleTarget) {
+  return {
+    targetType: t.targetType,
+    categoryId: t.targetType === "expense" ? t.categoryId : null,
+    incomeSourceId: t.targetType === "income" ? t.incomeSourceId : null,
+    debtPersonId: t.targetType === "ignore" ? null : (t.debtPersonId ?? null),
+  };
+}
+
+/** Edits a rule in place: keeps its position in the first-match-wins order
+ * and only changes future imports - transactions already categorized by it
+ * stay as they are. */
+export async function updateCategoryRule(id: number, input: { conditions: RuleCondition[] } & RuleTarget) {
+  const conditions = validateConditions(input.conditions);
+  await assertConditionAccountsExist(conditions);
+  const existing = await db.query.categoryRules.findFirst({
+    where: and(eq(categoryRules.id, id), eq(categoryRules.active, true)),
+  });
+  if (!existing) throw new Error("This rule no longer exists.");
+  await assertPersonExists(input.targetType === "ignore" ? undefined : input.debtPersonId);
+  const first = conditions[0];
+  const [updated] = await db
+    .update(categoryRules)
+    .set({
+      field: first.field,
+      operator: first.operator,
+      value: first.value,
+      conditions: JSON.stringify(conditions),
+      ...ruleTargetColumns(input),
+    })
+    .where(eq(categoryRules.id, id))
+    .returning();
+  return updated;
 }
 
 export async function deactivateCategoryRule(id: number) {
@@ -300,7 +343,7 @@ export type RuleMatch =
  * filter makes that failure mode structurally impossible rather than
  * relying on every rule being written carefully enough to avoid it. */
 export function matchCategoryRule(
-  transaction: { payeeRaw: string; payeeClean: string | null; amountPence: number },
+  transaction: { payeeRaw: string; payeeClean: string | null; amountPence: number; bankAccountId?: number },
   rules: CategoryRule[]
 ): RuleMatch | null {
   // A real bank transaction is never exactly 0 pence, but handle it for
@@ -614,6 +657,27 @@ async function assertPersonExists(personId: number | null | undefined) {
   if (!person) throw new Error("That person no longer exists - pick someone else.");
 }
 
+const MAX_NOTE_LENGTH = 200;
+
+/** Saves (or clears, when empty) your note on a row still waiting in Review. */
+export async function setTransactionNote(id: number, note: string) {
+  const text = note.replace(/\s+/g, " ").trim();
+  if (text.length > MAX_NOTE_LENGTH) throw new Error(`Notes can be at most ${MAX_NOTE_LENGTH} characters.`);
+  const updated = await db
+    .update(importedTransactions)
+    .set({ note: text || null })
+    .where(and(eq(importedTransactions.id, id), eq(importedTransactions.status, "pending_review")))
+    .returning({ id: importedTransactions.id });
+  if (updated.length === 0) throw new Error("This transaction was already handled.");
+}
+
+/** The note an entry gets from a bank row: your note first, then the payee
+ * so it can still be traced back to the bank line. */
+function entryNoteFor(row: { note: string | null; payeeClean: string | null; payeeRaw: string }) {
+  const payee = row.payeeClean ?? row.payeeRaw;
+  return row.note ? `${row.note} — ${payee}` : payee;
+}
+
 /** Creates the real expenseEntries row (via the same logExpense every
  * other expense goes through, so rollup/AVAILABLE math is identical either
  * way) and marks the staged row categorized, linked back for traceability. */
@@ -639,7 +703,7 @@ export async function categorizeTransaction(
     categoryId: input.categoryId,
     amountPence: Math.abs(row.amountPence),
     entryDate: row.bookingDate,
-    note: row.payeeClean ?? row.payeeRaw,
+    note: entryNoteFor(row),
     debtPersonId: input.debtPersonId,
     importedTransactionId: id,
   });
@@ -693,7 +757,7 @@ export async function categorizeTransactionAsIncome(
       entryDate: row.bookingDate,
       amountPence: row.amountPence,
       direction: "loan",
-      note: row.payeeClean ?? row.payeeRaw,
+      note: entryNoteFor(row),
     });
   }
 

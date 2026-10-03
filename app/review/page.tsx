@@ -11,6 +11,7 @@ import { ReviewList } from "@/components/review/review-list";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPence } from "@/lib/money";
+import { accountLabels } from "@/lib/accounts";
 import { formatDate } from "@/lib/date-format";
 import type { ReviewRow } from "@/components/review/review-transaction-row";
 import { PencilInButton } from "@/components/review/pencil-in-button";
@@ -42,14 +43,7 @@ export default async function ReviewPage({
     ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
   ]);
 
-  // Two linked accounts can share a name (e.g. two Revolut pots) - add the
-  // id so the filter can tell them apart.
-  const nameCount = new Map<string, number>();
-  for (const a of bankAccounts) nameCount.set(a.displayName, (nameCount.get(a.displayName) ?? 0) + 1);
-  const accounts = bankAccounts.map((a) => ({
-    id: a.id,
-    name: (nameCount.get(a.displayName) ?? 0) > 1 ? `${a.displayName} (#${a.id})` : a.displayName,
-  }));
+  const accounts = accountLabels(bankAccounts);
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
 
   const transactions: ReviewRow[] = await Promise.all(
@@ -59,6 +53,7 @@ export default async function ReviewPage({
       bookingDate: t.bookingDate,
       payeeRaw: t.payeeRaw,
       payeeClean: t.payeeClean,
+      note: t.note,
       accountId: t.bankAccountId,
       accountName: accountName.get(t.bankAccountId) ?? "Unknown account",
       duplicateOf:

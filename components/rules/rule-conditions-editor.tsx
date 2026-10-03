@@ -30,9 +30,12 @@ export function newEditorCondition(
 export function RuleConditionsEditor({
   conditions,
   onChange,
+  accounts = [],
 }: {
   conditions: EditorCondition[];
   onChange: (next: EditorCondition[]) => void;
+  /** Linked bank accounts - enables the "Account" condition. */
+  accounts?: { id: number; name: string }[];
 }) {
   function update(key: number, patch: Partial<ConditionInput>) {
     onChange(conditions.map((c) => (c.key === key ? { ...c, ...patch } : c)));
@@ -53,11 +56,12 @@ export function RuleConditionsEditor({
         <div key={c.key} className="flex items-center gap-2" data-testid={`condition-${i}`}>
           <Select value={c.field} onValueChange={(v) => changeField(c.key, (v as RuleField) ?? "payee")}>
             <SelectTrigger className="w-28" aria-label={`Condition ${i + 1} field`}>
-              <SelectValue>{(v: string) => (v === "payee" ? "Payee" : "Amount")}</SelectValue>
+              <SelectValue>{(v: string) => (v === "payee" ? "Payee" : v === "account" ? "Account" : "Amount")}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="payee">Payee</SelectItem>
               <SelectItem value="amount">Amount</SelectItem>
+              {(accounts.length > 0 || c.field === "account") && <SelectItem value="account">Account</SelectItem>}
             </SelectContent>
           </Select>
           <Select
@@ -77,6 +81,22 @@ export function RuleConditionsEditor({
               ))}
             </SelectContent>
           </Select>
+          {c.field === "account" ? (
+            <Select value={c.value} onValueChange={(v) => update(c.key, { value: v ?? "" })}>
+              <SelectTrigger className="min-w-0 flex-1" aria-label={`Condition ${i + 1} value`}>
+                <SelectValue>
+                  {(v: string) => (v ? (accounts.find((a) => String(a.id) === v)?.name ?? "Unknown account") : "Choose an account")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
           <Input
             className="min-w-0 flex-1"
             aria-label={`Condition ${i + 1} value`}
@@ -85,6 +105,7 @@ export function RuleConditionsEditor({
             value={c.value}
             onChange={(e) => update(c.key, { value: e.target.value })}
           />
+          )}
           {c.field === "amount" && <span className="text-xs text-muted-foreground">£</span>}
           <Button
             type="button"

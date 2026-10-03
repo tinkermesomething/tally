@@ -1,0 +1,1 @@
+ALTER TABLE `imported_transactions` ADD `note` text;

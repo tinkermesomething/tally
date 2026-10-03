@@ -9,6 +9,7 @@ import { LogExpenseDialog } from "@/components/grid/log-expense-dialog";
 import { AddIncomeDialog } from "@/components/grid/add-income-dialog";
 import { DesktopGridTables } from "@/components/grid/desktop-grid-tables";
 import { YearSwitcher } from "@/components/grid/year-switcher";
+import { GridWidthToggle } from "@/components/grid/grid-width-toggle";
 import { MonthPager } from "@/components/grid/month-pager";
 import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
 import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
@@ -68,6 +69,7 @@ export default async function GridPage({
           <YearSwitcher year={year} years={years} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <GridWidthToggle />
           <LogExpenseDialog
             categories={data.categories.flatMap((c) => [
               { id: c.id, name: c.name },
@@ -133,6 +135,7 @@ export default async function GridPage({
         yearTotalLeftToSpend={data.yearTotal.leftToSpend}
         incomeSources={data.incomeSources}
         currentMonthIndex={currentMonthIndex}
+        highlightMonthIndex={nowPeriod.year === year ? nowPeriod.month - 1 : null}
       />
 
       <div className="space-y-3 pb-4 md:hidden">

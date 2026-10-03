@@ -13,7 +13,7 @@ const OPERATOR_LABEL: Record<string, string> = {
 };
 
 export type RuleConditionDisplay = {
-  field: "payee" | "amount";
+  field: "payee" | "amount" | "account";
   operator: "contains" | "is" | "gt" | "lt";
   /** Already display-ready - amounts formatted, not raw pence. */
   value: string;
@@ -25,7 +25,10 @@ export function CategoryRuleSettingsRow({
   targetName,
   debtPersonName,
   debtKind = "repayment",
+  editor,
 }: {
+  /** The edit button (a dialog), rendered beside Remove. */
+  editor?: React.ReactNode;
   id: number;
   conditions: RuleConditionDisplay[];
   /** The expense category or income source this rule routes to - whichever
@@ -56,15 +59,18 @@ export function CategoryRuleSettingsRow({
           </span>
         )}
       </p>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        disabled={pending}
-        title="Remove rule"
-        onClick={() => startTransition(() => removeCategoryRule(id))}
-      >
-        <Archive className="size-3.5" />
-      </Button>
+      <div className="flex shrink-0 items-center">
+        {editor}
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          disabled={pending}
+          title="Remove rule"
+          onClick={() => startTransition(() => removeCategoryRule(id))}
+        >
+          <Archive className="size-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }

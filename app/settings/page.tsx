@@ -8,6 +8,7 @@ import { getPeopleWithBalances, getArchivedPeople } from "@/lib/db/debt";
 import { getAppSettings } from "@/lib/db/settings";
 import { getBankAccounts, getCategoryRules } from "@/lib/db/bank-sync";
 import { ruleConditionsOf } from "@/lib/rules";
+import { accountLabels } from "@/lib/accounts";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
@@ -34,6 +35,14 @@ export const dynamic = "force-dynamic";
 // Tab order as shown. `?tab=` can open any of them directly (the bank
 // connection callback uses ?tab=bank-sync).
 const SETTINGS_TABS = ["categories", "income", "people", "rules", "bank-sync", "preferences"];
+
+// Amounts are stored as pence; forms and the list show pounds.
+const displayConditions = (r: Parameters<typeof ruleConditionsOf>[0]) =>
+  ruleConditionsOf(r).map((c) => ({
+    field: c.field,
+    operator: c.operator,
+    value: c.field === "amount" ? (parseInt(c.value, 10) / 100).toFixed(2) : c.value,
+  }));
 
 export default async function SettingsPage({
   searchParams,
@@ -74,6 +83,8 @@ export default async function SettingsPage({
   ]);
   const categoryNameById = new Map(flatCategories.map((c) => [c.id, c.name]));
   const personNameById = new Map(people.map((p) => [p.id, p.name]));
+  const accounts = accountLabels(bankAccounts);
+  const accountNameById = new Map(accounts.map((a) => [String(a.id), a.name]));
   const incomeSourceNameById = new Map(incomeSources.map((s) => [s.id, s.name]));
 
   return (
@@ -194,6 +205,7 @@ export default async function SettingsPage({
                 categories={flatCategories}
                 incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
                 people={people.map((p) => ({ id: p.id, name: p.name }))}
+                accounts={accounts}
               />
             </div>
             {categoryRules.length === 0 ? (
@@ -204,11 +216,25 @@ export default async function SettingsPage({
                   <CategoryRuleSettingsRow
                     key={r.id}
                     id={r.id}
-                    conditions={ruleConditionsOf(r).map((c) => ({
-                      field: c.field,
-                      operator: c.operator,
-                      value: c.field === "amount" ? (parseInt(c.value, 10) / 100).toFixed(2) : c.value,
-                    }))}
+                    editor={
+                      <AddCategoryRuleDialog
+                        categories={flatCategories}
+                        incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+                        people={people.map((p) => ({ id: p.id, name: p.name }))}
+                        accounts={accounts}
+                        rule={{
+                          id: r.id,
+                          conditions: displayConditions(r),
+                          targetType: r.targetType,
+                          categoryId: r.categoryId,
+                          incomeSourceId: r.incomeSourceId,
+                          debtPersonId: r.debtPersonId,
+                        }}
+                      />
+                    }
+                    conditions={displayConditions(r).map((c) =>
+                      c.field === "account" ? { ...c, value: accountNameById.get(c.value) ?? "an unlinked account" } : c
+                    )}
                     targetName={
                       r.targetType === "ignore"
                         ? "Ignore"

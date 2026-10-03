@@ -2,10 +2,11 @@
  * exact same matching runs on import, in the Review preview and in tests.
  * A rule has one or more conditions and matches only when ALL of them do. */
 
-export type RuleField = "payee" | "amount";
+export type RuleField = "payee" | "amount" | "account";
 export type RuleOperator = "contains" | "is" | "gt" | "lt";
 
-/** payee: free text. amount: a positive whole number of PENCE (the sign is
+/** account: the id of the linked bank account the transaction came from.
+ * payee: free text. amount: a positive whole number of PENCE (the sign is
  * the transaction's direction, which a rule's target type already decides,
  * so amounts are always compared by size). */
 export type RuleCondition = { field: RuleField; operator: RuleOperator; value: string };
@@ -20,6 +21,7 @@ export const OPERATORS_BY_FIELD: Record<RuleField, { value: RuleOperator; label:
     { value: "gt", label: "is more than" },
     { value: "lt", label: "is less than" },
   ],
+  account: [{ value: "is", label: "is" }],
 };
 
 export const MAX_CONDITIONS = 6;
@@ -42,7 +44,9 @@ export function validateConditions(input: unknown): RuleCondition[] {
   return input.map((raw, i) => {
     const c = raw as Partial<RuleCondition> | null;
     const label = `Condition ${i + 1}`;
-    if (!c || (c.field !== "payee" && c.field !== "amount")) throw new Error(`${label}: pick payee or amount.`);
+    if (!c || (c.field !== "payee" && c.field !== "amount" && c.field !== "account")) {
+      throw new Error(`${label}: pick payee, amount or account.`);
+    }
     const allowed = OPERATORS_BY_FIELD[c.field].map((o) => o.value);
     if (!c.operator || !allowed.includes(c.operator)) throw new Error(`${label}: that comparison doesn't apply to ${c.field}.`);
     const value = typeof c.value === "string" ? c.value : "";
@@ -51,6 +55,10 @@ export function validateConditions(input: unknown): RuleCondition[] {
       if (!text) throw new Error(`${label}: enter some text to match.`);
       if (text.length > MAX_PAYEE_LENGTH) throw new Error(`${label}: text is too long.`);
       return { field: "payee", operator: c.operator, value: text };
+    }
+    if (c.field === "account") {
+      if (!/^\d+$/.test(value.trim()) || parseInt(value, 10) < 1) throw new Error(`${label}: pick an account.`);
+      return { field: "account", operator: "is", value: String(parseInt(value, 10)) };
     }
     const pence = value.trim();
     if (!/^\d+$/.test(pence)) throw new Error(`${label}: amount must be a positive number.`);
@@ -68,7 +76,7 @@ export function parseConditionInputs(
 ): { ok: true; conditions: RuleCondition[] } | { ok: false; error: string } {
   try {
     const converted = inputs.map((c, i) => {
-      if (c.field !== "amount") return c;
+      if (c.field !== "amount") return c; // payee text and account ids pass through
       const pounds = parseFloat(c.value);
       if (!c.value.trim() || Number.isNaN(pounds)) throw new Error(`Condition ${i + 1}: amount must be a number.`);
       return { ...c, value: String(Math.round(Math.abs(pounds) * 100)) };
@@ -79,7 +87,13 @@ export function parseConditionInputs(
   }
 }
 
-export type MatchableTransaction = { payeeRaw: string; payeeClean: string | null; amountPence: number };
+export type MatchableTransaction = {
+  payeeRaw: string;
+  payeeClean: string | null;
+  amountPence: number;
+  /** Without it an account condition can't match (never a silent pass). */
+  bankAccountId?: number;
+};
 
 export function conditionMatches(c: RuleCondition, t: MatchableTransaction): boolean {
   if (c.field === "payee") {
@@ -89,6 +103,7 @@ export function conditionMatches(c: RuleCondition, t: MatchableTransaction): boo
     const haystacks = [t.payeeRaw, t.payeeClean].filter((p): p is string => !!p).map(normalizeText);
     return haystacks.some((h) => (c.operator === "contains" ? h.includes(wanted) : h === wanted));
   }
+  if (c.field === "account") return t.bankAccountId !== undefined && t.bankAccountId === parseInt(c.value, 10);
   const size = Math.abs(t.amountPence);
   const wanted = parseInt(c.value, 10);
   if (c.operator === "gt") return size > wanted;

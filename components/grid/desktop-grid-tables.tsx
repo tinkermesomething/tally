@@ -10,7 +10,7 @@ import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { ScrollFade } from "@/components/scroll-fade";
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
-import { CATEGORY_COL_WIDTH, MONTH_COL_WIDTH, SUMMARY_COL_WIDTH, TABLE_WIDTH } from "@/lib/grid-layout";
+import { CATEGORY_COL_WIDTH, MONTH_COL_WIDTH, SUMMARY_COL_WIDTH } from "@/lib/grid-layout";
 import { UNGROUPED } from "@/lib/group-colors";
 import type { GridCategory, IncomeSourceRow } from "@/lib/db/queries";
 import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
@@ -40,6 +40,7 @@ export function DesktopGridTables({
   yearTotalLeftToSpend,
   incomeSources,
   currentMonthIndex,
+  highlightMonthIndex,
   topLevelCategories,
 }: {
   categories: GridCategory[];
@@ -61,6 +62,9 @@ export function DesktopGridTables({
   yearTotalLeftToSpend: number;
   incomeSources: IncomeSourceRow[];
   currentMonthIndex: number;
+  /** The month to tint in every table - null when viewing a year other than
+   * the current one (no "now" in it). */
+  highlightMonthIndex: number | null;
 }) {
   const expenseRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
@@ -68,6 +72,23 @@ export function DesktopGridTables({
   const isSyncingRef = useRef(false);
   const { currency } = useAppSettings();
   const [expenseMaxHeight, setExpenseMaxHeight] = useState<number>();
+  // Month columns grow to fill the space when there is more than the
+  // standard minimum (full-width mode); the category and summary columns stay
+  // fixed because the sticky offsets depend on their exact width.
+  const [monthW, setMonthW] = useState(MONTH_COL_WIDTH);
+  const tableWidth = CATEGORY_COL_WIDTH + monthW * 12 + SUMMARY_COL_WIDTH * 2;
+  useEffect(() => {
+    const el = expenseRef.current;
+    if (!el) return;
+    const measure = () =>
+      setMonthW(
+        Math.max(MONTH_COL_WIDTH, Math.floor((el.clientWidth - CATEGORY_COL_WIDTH - SUMMARY_COL_WIDTH * 2) / 12))
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   function mirrorScroll(source: HTMLDivElement) {
     if (isSyncingRef.current) return;
@@ -90,7 +111,7 @@ export function DesktopGridTables({
     // and January sitting at the edges - there's nowhere further to center
     // them, so they just end up flush against that edge instead.
     const visibleMonthWidth = el.clientWidth - CATEGORY_COL_WIDTH - SUMMARY_COL_WIDTH * 2;
-    const monthCenter = currentMonthIndex * MONTH_COL_WIDTH + MONTH_COL_WIDTH / 2;
+    const monthCenter = currentMonthIndex * monthW + monthW / 2;
     const target = monthCenter - visibleMonthWidth / 2;
     const maxScroll = el.scrollWidth - el.clientWidth;
     const clamped = Math.max(0, Math.min(target, maxScroll));
@@ -98,7 +119,7 @@ export function DesktopGridTables({
       if (ref.current) ref.current.scrollLeft = clamped;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [monthW]);
 
   // Cap the expense table's height to whatever's left below it in the
   // viewport - measured, not guessed, since a hardcoded offset breaks the
@@ -120,8 +141,24 @@ export function DesktopGridTables({
 
   return (
     <>
+      {highlightMonthIndex !== null && (
+        // Column n of every table: +2 skips the sticky category column
+        // (1-based). A background-image tint sits ON TOP of each cell's own
+        // background, so sticky/opaque cells stay opaque. The header cell
+        // also gets a top accent bar and heavier text.
+        <style>{`
+          .grid-cur-col tr > :nth-child(${highlightMonthIndex + 2}) {
+            background-image: linear-gradient(color-mix(in srgb, var(--primary) 11%, transparent), color-mix(in srgb, var(--primary) 11%, transparent));
+          }
+          .grid-cur-col thead tr > th:nth-child(${highlightMonthIndex + 2}) {
+            background-image: linear-gradient(color-mix(in srgb, var(--primary) 22%, transparent), color-mix(in srgb, var(--primary) 22%, transparent));
+            box-shadow: inset 0 3px 0 var(--primary);
+            font-weight: 700;
+          }
+        `}</style>
+      )}
       <ScrollFade
-        className="hidden max-h-[calc(100dvh-260px)] overflow-x-auto overflow-y-auto rounded-xl border border-border/60 bg-card shadow-sm md:block"
+        className="grid-cur-col hidden max-h-[calc(100dvh-260px)] overflow-x-auto overflow-y-auto rounded-xl border border-border/60 bg-card shadow-sm md:block"
         style={expenseMaxHeight ? { maxHeight: expenseMaxHeight } : undefined}
         leftInset={CATEGORY_COL_WIDTH}
         rightInset={SUMMARY_COL_WIDTH * 2}
@@ -130,12 +167,12 @@ export function DesktopGridTables({
       >
         <table
           className="border-collapse text-sm"
-          style={{ tableLayout: "fixed", width: TABLE_WIDTH }}
+          style={{ tableLayout: "fixed", width: tableWidth }}
         >
           <colgroup>
             <col style={{ width: CATEGORY_COL_WIDTH }} />
             {MONTHS.map((m) => (
-              <col key={m} style={{ width: MONTH_COL_WIDTH }} />
+              <col key={m} style={{ width: monthW }} />
             ))}
             <col style={{ width: SUMMARY_COL_WIDTH }} />
             <col style={{ width: SUMMARY_COL_WIDTH }} />
@@ -222,20 +259,20 @@ export function DesktopGridTables({
         </table>
       </ScrollFade>
 
-      <div className="hidden md:block">
+      <div className="grid-cur-col hidden md:block">
         <IncomeTable
           sources={incomeSources}
           year={year}
           totalByMonth={wagesByMonth}
           categoryColWidth={CATEGORY_COL_WIDTH}
-          monthColWidth={MONTH_COL_WIDTH}
+          monthColWidth={monthW}
           summaryColWidth={SUMMARY_COL_WIDTH}
           containerRef={incomeRef}
           onScroll={mirrorScroll}
         />
       </div>
 
-      <div className="hidden md:block">
+      <div className="grid-cur-col hidden md:block">
         <MonthlySummaryTable
           plannedByMonth={plannedByMonth}
           wagesByMonth={wagesByMonth}
@@ -250,7 +287,7 @@ export function DesktopGridTables({
             leftToSpend: yearTotalLeftToSpend,
           }}
           categoryColWidth={CATEGORY_COL_WIDTH}
-          monthColWidth={MONTH_COL_WIDTH}
+          monthColWidth={monthW}
           summaryColWidth={SUMMARY_COL_WIDTH}
           containerRef={summaryRef}
           onScroll={mirrorScroll}

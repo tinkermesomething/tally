@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { Check, X, TriangleAlert, Pencil, Zap } from "lucide-react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { Check, X, TriangleAlert, Pencil, StickyNote, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TableRow, TableCell } from "@/components/ui/table";
@@ -21,6 +21,7 @@ import {
   ignoreImportedTransaction,
   confirmImportedTransactionMatch,
   discardImportedTransactionMatch,
+  saveImportedTransactionNote,
 } from "@/app/review/actions";
 import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
 import type { RuleContext } from "@/components/review/rule-dialog";
@@ -33,6 +34,7 @@ export type ReviewRow = {
   bookingDate: string;
   payeeRaw: string;
   payeeClean: string | null;
+  note: string | null;
   accountId: number;
   accountName: string;
   duplicateOf: {
@@ -87,6 +89,29 @@ export function ReviewTransactionRow({
   const [tagDebt, setTagDebt] = useState(false);
   const { personId, setPersonId, newPersonName, setNewPersonName, resolvePersonId } = usePersonSelection();
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState(transaction.note ?? "");
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  // Escape discards; the input then unmounts, and some browsers still fire
+  // blur on the way out - which must not save the discarded text.
+  const noteCancelled = useRef(false);
+
+  function saveNote(next: string) {
+    setEditingNote(false);
+    const cleaned = next.replace(/\s+/g, " ").trim();
+    if (cleaned === note) return;
+    const previous = note;
+    setNote(cleaned);
+    setNoteError(null);
+    startTransition(async () => {
+      try {
+        await saveImportedTransactionNote(transaction.id, cleaned);
+      } catch (err) {
+        setNote(previous);
+        setNoteError(err instanceof Error ? err.message : "Couldn't save the note.");
+      }
+    });
+  }
 
   // Staging imports both directions - money in (positive) can only ever
   // become income, money out (negative) only ever an expense. Either can
@@ -255,6 +280,44 @@ export function ReviewTransactionRow({
             {transaction.payeeClean && (
               <p className="truncate text-xs text-muted-foreground">{transaction.payeeRaw}</p>
             )}
+            {editingNote ? (
+              <input
+                autoFocus
+                defaultValue={note}
+                maxLength={200}
+                placeholder="What was this?"
+                aria-label="Note"
+                onBlur={(e) => {
+                  if (noteCancelled.current) {
+                    noteCancelled.current = false;
+                    return;
+                  }
+                  saveNote(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  if (e.key === "Escape") {
+                    noteCancelled.current = true;
+                    setEditingNote(false);
+                  }
+                }}
+                className="mt-0.5 w-full rounded-md border border-input bg-background px-1.5 py-0.5 text-xs outline-none focus:border-ring"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  noteCancelled.current = false;
+                  setEditingNote(true);
+                }}
+                title={note ? "Edit note" : "Add a note"}
+                className="mt-0.5 flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <StickyNote className="size-3 shrink-0" />
+                <span className="truncate">{note || "Add a note"}</span>
+              </button>
+            )}
+            {noteError && <p className="text-xs text-status-critical">{noteError}</p>}
           </div>
         </div>
       </TableCell>

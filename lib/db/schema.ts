@@ -278,6 +278,9 @@ export const importedTransactions = sqliteTable(
     bookingDate: text("booking_date").notNull(), // ISO date
     payeeRaw: text("payee_raw").notNull(),
     payeeClean: text("payee_clean"),
+    // Your own note while the row waits in Review ("what was this?"). Used
+    // as the note of the expense it becomes - see categorizeTransaction.
+    note: text("note"),
     status: text("status", { enum: ["pending_review", "categorized", "ignored"] })
       .notNull()
       .default("pending_review"),
@@ -326,7 +329,7 @@ export const importedTransactions = sqliteTable(
  * someone repaying you as its own ledger entry, unconnected to bank-sync). */
 export const categoryRules = sqliteTable("category_rules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  field: text("field", { enum: ["payee", "amount"] }).notNull(),
+  field: text("field", { enum: ["payee", "amount", "account"] }).notNull(),
   operator: text("operator", { enum: ["contains", "is", "gt", "lt"] }).notNull(),
   value: text("value").notNull(),
   // JSON array of {field, operator, value} - ALL must match (stacked

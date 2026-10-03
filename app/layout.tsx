@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+import { PageContainer, WIDE_COOKIE } from "@/components/page-width";
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -25,6 +27,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const { currency, dateFormat } = await getAppSettings();
+  const wide = (await cookies()).get(WIDE_COOKIE)?.value === "1";
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -36,7 +39,7 @@ export default async function RootLayout({
           <AccentProvider>
             <AppSettingsProvider currency={currency} dateFormat={dateFormat}>
               <AppHeader />
-              <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+              <PageContainer initialWide={wide}>{children}</PageContainer>
               <Footer />
             </AppSettingsProvider>
           </AccentProvider>

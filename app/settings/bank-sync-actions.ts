@@ -7,6 +7,7 @@ import {
   archiveBankAccount,
   addCategoryRule,
   type RuleTarget,
+  updateCategoryRule,
   deactivateCategoryRule,
   syncBankAccount,
 } from "@/lib/db/bank-sync";
@@ -95,6 +96,14 @@ export async function createCategoryRule(
   // addCategoryRule validates the conditions itself (and throws a
   // readable message) - this is just the revalidating wrapper.
   await addCategoryRule(input);
+  revalidatePath("/settings");
+}
+
+export async function editCategoryRule(
+  id: number,
+  input: { conditions: RuleCondition[] } & RuleTarget
+) {
+  await updateCategoryRule(id, input);
   revalidatePath("/settings");
 }
 

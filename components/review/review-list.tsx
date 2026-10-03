@@ -110,7 +110,7 @@ export function ReviewList({
       sc.set(
         t.id,
         inAccount
-          ? fuzzyScore(query, [t.payeeRaw, t.payeeClean, amountText(t.amountPence), t.accountName, t.bookingDate])
+          ? fuzzyScore(query, [t.payeeRaw, t.payeeClean, t.note, amountText(t.amountPence), t.accountName, t.bookingDate])
           : 0
       );
     }
@@ -436,6 +436,7 @@ export function ReviewList({
         categories={categories}
         incomeSources={incomeSources}
         people={people}
+        accounts={accounts}
       />
     </div>
   );

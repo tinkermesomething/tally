@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,18 +20,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createCategoryRule } from "@/app/settings/bank-sync-actions";
+import { createCategoryRule, editCategoryRule } from "@/app/settings/bank-sync-actions";
 import { RuleConditionsEditor, newEditorCondition, type EditorCondition } from "@/components/rules/rule-conditions-editor";
 import { parseConditionInputs } from "@/lib/rules";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
 type TargetType = "expense" | "income" | "ignore";
 
+/** An existing rule, as the edit form starts: amounts in pounds, as typed. */
+export type EditableRule = {
+  id: number;
+  conditions: { field: "payee" | "amount" | "account"; operator: "contains" | "is" | "gt" | "lt"; value: string }[];
+  targetType: TargetType;
+  categoryId: number | null;
+  incomeSourceId: number | null;
+  debtPersonId: number | null;
+};
+
+/** Adds a rule - or, given `rule`, edits that one in place (same fields,
+ * same checks). */
 export function AddCategoryRuleDialog({
   categories,
   incomeSources,
   people,
+  accounts = [],
+  rule,
 }: {
+  rule?: EditableRule;
+  accounts?: { id: number; name: string }[];
   categories: { id: number; name: string }[];
   incomeSources: { id: number; name: string }[];
   people: { id: number; name: string }[];
@@ -47,13 +63,18 @@ export function AddCategoryRuleDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // Fresh form for a new rule; the rule's current values when editing.
+  // Runs on every open, so a cancelled edit never leaves stale input behind.
   function reset() {
-    setConditions([newEditorCondition()]);
-    setTargetType("expense");
-    setCategoryId("");
-    setIncomeSourceId("");
-    setTagDebt(false);
+    setConditions(
+      rule ? rule.conditions.map((c) => newEditorCondition(c.field, c.operator, c.value)) : [newEditorCondition()]
+    );
+    setTargetType(rule?.targetType ?? "expense");
+    setCategoryId(rule?.categoryId ? String(rule.categoryId) : "");
+    setIncomeSourceId(rule?.incomeSourceId ? String(rule.incomeSourceId) : "");
+    setTagDebt(!!rule?.debtPersonId);
     resetPerson();
+    if (rule?.debtPersonId) setPersonId(String(rule.debtPersonId));
     setError(null);
   }
 
@@ -87,11 +108,13 @@ export function AddCategoryRuleDialog({
     setError(null);
     startTransition(async () => {
       try {
+        const save = (input: Parameters<typeof createCategoryRule>[0]) =>
+          rule ? editCategoryRule(rule.id, input) : createCategoryRule(input);
         if (targetType === "ignore") {
-          await createCategoryRule({ conditions: parsed.conditions, targetType: "ignore" });
+          await save({ conditions: parsed.conditions, targetType: "ignore" });
         } else if (targetType === "expense") {
           const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
-          await createCategoryRule({
+          await save({
             conditions: parsed.conditions,
             targetType: "expense",
             categoryId: parseInt(categoryId, 10),
@@ -99,14 +122,14 @@ export function AddCategoryRuleDialog({
           });
         } else {
           const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
-          await createCategoryRule({
+          await save({
             conditions: parsed.conditions,
             targetType: "income",
             incomeSourceId: parseInt(incomeSourceId, 10),
             debtPersonId,
           });
         }
-        reset();
+        if (!rule) reset();
         setOpen(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to add rule.");
@@ -119,20 +142,26 @@ export function AddCategoryRuleDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        if (next || !rule) reset();
       }}
     >
       <DialogTrigger
         render={
-          <Button size="sm" variant="outline">
-            <Plus className="size-4" />
-            Add rule
-          </Button>
+          rule ? (
+            <Button size="icon-xs" variant="ghost" title="Edit rule" aria-label="Edit rule">
+              <Pencil className="size-3.5" />
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline">
+              <Plus className="size-4" />
+              Add rule
+            </Button>
+          )
         }
       />
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>New auto-categorization rule</DialogTitle>
+          <DialogTitle>{rule ? "Edit rule" : "New auto-categorization rule"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
@@ -152,7 +181,7 @@ export function AddCategoryRuleDialog({
             </Select>
           </div>
 
-          <RuleConditionsEditor conditions={conditions} onChange={setConditions} />
+          <RuleConditionsEditor conditions={conditions} onChange={setConditions} accounts={accounts} />
 
           {targetType === "ignore" ? null : targetType === "expense" ? (
             <div className="space-y-1.5">
@@ -220,7 +249,7 @@ export function AddCategoryRuleDialog({
 
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Add rule"}
+              {pending ? "Saving…" : rule ? "Save rule" : "Add rule"}
             </Button>
           </DialogFooter>
         </form>

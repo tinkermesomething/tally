@@ -10,6 +10,7 @@ import {
   bulkCategorizeTransactionsAsExpense,
   bulkCategorizeTransactionsAsIncome,
   confirmPencilledMatch,
+  setTransactionNote,
 } from "@/lib/db/bank-sync";
 import { pencilInExpense, discardPencilledExpense } from "@/lib/db/queries";
 
@@ -31,6 +32,12 @@ export async function categorizeImportedTransactionAsIncome(
   revalidatePath("/review");
   revalidatePath("/grid");
   revalidatePath("/debt");
+}
+
+/** Not revalidated: the row keeps its own copy, and redrawing the whole
+ * list on every note would drop what you are doing. */
+export async function saveImportedTransactionNote(id: number, note: string) {
+  await setTransactionNote(id, note);
 }
 
 export async function ignoreImportedTransaction(id: number) {
