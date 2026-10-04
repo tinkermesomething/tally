@@ -2,6 +2,8 @@
  * exact same matching runs on import, in the Review preview and in tests.
  * A rule has one or more conditions and matches only when ALL of them do. */
 
+import { parsePounds } from "./money-input";
+
 export type RuleField = "payee" | "amount" | "account";
 export type RuleOperator = "contains" | "is" | "gt" | "lt";
 
@@ -91,7 +93,7 @@ export function parseConditionInputs(
   try {
     const converted = inputs.map((c, i) => {
       if (c.field !== "amount") return c; // payee text and account ids pass through
-      const pounds = parseFloat(c.value);
+      const pounds = parsePounds(c.value) ?? NaN;
       if (!c.value.trim() || Number.isNaN(pounds)) throw new Error(`Condition ${i + 1}: amount must be a number.`);
       return { ...c, value: String(Math.round(Math.abs(pounds) * 100)) };
     });

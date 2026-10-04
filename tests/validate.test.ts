@@ -29,3 +29,10 @@ describe("local dates (TZ-independent: built from local components)", () => {
     expect(defaultEntryDateFor(2026, 2, now)).toBe("2026-02-28");
   });
 });
+
+import { parsePounds } from "@/lib/money-input";
+
+describe("parsePounds", () => {
+  it.each([["12", 12], ["12.5", 12.5], [" 12.50 ", 12.5], [".5", 0.5], ["0", 0]])("%s", (raw, want) => expect(parsePounds(raw)).toBe(want));
+  it.each(["12abc", "1e9", "-5", "", "  ", "1,000", "12.345", "NaN", "Infinity"])("rejects %j", (raw) => expect(parsePounds(raw)).toBeNull());
+});

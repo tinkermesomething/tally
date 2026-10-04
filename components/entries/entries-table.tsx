@@ -1,5 +1,6 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
 import { useMemo, useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { editExpenseEntry, removeExpenseEntry } from "@/app/grid/actions";
@@ -32,7 +33,7 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
    * showing whatever raw text was typed ("10") forever instead of settling
    * on the formatted amount. Null tells the caller to revert instead. */
   function commitAmount(id: number, raw: string): string | null {
-    const pounds = parseFloat(raw);
+    const pounds = (parsePounds(raw) ?? NaN);
     if (Number.isNaN(pounds) || pounds <= 0) return null;
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, amountPence: Math.round(pounds * 100) } : r)));
     startTransition(async () => {

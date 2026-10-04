@@ -1,5 +1,6 @@
 "use client";
 
+import { runAction } from "@/lib/action-result";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -67,13 +68,19 @@ export function AddCategoryDialog({
     }
     setError(null);
     startTransition(async () => {
-      await createCategory({
-        name,
-        parentId: parentId === NONE_PARENT ? null : parseInt(parentId, 10),
-        groupName: groupName.trim() || null,
-        isAnnual,
-        annualMonth: isAnnual ? parseInt(annualMonth, 10) : null,
-      });
+      const failure = await runAction(() =>
+        createCategory({
+          name,
+          parentId: parentId === NONE_PARENT ? null : parseInt(parentId, 10),
+          groupName: groupName.trim() || null,
+          isAnnual,
+          annualMonth: isAnnual ? parseInt(annualMonth, 10) : null,
+        })
+      );
+      if (failure) {
+        setError(failure);
+        return;
+      }
       reset();
       setOpen(false);
     });

@@ -1,5 +1,6 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Undo2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -89,7 +90,7 @@ export function GridCell({
       if (onClearAmount) startTransition(() => onClearAmount());
       return;
     }
-    const pounds = parseFloat(raw);
+    const pounds = (parsePounds(raw) ?? NaN);
     if (Number.isNaN(pounds)) {
       setValue(amountPence !== undefined ? (amountPence / 100).toFixed(2) : "");
       return;
@@ -107,7 +108,7 @@ export function GridCell({
 
   function submitConfirm(e: React.FormEvent) {
     e.preventDefault();
-    const pounds = parseFloat(confirmValue);
+    const pounds = (parsePounds(confirmValue) ?? NaN);
     if (Number.isNaN(pounds) || pounds <= 0) {
       setConfirmError(`Enter an amount greater than ${getCurrencySymbol(currency)}0`);
       return;

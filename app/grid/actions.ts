@@ -1,6 +1,7 @@
 "use server";
 
 import { assertNonNegativePounds, assertPositivePounds } from "@/lib/validate";
+import { toResult } from "@/lib/action-result";
 import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import {
@@ -165,17 +166,19 @@ export async function logExpense(input: {
   debtPersonId?: number;
 }) {
   await requireSession();
-  assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
-  const amountPence = poundsToPence(input.pounds);
-  await logExpenseQuery({
-    categoryId: input.categoryId,
-    amountPence,
-    entryDate: input.entryDate,
-    note: input.note,
-    debtPersonId: input.debtPersonId,
+  return toResult(async () => {
+    assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
+    const amountPence = poundsToPence(input.pounds);
+    await logExpenseQuery({
+      categoryId: input.categoryId,
+      amountPence,
+      entryDate: input.entryDate,
+      note: input.note,
+      debtPersonId: input.debtPersonId,
+    });
+    revalidatePath("/grid");
+    revalidatePath("/debt");
   });
-  revalidatePath("/grid");
-  revalidatePath("/debt");
 }
 
 export async function listExpenseEntries(categoryId: number, year: number, month: number) {
@@ -226,46 +229,48 @@ export async function logIncome(input: {
   debtPersonId?: number;
 }) {
   await requireSession();
-  assertPositivePounds(input.pounds);
-  const amountPence = poundsToPence(input.pounds);
-  await inTransaction(async () => {
-    const source = await getIncomeSource(input.incomeSourceId);
-    if (!source) {
-      throw new Error("Income source not found.");
-    }
-
-    let year: number;
-    let month: number;
-    if (source.isPayAnchor) {
-      if (input.periodYear === undefined || input.periodMonth === undefined) {
-        throw new Error("Pick which budget month this pay anchor entry counts toward.");
+  return toResult(async () => {
+    assertPositivePounds(input.pounds);
+    const amountPence = poundsToPence(input.pounds);
+    await inTransaction(async () => {
+      const source = await getIncomeSource(input.incomeSourceId);
+      if (!source) {
+        throw new Error("Income source not found.");
       }
-      year = input.periodYear;
-      month = input.periodMonth;
-      await recordPayPeriodAnchor({
-        incomeSourceId: input.incomeSourceId,
-        receivedDate: input.entryDate,
-        year,
-        month,
-      });
-      await refileExpensesFromAnchor(input.entryDate);
-    } else {
-      ({ year, month } = parseIsoDate(input.entryDate));
-    }
 
-    await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
-    if (input.debtPersonId) {
-      await addDebtEntry({
-        personId: input.debtPersonId,
-        entryDate: input.entryDate,
-        amountPence,
-        direction: "loan",
-      });
-    }
+      let year: number;
+      let month: number;
+      if (source.isPayAnchor) {
+        if (input.periodYear === undefined || input.periodMonth === undefined) {
+          throw new Error("Pick which budget month this pay anchor entry counts toward.");
+        }
+        year = input.periodYear;
+        month = input.periodMonth;
+        await recordPayPeriodAnchor({
+          incomeSourceId: input.incomeSourceId,
+          receivedDate: input.entryDate,
+          year,
+          month,
+        });
+        await refileExpensesFromAnchor(input.entryDate);
+      } else {
+        ({ year, month } = parseIsoDate(input.entryDate));
+      }
+
+      await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+      if (input.debtPersonId) {
+        await addDebtEntry({
+          personId: input.debtPersonId,
+          entryDate: input.entryDate,
+          amountPence,
+          direction: "loan",
+        });
+      }
+    });
+    revalidatePath("/entries");
+    revalidatePath("/grid");
+    revalidatePath("/debt");
   });
-  revalidatePath("/entries");
-  revalidatePath("/grid");
-  revalidatePath("/debt");
 }
 
 export async function updateIncomeAmount(input: {
@@ -287,10 +292,12 @@ export async function updateIncomeAmount(input: {
 
 export async function createIncomeSource(name: string) {
   await requireSession();
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("Name can't be empty.");
-  await addIncomeSourceQuery(trimmed);
-  revalidatePath("/grid");
+  return toResult(async () => {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("Name can't be empty.");
+    await addIncomeSourceQuery(trimmed);
+    revalidatePath("/grid");
+  });
 }
 
 export async function createCategory(input: {
@@ -301,11 +308,13 @@ export async function createCategory(input: {
   annualMonth: number | null;
 }) {
   await requireSession();
-  const trimmed = input.name.trim();
-  if (!trimmed) throw new Error("Name can't be empty.");
-  await addCategoryQuery({ ...input, name: trimmed });
-  revalidatePath("/grid");
-  revalidatePath("/reports");
+  return toResult(async () => {
+    const trimmed = input.name.trim();
+    if (!trimmed) throw new Error("Name can't be empty.");
+    await addCategoryQuery({ ...input, name: trimmed });
+    revalidatePath("/grid");
+    revalidatePath("/reports");
+  });
 }
 
 export async function renameCategory(categoryId: number, name: string) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { runAction } from "@/lib/action-result";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -103,10 +104,12 @@ export function ReportPanelDialog({
     ];
     setError(null);
     startTransition(async () => {
-      if (panel) {
-        await updateReportPanel(panel.id, { name: finalName, selection });
-      } else {
-        await createReportPanel(finalName, selection);
+      const failure = await runAction(() =>
+        panel ? updateReportPanel(panel.id, { name: finalName, selection }) : createReportPanel(finalName, selection)
+      );
+      if (failure) {
+        setError(failure);
+        return;
       }
       setOpen(false);
     });

@@ -1,5 +1,6 @@
 "use client";
 
+import { runAction } from "@/lib/action-result";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,11 @@ export function AddIncomeSourceDialog({
     }
     setError(null);
     startTransition(async () => {
-      await createIncomeSource(name);
+      const failure = await runAction(() => createIncomeSource(name));
+      if (failure) {
+        setError(failure);
+        return;
+      }
       setName("");
       setOpen(false);
     });

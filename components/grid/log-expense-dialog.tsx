@@ -1,5 +1,7 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
+import { runAction } from "@/lib/action-result";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -58,7 +60,7 @@ export function LogExpenseDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const pounds = parseFloat(amount);
+    const pounds = (parsePounds(amount) ?? NaN);
     if (!categoryId) {
       setError("Pick a category.");
       return;
@@ -78,13 +80,19 @@ export function LogExpenseDialog({
     setError(null);
     startTransition(async () => {
       const debtPersonId = isRepayment ? await resolvePersonId() : undefined;
-      await logExpense({
-        categoryId: parseInt(categoryId, 10),
-        pounds,
-        entryDate: date,
-        note: note.trim() || undefined,
-        debtPersonId,
-      });
+      const failure = await runAction(() =>
+        logExpense({
+          categoryId: parseInt(categoryId, 10),
+          pounds,
+          entryDate: date,
+          note: note.trim() || undefined,
+          debtPersonId,
+        })
+      );
+      if (failure) {
+        setError(failure);
+        return;
+      }
       reset();
       setOpen(false);
     });

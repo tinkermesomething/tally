@@ -1,5 +1,6 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,7 @@ export function AddEntryDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const pounds = parseFloat(amount);
+    const pounds = (parsePounds(amount) ?? NaN);
     if (Number.isNaN(pounds) || pounds <= 0) {
       setError("Enter an amount greater than zero.");
       return;

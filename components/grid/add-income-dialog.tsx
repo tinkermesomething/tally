@@ -1,5 +1,7 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
+import { runAction } from "@/lib/action-result";
 import { useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -85,7 +87,7 @@ export function AddIncomeDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const pounds = parseFloat(amount);
+    const pounds = (parsePounds(amount) ?? NaN);
     if (!sourceId) {
       setError("Pick an income source.");
       return;
@@ -105,14 +107,20 @@ export function AddIncomeDialog({
     setError(null);
     startTransition(async () => {
       const debtPersonId = isLoan ? await resolvePersonId() : undefined;
-      await logIncome({
-        incomeSourceId: parseInt(sourceId, 10),
-        pounds,
-        entryDate: date,
-        periodYear: selectedSource?.isPayAnchor ? period.year : undefined,
-        periodMonth: selectedSource?.isPayAnchor ? period.month : undefined,
-        debtPersonId,
-      });
+      const failure = await runAction(() =>
+        logIncome({
+          incomeSourceId: parseInt(sourceId, 10),
+          pounds,
+          entryDate: date,
+          periodYear: selectedSource?.isPayAnchor ? period.year : undefined,
+          periodMonth: selectedSource?.isPayAnchor ? period.month : undefined,
+          debtPersonId,
+        })
+      );
+      if (failure) {
+        setError(failure);
+        return;
+      }
       reset();
       setOpen(false);
     });

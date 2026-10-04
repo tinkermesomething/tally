@@ -1,5 +1,6 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
 import { useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { editLedgerEntry, removeLedgerEntry } from "@/app/debt/actions";
@@ -22,7 +23,7 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
    * uncontrolled, so without this it would keep showing whatever raw text
    * was typed forever instead of settling on the formatted amount. */
   function commitAmount(id: number, raw: string): string | null {
-    const pounds = parseFloat(raw);
+    const pounds = (parsePounds(raw) ?? NaN);
     if (Number.isNaN(pounds) || pounds <= 0) return null;
     startTransition(() => editLedgerEntry(personId, id, { pounds }));
     return pounds.toFixed(2);

@@ -1,5 +1,6 @@
 "use client";
 
+import { parsePounds } from "@/lib/money-input";
 import { useEffect, useState, useTransition, type RefObject } from "react";
 import { Trash2 } from "lucide-react";
 import { editExpenseEntry, listExpenseEntries, removeExpenseEntry } from "@/app/grid/actions";
@@ -50,7 +51,7 @@ export function ExpenseEntriesPopover({
    * uncontrolled, so without this it would keep showing whatever raw text
    * was typed forever instead of settling on the formatted amount. */
   function commitAmount(id: number, raw: string): string | null {
-    const pounds = parseFloat(raw);
+    const pounds = (parsePounds(raw) ?? NaN);
     if (Number.isNaN(pounds) || pounds <= 0) return null;
     startTransition(async () => {
       await editExpenseEntry(id, { pounds });
