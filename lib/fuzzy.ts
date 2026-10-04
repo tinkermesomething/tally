@@ -72,3 +72,12 @@ export function fuzzyScore(query: string, texts: (string | null | undefined)[]):
 
 /** The searchable text for an amount: "60.75" matches 6075 pence. */
 export const amountText = (pence: number) => (Math.abs(pence) / 100).toFixed(2);
+
+/** Keeps the items whose `texts` match `query`, in their ORIGINAL order -
+ * for lists where order carries meaning (rules are first-match-wins, so
+ * ranking by score would hide the order they actually run in). An empty
+ * query keeps everything. */
+export function filterByFuzzy<T>(items: T[], query: string, textsOf: (item: T) => (string | null | undefined)[]): T[] {
+  if (!query.trim()) return items;
+  return items.filter((item) => fuzzyScore(query, textsOf(item)) > 0);
+}

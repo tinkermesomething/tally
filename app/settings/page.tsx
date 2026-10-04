@@ -24,6 +24,7 @@ import { AddCategoryRuleDialog } from "@/components/settings/add-category-rule-d
 import { ConnectBankAccountDialog } from "@/components/settings/connect-bank-account-dialog";
 import { BankSyncSchedule } from "@/components/settings/bank-sync-schedule";
 import { ArchivedList } from "@/components/settings/archived-list";
+import { FilterableList } from "@/components/settings/filterable-list";
 import {
   unarchiveCategory,
   unarchiveIncomeSource,
@@ -112,18 +113,32 @@ export default async function SettingsPage({
             />
           </div>
 
-          <div className="space-y-2">
-            {categoryTree.map((category) => (
-              <CategorySettingsRow
-                key={category.id}
-                category={category}
-                color={groupColors.get(category.groupName ?? UNGROUPED)!}
-                existingGroups={existingGroups}
-                topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
-                people={people.map((p) => ({ id: p.id, name: p.name }))}
-              />
-            ))}
-          </div>
+          <FilterableList
+            label="categories"
+            placeholder="Search categories, subcategories or groups"
+            items={categoryTree.map((category) => ({
+              key: category.id,
+              // A parent row shows its subcategories, so it matches on them too.
+              texts: [
+                category.name,
+                category.groupName,
+                category.linkedDebtPersonId ? personNameById.get(category.linkedDebtPersonId) : null,
+                ...category.children.flatMap((child) => [
+                  child.name,
+                  child.linkedDebtPersonId ? personNameById.get(child.linkedDebtPersonId) : null,
+                ]),
+              ],
+              node: (
+                <CategorySettingsRow
+                  category={category}
+                  color={groupColors.get(category.groupName ?? UNGROUPED)!}
+                  existingGroups={existingGroups}
+                  topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
+                  people={people.map((p) => ({ id: p.id, name: p.name }))}
+                />
+              ),
+            }))}
+          />
 
           {archivedCategories.length > 0 && (
             <div className="pt-2">
@@ -211,42 +226,51 @@ export default async function SettingsPage({
             {categoryRules.length === 0 ? (
               <p className="text-sm text-muted-foreground">No rules yet.</p>
             ) : (
-              <div className="space-y-2">
-                {categoryRules.map((r) => (
-                  <CategoryRuleSettingsRow
-                    key={r.id}
-                    id={r.id}
-                    editor={
-                      <AddCategoryRuleDialog
-                        categories={flatCategories}
-                        incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
-                        people={people.map((p) => ({ id: p.id, name: p.name }))}
-                        accounts={accounts}
-                        rule={{
-                          id: r.id,
-                          conditions: displayConditions(r),
-                          targetType: r.targetType,
-                          categoryId: r.categoryId,
-                          incomeSourceId: r.incomeSourceId,
-                          debtPersonId: r.debtPersonId,
-                        }}
+              <FilterableList
+                label="rules"
+                placeholder="Search rules by payee, amount, account or category"
+                items={categoryRules.map((r) => {
+                  const conditions = displayConditions(r).map((c) =>
+                    c.field === "account" ? { ...c, value: accountNameById.get(c.value) ?? "an unlinked account" } : c
+                  );
+                  const targetName =
+                    r.targetType === "ignore"
+                      ? "Ignore"
+                      : r.targetType === "income"
+                        ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
+                        : (categoryNameById.get(r.categoryId!) ?? "Unknown category");
+                  const debtPersonName = r.debtPersonId ? (personNameById.get(r.debtPersonId) ?? null) : null;
+                  return {
+                    key: r.id,
+                    texts: [...conditions.map((c) => c.value), targetName, debtPersonName],
+                    node: (
+                      <CategoryRuleSettingsRow
+                        id={r.id}
+                        editor={
+                          <AddCategoryRuleDialog
+                            categories={flatCategories}
+                            incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+                            people={people.map((p) => ({ id: p.id, name: p.name }))}
+                            accounts={accounts}
+                            rule={{
+                              id: r.id,
+                              conditions: displayConditions(r),
+                              targetType: r.targetType,
+                              categoryId: r.categoryId,
+                              incomeSourceId: r.incomeSourceId,
+                              debtPersonId: r.debtPersonId,
+                            }}
+                          />
+                        }
+                        conditions={conditions}
+                        targetName={targetName}
+                        debtPersonName={debtPersonName}
+                        debtKind={r.targetType === "income" ? "loan" : "repayment"}
                       />
-                    }
-                    conditions={displayConditions(r).map((c) =>
-                      c.field === "account" ? { ...c, value: accountNameById.get(c.value) ?? "an unlinked account" } : c
-                    )}
-                    targetName={
-                      r.targetType === "ignore"
-                        ? "Ignore"
-                        : r.targetType === "income"
-                          ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
-                          : (categoryNameById.get(r.categoryId!) ?? "Unknown category")
-                    }
-                    debtPersonName={r.debtPersonId ? (personNameById.get(r.debtPersonId) ?? null) : null}
-                    debtKind={r.targetType === "income" ? "loan" : "repayment"}
-                  />
-                ))}
-              </div>
+                    ),
+                  };
+                })}
+              />
             )}
           </div>
         </TabsContent>

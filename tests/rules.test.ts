@@ -44,3 +44,21 @@ describe("rule conditions", () => {
     expect(() => validateConditions([{ field: "amount", operator: "gt", value: "-5" }])).toThrow();
   });
 });
+
+import { filterByFuzzy } from "@/lib/fuzzy";
+
+describe("filterByFuzzy", () => {
+  const rows = [
+    { id: 1, texts: ["Shop groceries", "Food"] },
+    { id: 2, texts: ["Thames Water", "Bills"] },
+    { id: 3, texts: ["Go Henry ISA", "GoHenry", "Roberto"] },
+  ];
+  const ids = (q: string) => filterByFuzzy(rows, q, (r) => r.texts).map((r) => r.id);
+
+  it("empty query keeps everything, in order", () => expect(ids("  ")).toEqual([1, 2, 3]));
+  it("tolerates a typo", () => expect(ids("thmes watr")).toEqual([2]));
+  it("matches on any text of the row, any word order", () => expect(ids("food groceries")).toEqual([1]));
+  it("matches letters in order", () => expect(ids("ghnry")).toEqual([3]));
+  it("returns nothing for a miss", () => expect(ids("zzzzzz")).toEqual([]));
+  it("keeps original order, not score order", () => expect(ids("o")).toEqual(ids("o").slice().sort((a, b) => a - b)));
+});
