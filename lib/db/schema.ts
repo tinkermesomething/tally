@@ -124,7 +124,7 @@ export const incomeEntries = sqliteTable(
  * differ (wages received Aug 28, counted as September). Every other logged
  * entry (expense, non-anchor income, debt) dated on/after the most recent
  * boundary's receivedDate resolves to that boundary's year/month instead of
- * its own calendar month - see resolvePeriodForDate in lib/pay-period.ts.
+ * its own calendar month - see resolvePeriodForDate in lib/db/pay-period.ts.
  * Entries dated before the earliest boundary ever recorded just fall back
  * to plain calendar-month resolution (nothing to anchor off yet). */
 export const payPeriodAnchors = sqliteTable("pay_period_anchors", {
@@ -248,21 +248,20 @@ export const bankAccounts = sqliteTable("bank_accounts", {
 /** A single staged bank transaction, before (or instead of) becoming a real
  * expenseEntries row - the review/categorization pool. importedId is the
  * provider's own transaction id, the real dedup key (exact match only,
- * deliberately no fuzzy date/amount matching between two imports - see
- * tally-bank-sync-plan.md for why). amountPence keeps the provider's own
+ * deliberately no fuzzy date/amount matching between two imports). amountPence keeps the provider's own
  * sign convention (negative = money out, positive = money in) rather than
  * normalizing to Tally's always-positive expense amounts, since a staged
  * row isn't necessarily an expense yet - that normalization only happens
  * once it's actually categorized into a real expenseEntries row.
- * payeeClean is a user/rule-editable cleanup of the raw bank descriptor
- * (lib/bank-sync/payee.ts), separate from payeeRaw so the original is
- * never lost. `ignored` covers both "this is a transfer" and "I already
+ * payeeClean is reserved for a cleaned-up copy of the raw bank
+ * descriptor, kept separate from payeeRaw so the original is never lost.
+ * NOTHING writes it today (it is always null); rule matching reads both. `ignored` covers both "this is a transfer" and "I already
  * logged this manually" - either way nothing is ever hard-deleted, so
  * dismissing one is always reversible back to pending_review.
  * possibleDuplicateExpenseEntryId is a SUGGESTION only, computed once at
- * import time (same date +/-1 day, same amount, against manually-logged
- * expenseEntries - there's no provider id to exact-match against those,
- * unlike imported_id above) - the review UI surfaces it, the user decides;
+ * import time (same amount and a nearby date (+/-1 day for manual entries, +/-7 for
+ * pencilled-in drafts), against already-logged expenseEntries - there's no
+ * provider id to exact-match against those, unlike imported_id above) - the review UI surfaces it, the user decides;
  * it's never used to auto-ignore anything. Can go stale if that expense is
  * later edited/deleted, which is an acceptable imprecision for a "maybe",
  * not a correctness requirement. */
@@ -289,8 +288,7 @@ export const importedTransactions = sqliteTable(
     // income_entries is one aggregate row per (source, year, month), not
     // one row per transaction like expenseEntries, so there's no
     // equivalent of expenseEntries.importedTransactionId to join back
-    // through. This is what suggestIncomeSourceFromHistory reads instead -
-    // a real FK (unlike possibleDuplicateExpenseEntryId) since income
+    // through. A real FK (unlike possibleDuplicateExpenseEntryId) since income
     // sources are only ever archived, never hard-deleted, so it can't go
     // stale the same way.
     categorizedIncomeSourceId: integer("categorized_income_source_id").references(
