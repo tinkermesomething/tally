@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, gte, lt, lte } from "drizzle-orm";
-import { db } from "./index";
+import { db, inTransaction } from "./index";
 import { categoryEntries, expenseEntries, incomeSources, payPeriodAnchors } from "./schema";
 import { parseIsoDate } from "../date";
 
@@ -73,7 +73,11 @@ export function periodForReceivedDate(receivedDate: string): { year: number; mon
  * the deposit's own income entry belongs in. Skips the insert when the
  * latest anchor for that date already says the same thing, so re-running
  * for the same deposit never piles up duplicates. */
-export async function recordAnchorForWage(incomeSourceId: number, receivedDate: string) {
+export function recordAnchorForWage(incomeSourceId: number, receivedDate: string) {
+  return inTransaction(() => recordAnchorForWageUnsafe(incomeSourceId, receivedDate));
+}
+
+async function recordAnchorForWageUnsafe(incomeSourceId: number, receivedDate: string) {
   const period = periodForReceivedDate(receivedDate);
   const latestSameDay = await db.query.payPeriodAnchors.findFirst({
     where: eq(payPeriodAnchors.receivedDate, receivedDate),
@@ -93,7 +97,11 @@ export async function recordAnchorForWage(incomeSourceId: number, receivedDate: 
  * rules as logExpense / deleteExpenseEntry: the destination cell is paid,
  * and the old cell reverts to unpaid when no expense is left in it.
  * Returns how many expenses moved. */
-export async function refileExpensesFromAnchor(fromDate: string): Promise<number> {
+export function refileExpensesFromAnchor(fromDate: string): Promise<number> {
+  return inTransaction(() => refileExpensesUnsafe(fromDate));
+}
+
+async function refileExpensesUnsafe(fromDate: string): Promise<number> {
   const next = await db.query.payPeriodAnchors.findFirst({
     where: gt(payPeriodAnchors.receivedDate, fromDate),
     orderBy: (a, { asc }) => [asc(a.receivedDate)],

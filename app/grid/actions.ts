@@ -30,6 +30,7 @@ import { addDebtEntry } from "@/lib/db/debt";
 import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { parseIsoDate } from "@/lib/date";
+import { inTransaction } from "@/lib/db";
 
 export async function updateAmount(input: {
   categoryId: number;
@@ -66,31 +67,33 @@ export async function clearIncomeAmount(input: {
 export async function copyPreviousMonthValues(input: { year: number; month: number }) {
   const data = await getGridData(input.year);
 
-  const allCategories = data.categories.flatMap((c) => [c, ...c.children]);
-  for (const category of allCategories) {
-    const cell = category.months[input.month];
-    if (cell?.computed) continue;
-    if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
-      await upsertCategoryEntry({
-        categoryId: category.id,
-        year: input.year,
-        month: input.month,
-        amountPence: cell.previousAmountPence,
-      });
+  await inTransaction(async () => {
+    const allCategories = data.categories.flatMap((c) => [c, ...c.children]);
+    for (const category of allCategories) {
+      const cell = category.months[input.month];
+      if (cell?.computed) continue;
+      if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
+        await upsertCategoryEntry({
+          categoryId: category.id,
+          year: input.year,
+          month: input.month,
+          amountPence: cell.previousAmountPence,
+        });
+      }
     }
-  }
 
-  for (const source of data.incomeSources) {
-    const cell = source.months[input.month];
-    if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
-      await upsertIncomeEntry({
-        incomeSourceId: source.id,
-        year: input.year,
-        month: input.month,
-        amountPence: cell.previousAmountPence,
-      });
+    for (const source of data.incomeSources) {
+      const cell = source.months[input.month];
+      if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
+        await upsertIncomeEntry({
+          incomeSourceId: source.id,
+          year: input.year,
+          month: input.month,
+          amountPence: cell.previousAmountPence,
+        });
+      }
     }
-  }
+  });
 
   revalidatePath("/grid");
 }
@@ -127,16 +130,18 @@ export async function confirmPayment(input: {
     throw new Error("Amount must be greater than zero.");
   }
   const { entryDate } = input;
-  await setCategoryEntryPaid({
-    categoryId: input.categoryId,
-    year: input.year,
-    month: input.month,
-    paid: true,
-  });
-  await logExpenseQuery({
-    categoryId: input.categoryId,
-    amountPence: poundsToPence(input.pounds),
-    entryDate,
+  await inTransaction(async () => {
+    await setCategoryEntryPaid({
+      categoryId: input.categoryId,
+      year: input.year,
+      month: input.month,
+      paid: true,
+    });
+    await logExpenseQuery({
+      categoryId: input.categoryId,
+      amountPence: poundsToPence(input.pounds),
+      entryDate,
+    });
   });
   revalidatePath("/grid");
 }
@@ -217,39 +222,41 @@ export async function logIncome(input: {
     throw new Error("Amount must be greater than zero.");
   }
   const amountPence = poundsToPence(input.pounds);
-  const source = await getIncomeSource(input.incomeSourceId);
-  if (!source) {
-    throw new Error("Income source not found.");
-  }
-
-  let year: number;
-  let month: number;
-  if (source.isPayAnchor) {
-    if (input.periodYear === undefined || input.periodMonth === undefined) {
-      throw new Error("Pick which budget month this pay anchor entry counts toward.");
+  await inTransaction(async () => {
+    const source = await getIncomeSource(input.incomeSourceId);
+    if (!source) {
+      throw new Error("Income source not found.");
     }
-    year = input.periodYear;
-    month = input.periodMonth;
-    await recordPayPeriodAnchor({
-      incomeSourceId: input.incomeSourceId,
-      receivedDate: input.entryDate,
-      year,
-      month,
-    });
-    await refileExpensesFromAnchor(input.entryDate);
-  } else {
-    ({ year, month } = parseIsoDate(input.entryDate));
-  }
 
-  await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
-  if (input.debtPersonId) {
-    await addDebtEntry({
-      personId: input.debtPersonId,
-      entryDate: input.entryDate,
-      amountPence,
-      direction: "loan",
-    });
-  }
+    let year: number;
+    let month: number;
+    if (source.isPayAnchor) {
+      if (input.periodYear === undefined || input.periodMonth === undefined) {
+        throw new Error("Pick which budget month this pay anchor entry counts toward.");
+      }
+      year = input.periodYear;
+      month = input.periodMonth;
+      await recordPayPeriodAnchor({
+        incomeSourceId: input.incomeSourceId,
+        receivedDate: input.entryDate,
+        year,
+        month,
+      });
+      await refileExpensesFromAnchor(input.entryDate);
+    } else {
+      ({ year, month } = parseIsoDate(input.entryDate));
+    }
+
+    await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+    if (input.debtPersonId) {
+      await addDebtEntry({
+        personId: input.debtPersonId,
+        entryDate: input.entryDate,
+        amountPence,
+        direction: "loan",
+      });
+    }
+  });
   revalidatePath("/entries");
   revalidatePath("/grid");
   revalidatePath("/debt");

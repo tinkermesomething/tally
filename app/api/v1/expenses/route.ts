@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-auth";
+import { isMonth, isPounds } from "@/lib/api-validate";
 import { getExpenseEntriesForCell, getExpenseEntriesForMonth, logExpense } from "@/lib/db/queries";
 import { poundsToPence } from "@/lib/money";
 
@@ -24,8 +25,8 @@ export const GET = apiRoute(async (request) => {
       return NextResponse.json({ error: "month is required when categoryId is set" }, { status: 400 });
     }
     const month = parseInt(monthParam, 10);
-    if (Number.isNaN(month)) {
-      return NextResponse.json({ error: "month must be a valid number" }, { status: 400 });
+    if (!isMonth(month)) {
+      return NextResponse.json({ error: "month must be 1-12" }, { status: 400 });
     }
     const entries = await getExpenseEntriesForCell(categoryId, year, month);
     return NextResponse.json({ entries });
@@ -34,8 +35,8 @@ export const GET = apiRoute(async (request) => {
   let month: number | undefined;
   if (monthParam) {
     month = parseInt(monthParam, 10);
-    if (Number.isNaN(month)) {
-      return NextResponse.json({ error: "month must be a valid number" }, { status: 400 });
+    if (!isMonth(month)) {
+      return NextResponse.json({ error: "month must be 1-12" }, { status: 400 });
     }
   }
   const entries = await getExpenseEntriesForMonth(year, month);
@@ -51,7 +52,7 @@ export const POST = apiRoute(async (request) => {
   if (typeof body.entryDate !== "string" || !body.entryDate) {
     return NextResponse.json({ error: "entryDate is required" }, { status: 400 });
   }
-  if (typeof body.pounds !== "number" || body.pounds <= 0) {
+  if (!isPounds(body.pounds)) {
     return NextResponse.json({ error: "pounds must be a number greater than zero" }, { status: 400 });
   }
   await logExpense({

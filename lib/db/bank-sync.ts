@@ -1,5 +1,5 @@
 import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
-import { db } from "./index";
+import { db, inTransaction } from "./index";
 import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
 import { addDebtEntry } from "./debt";
 import { recordAnchorForWage } from "./pay-period";
@@ -13,10 +13,11 @@ import {
   incomeSources,
   people,
 } from "./schema";
-import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence } from "../gocardless";
+import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence, payeeFromTransaction } from "../gocardless";
 import {
   validateConditions,
   allConditionsMatch,
+  payeesMatch,
   ruleConditionsOf,
   type RuleCondition,
 } from "../rules";
@@ -91,13 +92,27 @@ export async function archiveBankAccount(id: number) {
  * the very first sync, bounded by the agreement's own max_historical_days
  * regardless) so a re-sync doesn't re-fetch the account's whole lifetime
  * every time. */
+// Banks can report a transaction days after its booking date, so a re-sync
+// starts a few days BEFORE the last one. Re-fetched rows are harmless: the
+// (account, importedId) unique index drops anything already staged.
+const SYNC_OVERLAP_DAYS = 7;
+
 export async function syncBankAccount(bankAccountId: number): Promise<{ staged: number }> {
   const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, bankAccountId) });
   if (!account) throw new Error(`Bank account ${bankAccountId} not found.`);
 
-  const dateFrom = account.lastSyncedAt ? account.lastSyncedAt.toISOString().slice(0, 10) : undefined;
+  const dateFrom = account.lastSyncedAt
+    ? new Date(account.lastSyncedAt.getTime() - SYNC_OVERLAP_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    : undefined;
   const { booked, pending } = await getAccountTransactions(account.externalAccountId, dateFrom);
-  const staged = await stageImportedTransactions(bankAccountId, booked.map(toRawImportedTransaction));
+  // One malformed item must not block the account's other transactions (or
+  // keep lastSyncedAt from advancing) - skip it loudly instead.
+  const raw = booked.flatMap((t) => {
+    const parsed = toRawImportedTransaction(t);
+    if (!parsed) console.warn(`[bank-sync] skipped unusable booked transaction on account ${bankAccountId}:`, t.transactionId ?? t.internalTransactionId);
+    return parsed ? [parsed] : [];
+  });
+  const staged = await stageImportedTransactions(bankAccountId, raw);
 
   // Cached here (one call, shared with the real sync) rather than
   // fetched separately by the Review page - see the schema comment on
@@ -106,7 +121,7 @@ export async function syncBankAccount(bankAccountId: number): Promise<{ staged: 
   const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName" | "pencilled">[] = pending.map((t) => ({
     amountPence: gcAmountToPence(t.transactionAmount.amount),
     date: t.bookingDate ?? t.valueDate ?? null,
-    payeeRaw: t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee",
+    payeeRaw: payeeFromTransaction(t),
   }));
 
   await db
@@ -435,40 +450,84 @@ export async function suggestIncomeSourceFromHistory(payeeClean: string): Promis
 
 // ---- Possible-duplicate suggestion (manual entries only - never automatic) ----
 
-/** Same date +/-1 day, same amount, against manually-logged expenseEntries
- * - there's no provider id to exact-match against those, so this is
- * necessarily fuzzy. A SUGGESTION only: the review UI surfaces it, the
- * user decides whether to ignore the staged row or categorize it as a
- * genuinely separate transaction. Only meaningful for money-out (negative
- * imported amounts) against expenses, which are always positive. */
+// A manually-logged expense is only a candidate within a day of the booking.
+const MANUAL_DUPLICATE_WINDOW_DAYS = 1;
+// A pencilled-in draft carries the PENDING date (or today's, when the bank
+// gave none), and a transaction can settle days later (weekends, bank
+// holidays) - so a draft is a candidate across a much wider window.
+const PENCILLED_WINDOW_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Date.UTC + toISOString round-trips exactly regardless of the server's
+// local timezone - constructing via `new Date(y, m-1, d)` (local midnight)
+// and then calling toISOString() on it does NOT: toISOString always renders
+// in UTC, so a positive local offset (e.g. UK's BST) silently shifts the
+// calendar date back by a day.
+function isoToUtcMs(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+function shiftIsoDate(iso: string, days: number): string {
+  return new Date(isoToUtcMs(iso) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Finds an already-logged expense this bank row is probably the same money
+ * as - same amount, near the same date, no provider id to exact-match
+ * against (so necessarily fuzzy). A SUGGESTION only: the review UI surfaces
+ * it, the user decides whether to confirm it, ignore the staged row or
+ * categorize it as a genuinely separate transaction. Only meaningful for
+ * money-out (negative imported amounts) against expenses, which are always
+ * positive.
+ *
+ * Ranking when several qualify: a pencilled-in draft wins over a manual
+ * entry (it is a placeholder waiting for exactly this row), then the one
+ * whose note is this row's payee, then the closest date. A draft already
+ * suggested for another waiting row is skipped, so two identical purchases
+ * pair one-to-one instead of both pointing at the same draft. */
 export async function findPossibleManualDuplicate(
   amountPence: number,
-  bookingDate: string
+  bookingDate: string,
+  payeeRaw?: string
 ): Promise<number | null> {
   if (amountPence >= 0) return null;
-  const expenseAmount = Math.abs(amountPence);
-  // Date.UTC + toISOString round-trips exactly regardless of the server's
-  // local timezone - constructing via `new Date(y, m-1, d)` (local
-  // midnight) and then calling toISOString() on it does NOT: toISOString
-  // always renders in UTC, so a positive local offset (e.g. UK's BST in
-  // October, UTC+1) silently shifts the calendar date back by a day. Found
-  // via a real failing test, not assumed.
-  const [y, m, d] = bookingDate.split("-").map(Number);
-  const baseMs = Date.UTC(y, m - 1, d);
-  const dayMs = 24 * 60 * 60 * 1000;
-  const toIso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-  const dayBefore = toIso(baseMs - dayMs);
-  const dayAfter = toIso(baseMs + dayMs);
 
-  const candidate = await db.query.expenseEntries.findFirst({
-    where: and(
-      eq(expenseEntries.amountPence, expenseAmount),
-      gte(expenseEntries.entryDate, dayBefore),
-      lte(expenseEntries.entryDate, dayAfter),
-      isNull(expenseEntries.importedTransactionId)
-    ),
-  });
-  return candidate?.id ?? null;
+  const wide = shiftIsoDate(bookingDate, -PENCILLED_WINDOW_DAYS);
+  const wideEnd = shiftIsoDate(bookingDate, PENCILLED_WINDOW_DAYS);
+  const candidates = await db
+    .select()
+    .from(expenseEntries)
+    .where(
+      and(
+        eq(expenseEntries.amountPence, Math.abs(amountPence)),
+        gte(expenseEntries.entryDate, wide),
+        lte(expenseEntries.entryDate, wideEnd),
+        isNull(expenseEntries.importedTransactionId)
+      )
+    );
+  if (candidates.length === 0) return null;
+
+  const claimedRows = await db
+    .select({ id: importedTransactions.possibleDuplicateExpenseEntryId })
+    .from(importedTransactions)
+    .where(and(eq(importedTransactions.status, "pending_review"), isNotNull(importedTransactions.possibleDuplicateExpenseEntryId)));
+  const claimed = new Set(claimedRows.map((r) => r.id));
+
+  const bookingMs = isoToUtcMs(bookingDate);
+  const eligible = candidates
+    .map((e) => ({ e, distanceDays: Math.abs(isoToUtcMs(e.entryDate) - bookingMs) / DAY_MS }))
+    .filter(({ e, distanceDays }) =>
+      e.provisional ? !claimed.has(e.id) : distanceDays <= MANUAL_DUPLICATE_WINDOW_DAYS
+    );
+  eligible.sort(
+    (a, b) =>
+      Number(b.e.provisional) - Number(a.e.provisional) ||
+      Number(b.e.note === payeeRaw) - Number(a.e.note === payeeRaw) ||
+      a.distanceDays - b.distanceDays ||
+      a.e.id - b.e.id
+  );
+  return eligible[0]?.e.id ?? null;
 }
 
 // ---- Staging / review pool ----
@@ -493,7 +552,13 @@ export async function stageImportedTransactions(
   transactions: RawImportedTransaction[]
 ) {
   if (transactions.length === 0) return [];
+  // All-or-nothing: if auto-categorizing one row throws, nothing is left
+  // half-staged (rows inserted but never auto-processed), and the next sync
+  // simply retries the whole batch.
+  return inTransaction(() => stageBatch(bankAccountId, transactions));
+}
 
+async function stageBatch(bankAccountId: number, transactions: RawImportedTransaction[]) {
   const inserted = await db
     .insert(importedTransactions)
     .values(
@@ -535,8 +600,19 @@ async function autoProcessStagedTransaction(id: number) {
   const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
   if (!row) throw new Error(`Staged transaction ${id} not found right after insert.`);
 
-  const duplicateOf = await findPossibleManualDuplicate(row.amountPence, row.bookingDate);
+  const duplicateOf = await findPossibleManualDuplicate(row.amountPence, row.bookingDate, row.payeeRaw);
   if (duplicateOf !== null) {
+    // The booked row replacing the draft you pencilled in: same amount and
+    // the same merchant. Confirm it here instead of waiting for a click -
+    // left alone, a rule would categorize this row into a SECOND expense.
+    // Strict on purpose: only a provisional draft (never a manual entry),
+    // and the payee must match, not just the amount. Anything weaker stays
+    // in Review with a Confirm/Discard hint.
+    const draft = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, duplicateOf) });
+    if (draft?.provisional && payeesMatch(draft.note, row.payeeRaw)) {
+      await confirmPencilledMatch(id, duplicateOf);
+      return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
+    }
     await db
       .update(importedTransactions)
       .set({ possibleDuplicateExpenseEntryId: duplicateOf })
@@ -643,8 +719,10 @@ export async function getPossibleDuplicateDetails(expenseEntryId: number): Promi
  * (same "ignored" status as any other already-logged duplicate, see
  * ignoreTransaction). */
 export async function confirmPencilledMatch(importedTransactionId: number, expenseEntryId: number) {
-  await confirmPencilledExpense(expenseEntryId, importedTransactionId);
-  await ignoreTransaction(importedTransactionId);
+  await inTransaction(async () => {
+    await confirmPencilledExpense(expenseEntryId, importedTransactionId);
+    await ignoreTransaction(importedTransactionId);
+  });
 }
 
 /** A person must exist BEFORE anything is written for them: the loan/
@@ -699,19 +777,21 @@ export async function categorizeTransaction(
   }
   await assertPersonExists(input.debtPersonId);
 
-  await logExpense({
-    categoryId: input.categoryId,
-    amountPence: Math.abs(row.amountPence),
-    entryDate: row.bookingDate,
-    note: entryNoteFor(row),
-    debtPersonId: input.debtPersonId,
-    importedTransactionId: id,
-  });
+  await inTransaction(async () => {
+    await logExpense({
+      categoryId: input.categoryId,
+      amountPence: Math.abs(row.amountPence),
+      entryDate: row.bookingDate,
+      note: entryNoteFor(row),
+      debtPersonId: input.debtPersonId,
+      importedTransactionId: id,
+    });
 
-  await db
-    .update(importedTransactions)
-    .set({ status: "categorized" })
-    .where(eq(importedTransactions.id, id));
+    await db
+      .update(importedTransactions)
+      .set({ status: "categorized" })
+      .where(eq(importedTransactions.id, id));
+  });
 }
 
 /** Income's equivalent of categorizeTransaction - but income_entries is one
@@ -736,41 +816,50 @@ export async function categorizeTransactionAsIncome(
   }
   await assertPersonExists(input.debtPersonId);
 
-  // Only the pay-anchor source (Wages) follows the anchors: its deposit
-  // records one from the bank timestamp and is filed in the month it funds.
-  // Every other income keeps its plain bank-date calendar month - anchors
-  // only ever re-file expenses.
-  const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, input.incomeSourceId) });
-  const { year, month } = source?.isPayAnchor
-    ? await recordAnchorForWage(input.incomeSourceId, row.bookingDate)
-    : parseIsoDate(row.bookingDate);
-  await incrementIncomeEntry({
-    incomeSourceId: input.incomeSourceId,
-    year,
-    month,
-    amountPence: row.amountPence,
-  });
-
-  if (input.debtPersonId) {
-    await addDebtEntry({
-      personId: input.debtPersonId,
-      entryDate: row.bookingDate,
+  await inTransaction(async () => {
+    // Only the pay-anchor source (Wages) follows the anchors: its deposit
+    // records one from the bank timestamp and is filed in the month it funds.
+    // Every other income keeps its plain bank-date calendar month - anchors
+    // only ever re-file expenses.
+    const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, input.incomeSourceId) });
+    const { year, month } = source?.isPayAnchor
+      ? await recordAnchorForWage(input.incomeSourceId, row.bookingDate)
+      : parseIsoDate(row.bookingDate);
+    await incrementIncomeEntry({
+      incomeSourceId: input.incomeSourceId,
+      year,
+      month,
       amountPence: row.amountPence,
-      direction: "loan",
-      note: entryNoteFor(row),
     });
-  }
 
-  await db
-    .update(importedTransactions)
-    .set({ status: "categorized", categorizedIncomeSourceId: input.incomeSourceId })
-    .where(eq(importedTransactions.id, id));
+    if (input.debtPersonId) {
+      await addDebtEntry({
+        personId: input.debtPersonId,
+        entryDate: row.bookingDate,
+        amountPence: row.amountPence,
+        direction: "loan",
+        note: entryNoteFor(row),
+      });
+    }
+
+    await db
+      .update(importedTransactions)
+      .set({ status: "categorized", categorizedIncomeSourceId: input.incomeSourceId })
+      .where(eq(importedTransactions.id, id));
+  });
 }
 
 /** Reversible - nothing is ever hard-deleted, see the schema comment.
  * Covers both "this is a transfer" and "I already logged this manually". */
 export async function ignoreTransaction(id: number) {
-  await db.update(importedTransactions).set({ status: "ignored" }).where(eq(importedTransactions.id, id));
+  // Never from "categorized": that row already created a real expense/income,
+  // and flipping its status would orphan it from the Review history.
+  const updated = await db
+    .update(importedTransactions)
+    .set({ status: "ignored" })
+    .where(and(eq(importedTransactions.id, id), inArray(importedTransactions.status, ["pending_review", "ignored"])))
+    .returning({ id: importedTransactions.id });
+  if (updated.length === 0) throw new Error("This transaction was already handled.");
 }
 
 /** Only ids still waiting in Review are touched: a stale tab or selection
@@ -796,18 +885,22 @@ export async function bulkCategorizeTransactionsAsExpense(
   ids: number[],
   input: { categoryId: number; debtPersonId?: number | null }
 ) {
-  for (const id of await stillPending(ids)) {
-    await categorizeTransaction(id, input);
-  }
+  await inTransaction(async () => {
+    for (const id of await stillPending(ids)) {
+      await categorizeTransaction(id, input);
+    }
+  });
 }
 
 export async function bulkCategorizeTransactionsAsIncome(
   ids: number[],
   input: { incomeSourceId: number; debtPersonId?: number }
 ) {
-  for (const id of await stillPending(ids)) {
-    await categorizeTransactionAsIncome(id, input);
-  }
+  await inTransaction(async () => {
+    for (const id of await stillPending(ids)) {
+      await categorizeTransactionAsIncome(id, input);
+    }
+  });
 }
 
 export async function bulkIgnoreTransactions(ids: number[]) {
@@ -825,7 +918,14 @@ export async function bulkIgnoreTransactions(ids: number[]) {
  * categorize (that already created a real, independent expense; removing
  * it is a normal expense delete, not an undo of the import step). */
 export async function restoreTransaction(id: number) {
-  await db.update(importedTransactions).set({ status: "pending_review" }).where(eq(importedTransactions.id, id));
+  // Only an ignored row can come back: reopening a categorized one would let
+  // it be categorized a second time (a duplicate expense/income).
+  const updated = await db
+    .update(importedTransactions)
+    .set({ status: "pending_review" })
+    .where(and(eq(importedTransactions.id, id), eq(importedTransactions.status, "ignored")))
+    .returning({ id: importedTransactions.id });
+  if (updated.length === 0) throw new Error("Only an ignored transaction can be restored.");
 }
 
 // ---- Rule preview + apply (Review "Rule" window) ----

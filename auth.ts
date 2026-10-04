@@ -89,8 +89,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth((req) => {
       // the one explicit allowed address, even if pocket-id is later reconfigured
       // with a second account.
       signIn({ profile }) {
-        if (!allowedEmail) return true; // no allow-list configured (local dev)
-        return profile?.email === allowedEmail;
+        // Fail closed: this app holds finance data, so a missing allow-list
+        // must never mean "any pocket-id account". Only local dev may skip it.
+        if (!allowedEmail) return process.env.NODE_ENV !== "production";
+        return profile?.email?.toLowerCase() === allowedEmail.toLowerCase();
       },
       authorized({ request, auth }) {
         // Belt-and-suspenders: middleware.ts's matcher is meant to keep this

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-auth";
+import { isPounds } from "@/lib/api-validate";
 import { addDebtEntry } from "@/lib/db/debt";
 import { poundsToPence } from "@/lib/money";
 
@@ -16,7 +17,7 @@ export const POST = apiRoute<Ctx>(async (request, { params }) => {
   if (typeof body.entryDate !== "string" || !body.entryDate) {
     return NextResponse.json({ error: "entryDate is required" }, { status: 400 });
   }
-  if (typeof body.pounds !== "number" || body.pounds <= 0) {
+  if (!isPounds(body.pounds)) {
     return NextResponse.json({ error: "pounds must be a number greater than zero" }, { status: 400 });
   }
   if (body.direction !== "loan" && body.direction !== "repayment") {

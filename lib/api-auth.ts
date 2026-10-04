@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 /**
@@ -19,11 +20,17 @@ export function requireApiToken(request: Request): NextResponse | null {
   const header = request.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
-  if (token !== expected) {
+  if (!token || !safeEqual(token, expected)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   return null; // authorized
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 /** Wraps a route handler with the bearer-token check and a consistent
@@ -38,6 +45,12 @@ export function apiRoute<Ctx>(
     try {
       return await handler(request, ctx);
     } catch (err) {
+      // Database errors are server faults, not bad input: keep their text
+      // (table/column names) out of the response and report them as 500.
+      if (err instanceof Error && "code" in err && String(err.code).startsWith("SQLITE_")) {
+        console.error("[api] database error:", err);
+        return NextResponse.json({ error: "Internal error" }, { status: 500 });
+      }
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Unknown error" },
         { status: 400 }

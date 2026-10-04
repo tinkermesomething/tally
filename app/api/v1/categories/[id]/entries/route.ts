@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-auth";
+import { badRequest, checkYearMonth, isPounds } from "@/lib/api-validate";
 import { setCategoryEntryPaid, upsertCategoryEntry } from "@/lib/db/queries";
 import { poundsToPence } from "@/lib/money";
 
@@ -13,15 +14,9 @@ export const PUT = apiRoute<Ctx>(async (request, { params }) => {
     return NextResponse.json({ error: "invalid category id" }, { status: 400 });
   }
   const body = await request.json();
-  if (typeof body.year !== "number" || typeof body.month !== "number") {
-    return NextResponse.json({ error: "year and month are required" }, { status: 400 });
-  }
-  if (body.month < 0 || body.month > 11) {
-    return NextResponse.json({ error: "month must be 0-11" }, { status: 400 });
-  }
-  if (typeof body.pounds !== "number" || body.pounds < 0) {
-    return NextResponse.json({ error: "pounds must be a non-negative number" }, { status: 400 });
-  }
+  const periodError = checkYearMonth(body);
+  if (periodError) return badRequest(periodError);
+  if (!isPounds(body.pounds, true)) return badRequest("pounds must be a non-negative number");
   await upsertCategoryEntry({
     categoryId,
     year: body.year,
@@ -39,12 +34,8 @@ export const PATCH = apiRoute<Ctx>(async (request, { params }) => {
     return NextResponse.json({ error: "invalid category id" }, { status: 400 });
   }
   const body = await request.json();
-  if (typeof body.year !== "number" || typeof body.month !== "number") {
-    return NextResponse.json({ error: "year and month are required" }, { status: 400 });
-  }
-  if (body.month < 0 || body.month > 11) {
-    return NextResponse.json({ error: "month must be 0-11" }, { status: 400 });
-  }
+  const periodError = checkYearMonth(body);
+  if (periodError) return badRequest(periodError);
   await setCategoryEntryPaid({
     categoryId,
     year: body.year,

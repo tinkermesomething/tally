@@ -12,6 +12,7 @@ import {
 import { incrementIncomeEntry, logExpense as logExpenseQuery } from "@/lib/db/queries";
 import { resolvePeriodForDate } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
+import { inTransaction } from "@/lib/db";
 
 export async function createPerson(name: string) {
   const trimmed = name.trim();
@@ -51,32 +52,34 @@ export async function addLedgerEntry(input: {
   }
   const amountPence = poundsToPence(input.pounds);
 
-  await addDebtEntry({
-    personId: input.personId,
-    entryDate: input.entryDate,
-    amountPence,
-    direction: input.direction,
-    note: input.note,
-  });
-
-  if (input.direction === "loan" && input.incomeSourceId) {
-    // Respects an existing pay-period boundary (if any) the same as every
-    // other logged entry - but doesn't create a new one; only the primary
-    // Add Income flow can do that, since it's the only place with a
-    // "counts toward" picker for the anchor source itself.
-    const { year, month } = await resolvePeriodForDate(input.entryDate);
-    await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
-  }
-
-  if (input.direction === "repayment" && input.categoryId) {
-    await logExpenseQuery({
-      categoryId: input.categoryId,
-      amountPence,
+  await inTransaction(async () => {
+    await addDebtEntry({
+      personId: input.personId,
       entryDate: input.entryDate,
+      amountPence,
+      direction: input.direction,
       note: input.note,
-      debtPersonId: input.personId,
     });
-  }
+
+    if (input.direction === "loan" && input.incomeSourceId) {
+      // Respects an existing pay-period boundary (if any) the same as every
+      // other logged entry - but doesn't create a new one; only the primary
+      // Add Income flow can do that, since it's the only place with a
+      // "counts toward" picker for the anchor source itself.
+      const { year, month } = await resolvePeriodForDate(input.entryDate);
+      await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+    }
+
+    if (input.direction === "repayment" && input.categoryId) {
+      await logExpenseQuery({
+        categoryId: input.categoryId,
+        amountPence,
+        entryDate: input.entryDate,
+        note: input.note,
+        debtPersonId: input.personId,
+      });
+    }
+  });
 
   revalidatePath(`/debt/${input.personId}`);
   revalidatePath("/debt");

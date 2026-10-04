@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
-import { db } from "./index";
+import { db, inTransaction } from "./index";
 import { resolvePeriodForDate } from "./pay-period";
 import { getAppSettings } from "./settings";
 import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
@@ -828,7 +828,11 @@ export async function updateCategoryGroup(categoryId: number, groupName: string 
     .where(eq(categories.id, categoryId));
 }
 
-export async function logExpense(input: {
+export function logExpense(input: Parameters<typeof logExpenseUnsafe>[0]) {
+  return inTransaction(() => logExpenseUnsafe(input));
+}
+
+async function logExpenseUnsafe(input: {
   categoryId: number;
   amountPence: number;
   entryDate: string; // ISO date, e.g. "2026-09-26"
@@ -1002,7 +1006,11 @@ export async function updateExpenseEntry(
  * up any debt-ledger entry this expense auto-created (see logExpense) -
  * otherwise deleting a debt-tagged expense leaves the ledger permanently
  * wrong, since debt_ledger_entries doesn't cascade. */
-export async function deleteExpenseEntry(id: number) {
+export function deleteExpenseEntry(id: number) {
+  return inTransaction(() => deleteExpenseEntryUnsafe(id));
+}
+
+async function deleteExpenseEntryUnsafe(id: number) {
   const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
   if (!entry) return;
   await deleteDebtEntriesForExpense(id);
@@ -1189,6 +1197,7 @@ export async function getArchivedIncomeSources() {
  * would still exist in the DB but be unreachable from any screen. */
 export async function archiveCategory(id: number) {
   const now = new Date();
+  await inTransaction(async () => {
   await db.update(categories).set({ archivedAt: now }).where(eq(categories.id, id));
   // Cascades by original parentId, not effective (moved-to) parent - a
   // category moved under `id` via moveCategoryParent has its own, unrelated
@@ -1198,11 +1207,14 @@ export async function archiveCategory(id: number) {
   // parent for future years rather than silently vanishing, so it's a
   // known gap rather than a silent-data-loss risk.
   await db.update(categories).set({ archivedAt: now }).where(eq(categories.parentId, id));
+  });
 }
 
 export async function unarchiveCategory(id: number) {
-  await db.update(categories).set({ archivedAt: null }).where(eq(categories.id, id));
-  await db.update(categories).set({ archivedAt: null }).where(eq(categories.parentId, id));
+  await inTransaction(async () => {
+    await db.update(categories).set({ archivedAt: null }).where(eq(categories.id, id));
+    await db.update(categories).set({ archivedAt: null }).where(eq(categories.parentId, id));
+  });
 }
 
 export async function getArchivedCategories() {

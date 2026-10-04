@@ -34,6 +34,20 @@ function normalizeText(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** True when two payee strings plainly describe the same merchant: equal, or
+ * one is a prefix of the other once case/spacing are ignored. A pending
+ * transaction's descriptor is a truncated form of the booked one
+ * ("TESCO STORES 5439" -> "TESCO STORES 5439 BRANCH GB"), so exact equality
+ * is too strict. Both sides need 4+ characters so a stub can't match
+ * everything. */
+export function payeesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const x = normalizeText(a);
+  const y = normalizeText(b);
+  if (x.length < 4 || y.length < 4) return false;
+  return x.startsWith(y) || y.startsWith(x);
+}
+
 /** Throws a user-facing Error for anything invalid; returns the cleaned
  * conditions otherwise (payee text trimmed/collapsed, amounts as integer
  * pence strings). This is the only gate rules pass through before being

@@ -142,7 +142,11 @@ export async function getAccountMeta(accountId: string): Promise<GcAccountMeta> 
 }
 
 export type GcTransaction = {
-  transactionId: string;
+  // Not every bank supplies transactionId; GoCardless then only guarantees
+  // internalTransactionId (per GoCardless's published schema - re-check if a
+  // bank's rows ever stage with the wrong id).
+  transactionId?: string;
+  internalTransactionId?: string;
   // bookingDate is only present on BOOKED transactions - a pending one
   // hasn't been recorded/posted yet, so it has no booking date at all,
   // only valueDate (confirmed via GoCardless's own docs, not assumed -
@@ -181,23 +185,22 @@ export function gcAmountToPence(amount: string): number {
   return negative ? -pence : pence;
 }
 
-function payeeFromTransaction(t: GcTransaction): string {
+export function payeeFromTransaction(t: GcTransaction): string {
   return t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee";
 }
 
-/** Only for BOOKED transactions - a pending one has no bookingDate at all
- * (see the GcTransaction comment), so this throws rather than silently
- * writing an "undefined" date into expense_entries/category_entries. The
- * staging pipeline (syncBankAccount) only ever calls this on the `booked`
- * array for exactly this reason. */
+/** Only for BOOKED transactions. Returns null (never throws, never writes an
+ * "undefined" date into the DB) for one that has no usable id or date, so the
+ * caller can skip it without losing the rest of the batch. A booked item
+ * normally has bookingDate; valueDate is the fallback GoCardless documents. */
 export function toRawImportedTransaction(t: GcTransaction) {
-  if (!t.bookingDate) {
-    throw new Error(`Transaction ${t.transactionId} has no bookingDate - only booked transactions should reach this.`);
-  }
+  const importedId = t.transactionId ?? t.internalTransactionId;
+  const bookingDate = t.bookingDate ?? t.valueDate;
+  if (!importedId || !bookingDate) return null;
   return {
-    importedId: t.transactionId,
+    importedId,
     amountPence: gcAmountToPence(t.transactionAmount.amount),
-    bookingDate: t.bookingDate,
+    bookingDate,
     payeeRaw: payeeFromTransaction(t),
   };
 }

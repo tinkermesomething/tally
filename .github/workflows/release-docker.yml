@@ -17,8 +17,23 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  check:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test
+
   build:
     name: Build ${{ matrix.platform }}
+    needs: [check]
     strategy:
       fail-fast: false
       matrix:
@@ -44,16 +59,21 @@ jobs:
           fetch-depth: 0
 
       - name: Prepare image name (lowercase) + platform pair
+        # Event values go through env, never straight into the script text:
+        # a crafted release_tag would otherwise run as shell.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.release_tag }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           REPO_LC="${GITHUB_REPOSITORY,,}"
           echo "IMAGE=ghcr.io/${REPO_LC}" >> $GITHUB_ENV
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "RELEASE_VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
-          else
-            echo "RELEASE_VERSION=${{ github.event.inputs.release_tag }}" >> $GITHUB_ENV
-          fi
-          platform="${{ matrix.platform }}"
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          TAG="$INPUT_TAG"
+          if [ "$EVENT_NAME" = "release" ]; then TAG="$RELEASE_TAG"; fi
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then echo "bad tag: $TAG" >&2; exit 1; fi
+          echo "RELEASE_VERSION=$TAG" >> $GITHUB_ENV
+          echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> $GITHUB_ENV
 
       - name: Extract Docker metadata
         id: meta
@@ -107,14 +127,17 @@ jobs:
     needs: [build]
     steps:
       - name: Prepare image name (lowercase) + version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.release_tag }}
         run: |
           REPO_LC="${GITHUB_REPOSITORY,,}"
           echo "IMAGE=ghcr.io/${REPO_LC}" >> $GITHUB_ENV
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "RELEASE_VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
-          else
-            echo "RELEASE_VERSION=${{ github.event.inputs.release_tag }}" >> $GITHUB_ENV
-          fi
+          TAG="$INPUT_TAG"
+          if [ "$EVENT_NAME" = "release" ]; then TAG="$RELEASE_TAG"; fi
+          if ! [[ "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then echo "bad tag: $TAG" >&2; exit 1; fi
+          echo "RELEASE_VERSION=$TAG" >> $GITHUB_ENV
 
       - name: Download digests
         uses: actions/download-artifact@v4
