@@ -31,6 +31,8 @@ vi.mock("@/lib/db/debt", async (orig) => {
 });
 
 import {
+  addCategoryRule,
+  syncAllBankAccounts,
   categorizeTransaction,
   categorizeTransactionAsIncome,
   ignoreTransaction,
@@ -158,5 +160,50 @@ describe("sync", () => {
     expect(res.staged).toBe(1);
     expect((await db.select().from(importedTransactions)).map((r) => r.importedId)).toEqual(["good"]);
     expect((await db.select().from(bankAccounts))[0].lastSyncedAt).not.toBeNull();
+  });
+});
+
+describe("rules", () => {
+  it("a stored rule auto-categorizes a matching row on import and leaves others for review", async () => {
+    const acct = await seedAccount();
+    const [cat] = await db.insert(categories).values({ name: "Food" }).returning();
+    await addCategoryRule({
+      conditions: [{ field: "payee", operator: "contains", value: "tesco" }],
+      targetType: "expense",
+      categoryId: cat.id,
+    });
+    await stageImportedTransactions(acct.id, [
+      { importedId: "a", amountPence: -500, bookingDate: "2026-09-10", payeeRaw: "TESCO STORES 1" },
+      { importedId: "b", amountPence: -700, bookingDate: "2026-09-10", payeeRaw: "SOMEWHERE ELSE" },
+    ]);
+    const rows = await db.select().from(importedTransactions);
+    expect(rows.find((r) => r.importedId === "a")!.status).toBe("categorized");
+    expect(rows.find((r) => r.importedId === "b")!.status).toBe("pending_review");
+    expect(await db.select().from(expenseEntries)).toHaveLength(1);
+  });
+
+  it("refuses a rule whose target no longer exists", async () => {
+    const cond = [{ field: "payee" as const, operator: "contains" as const, value: "x" }];
+    await expect(addCategoryRule({ conditions: cond, targetType: "expense", categoryId: 999 })).rejects.toThrow("category");
+    await expect(addCategoryRule({ conditions: cond, targetType: "income", incomeSourceId: 999 })).rejects.toThrow("income source");
+    const [cat] = await db.insert(categories).values({ name: "Food" }).returning();
+    await expect(addCategoryRule({ conditions: cond, targetType: "expense", categoryId: cat.id, debtPersonId: 999 })).rejects.toThrow("person");
+    await expect(addCategoryRule({ conditions: [{ field: "account", operator: "is", value: "999" }], targetType: "ignore" })).rejects.toThrow("bank account");
+  });
+});
+
+describe("sync lock", () => {
+  it("two overlapping passes share one run (one GoCardless call per account)", async () => {
+    await seedAccount();
+    gc.getAccountTransactions.mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      return { booked: [], pending: [] };
+    });
+    const [a, b] = await Promise.all([syncAllBankAccounts(), syncAllBankAccounts()]);
+    expect(gc.getAccountTransactions).toHaveBeenCalledTimes(1);
+    expect(a).toBe(b);
+    // and the lock is released afterwards
+    await syncAllBankAccounts();
+    expect(gc.getAccountTransactions).toHaveBeenCalledTimes(2);
   });
 });

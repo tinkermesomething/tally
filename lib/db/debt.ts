@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import { assertIsoDate } from "../validate";
 import { people, debtLedgerEntries } from "./schema";
@@ -24,22 +24,20 @@ function signedAmount(direction: "loan" | "repayment", amountPence: number) {
 }
 
 export async function getPeopleWithBalances(): Promise<PersonWithBalance[]> {
-  const allPeople = await db.select().from(people).where(eq(people.archived, false));
-  const allEntries = await db.select().from(debtLedgerEntries);
-
-  return allPeople.map((person) => {
-    const entries = allEntries.filter((e) => e.personId === person.id);
-    const balancePence = entries.reduce(
-      (sum, e) => sum + signedAmount(e.direction, e.amountPence),
-      0
-    );
-    return {
-      id: person.id,
-      name: person.name,
-      balancePence,
-      entryCount: entries.length,
-    };
-  });
+  // One aggregate query instead of loading the whole ledger and filtering it
+  // once per person. Same sign rule as signedAmount: loans add, repayments subtract.
+  return db
+    .select({
+      id: people.id,
+      name: people.name,
+      balancePence: sql<number>`coalesce(sum(case when ${debtLedgerEntries.direction} = 'loan' then ${debtLedgerEntries.amountPence} else -${debtLedgerEntries.amountPence} end), 0)`,
+      entryCount: sql<number>`count(${debtLedgerEntries.id})`,
+    })
+    .from(people)
+    .leftJoin(debtLedgerEntries, eq(debtLedgerEntries.personId, people.id))
+    .where(eq(people.archived, false))
+    .groupBy(people.id)
+    .orderBy(asc(people.id));
 }
 
 export async function getPersonLedger(personId: number): Promise<{

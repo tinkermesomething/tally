@@ -140,7 +140,20 @@ export type SyncResult =
  * a bug) must not block every other account from syncing - each account's
  * sync is isolated so one failure is reported, not thrown, letting the
  * loop continue. */
-export async function syncAllBankAccounts(): Promise<SyncResult[]> {
+export function syncAllBankAccounts(): Promise<SyncResult[]> {
+  // One pass at a time across BOTH callers (the scheduler and the manual API
+  // endpoint): a second caller joins the pass already running instead of
+  // starting another, which would spend GoCardless's tiny per-account daily
+  // quota twice for the same data.
+  syncInFlight ??= syncEachAccount().finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
+}
+
+let syncInFlight: Promise<SyncResult[]> | null = null;
+
+async function syncEachAccount(): Promise<SyncResult[]> {
   const accounts = await getBankAccounts();
   const results: SyncResult[] = [];
   for (const account of accounts) {
@@ -256,22 +269,39 @@ export type RuleTarget =
   // of a transfer clear.
   | { targetType: "ignore" };
 
-/** Stored conditions are all-must-match. field/operator/value mirror the
- * first condition so the single-condition columns stay valid (they're NOT
- * NULL) - see the schema comment on `conditions`. New rules go to the end
- * of the order: first match wins, same as before. */
 /** An account condition must point at a real linked account. */
 async function assertConditionAccountsExist(conditions: RuleCondition[]) {
   for (const c of conditions) {
     if (c.field !== "account") continue;
-    const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, parseInt(c.value, 10)) });
+    const id = parseInt(c.value, 10);
+    const account = Number.isNaN(id) ? undefined : await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, id) });
     if (!account) throw new Error("That bank account no longer exists.");
   }
 }
 
+/** A rule's target (category / income source / person) must exist now, so a
+ * stale form can't save a rule that would throw on every import. */
+async function assertRuleTargetExists(t: RuleTarget) {
+  if (t.targetType === "expense") {
+    if (!(await db.query.categories.findFirst({ where: eq(categories.id, t.categoryId) }))) {
+      throw new Error("That category no longer exists.");
+    }
+  } else if (t.targetType === "income") {
+    if (!(await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, t.incomeSourceId) }))) {
+      throw new Error("That income source no longer exists.");
+    }
+  }
+  await assertPersonExists(t.targetType === "ignore" ? undefined : t.debtPersonId);
+}
+
+/** Stored conditions are all-must-match. field/operator/value mirror the
+ * first condition so the single-condition columns stay valid (they're NOT
+ * NULL) - see the schema comment on `conditions`. New rules go to the end
+ * of the order: first match wins. */
 export async function addCategoryRule(input: { conditions: RuleCondition[] } & RuleTarget) {
   const conditions = validateConditions(input.conditions);
   await assertConditionAccountsExist(conditions);
+  await assertRuleTargetExists(input);
   const [maxRow] = await db
     .select({ max: sql<number>`max(${categoryRules.sortOrder})` })
     .from(categoryRules);
@@ -313,7 +343,7 @@ export async function updateCategoryRule(id: number, input: { conditions: RuleCo
     where: and(eq(categoryRules.id, id), eq(categoryRules.active, true)),
   });
   if (!existing) throw new Error("This rule no longer exists.");
-  await assertPersonExists(input.targetType === "ignore" ? undefined : input.debtPersonId);
+  await assertRuleTargetExists(input);
   const first = conditions[0];
   const [updated] = await db
     .update(categoryRules)
@@ -386,64 +416,6 @@ export function matchCategoryRule(
       return { targetType: "expense", categoryId: rule.categoryId!, debtPersonId: rule.debtPersonId ?? null };
     }
     return { targetType: "income", incomeSourceId: rule.incomeSourceId!, debtPersonId: rule.debtPersonId ?? null };
-  }
-  return null;
-}
-
-// ---- Learned patterns ----
-
-/** After a payee's been manually categorized a few times, stop asking: if
- * one category won >= 3 of its last 5 categorizations, suggest it going
- * forward - same threshold actual-budget uses. Only considers payeeClean
- * (not payeeRaw), since that's the stable, user-normalized identity a
- * payee should be recognized by. Returns null below the confidence
- * threshold, not a weak guess. */
-export async function suggestCategoryFromHistory(payeeClean: string): Promise<number | null> {
-  const recent = await db.query.importedTransactions.findMany({
-    where: and(eq(importedTransactions.payeeClean, payeeClean), eq(importedTransactions.status, "categorized")),
-    orderBy: (t, { desc }) => [desc(t.createdAt)],
-    limit: 5,
-  });
-  if (recent.length === 0) return null;
-  const counts = new Map<number, number>();
-  for (const t of recent) {
-    const catEntry = await db.query.expenseEntries.findFirst({
-      where: eq(expenseEntries.importedTransactionId, t.id),
-    });
-    if (!catEntry) continue;
-    counts.set(catEntry.categoryId, (counts.get(catEntry.categoryId) ?? 0) + 1);
-  }
-  for (const [categoryId, count] of counts) {
-    if (count >= 3) return categoryId;
-  }
-  return null;
-}
-
-/** Income's equivalent of suggestCategoryFromHistory - same >= 3-of-last-5
- * threshold. Reads categorizedIncomeSourceId directly rather than joining
- * through a per-transaction table the way the expense side joins
- * expenseEntries, since income_entries has no such join target (see the
- * schema comment on categorizedIncomeSourceId). Filtering to rows that
- * were actually income-categorized (not just "categorized" generally) in
- * the query itself, rather than after the fact, keeps the 5-row window
- * meaningful for a payee that's occasionally appeared on both sides. */
-export async function suggestIncomeSourceFromHistory(payeeClean: string): Promise<number | null> {
-  const recent = await db.query.importedTransactions.findMany({
-    where: and(
-      eq(importedTransactions.payeeClean, payeeClean),
-      eq(importedTransactions.status, "categorized"),
-      isNotNull(importedTransactions.categorizedIncomeSourceId)
-    ),
-    orderBy: (t, { desc }) => [desc(t.createdAt)],
-    limit: 5,
-  });
-  const counts = new Map<number, number>();
-  for (const t of recent) {
-    const id = t.categorizedIncomeSourceId!;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
-  for (const [incomeSourceId, count] of counts) {
-    if (count >= 3) return incomeSourceId;
   }
   return null;
 }
@@ -583,9 +555,10 @@ async function stageBatch(bankAccountId: number, transactions: RawImportedTransa
       Math.sign(b.amountPence) - Math.sign(a.amountPence) ||
       a.id - b.id
   );
+  const rules = await getCategoryRules();
   const results = [];
   for (const row of inserted) {
-    results.push(await autoProcessStagedTransaction(row.id));
+    results.push(await autoProcessStagedTransaction(row, rules));
   }
   return results;
 }
@@ -593,12 +566,11 @@ async function stageBatch(bankAccountId: number, transactions: RawImportedTransa
 /** Runs the auto-categorization pipeline for one newly-staged row: a
  * possible duplicate of a manual entry always wins and blocks auto-
  * categorization (never silently create a second expense for money
- * that's possibly already logged) - then explicit rules, then learned
- * patterns, in that order. Falls through to plain pending_review if
- * nothing matches (or a duplicate hint was set). */
-async function autoProcessStagedTransaction(id: number) {
-  const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
-  if (!row) throw new Error(`Staged transaction ${id} not found right after insert.`);
+ * that's possibly already logged), then explicit rules. Falls through to
+ * plain pending_review if nothing matches (or a duplicate hint was set).
+ * `rules` is loaded once per batch by the caller, not once per row. */
+async function autoProcessStagedTransaction(row: typeof importedTransactions.$inferSelect, rules: CategoryRule[]) {
+  const id = row.id;
 
   const duplicateOf = await findPossibleManualDuplicate(row.amountPence, row.bookingDate, row.payeeRaw);
   if (duplicateOf !== null) {
@@ -620,7 +592,6 @@ async function autoProcessStagedTransaction(id: number) {
     return { ...row, possibleDuplicateExpenseEntryId: duplicateOf };
   }
 
-  const rules = await getCategoryRules();
   const ruleMatch = matchCategoryRule(row, rules);
   if (ruleMatch) {
     if (ruleMatch.targetType === "ignore") {
@@ -640,25 +611,6 @@ async function autoProcessStagedTransaction(id: number) {
       });
     }
     return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
-  }
-
-  // Same direction guard as matchCategoryRule, same reason - a 0-amount
-  // transaction (unrealistic for a real bank feed, but not impossible)
-  // must never reach either categorize function, both of which reject it.
-  if (row.payeeClean && row.amountPence !== 0) {
-    if (row.amountPence < 0) {
-      const learnedCategoryId = await suggestCategoryFromHistory(row.payeeClean);
-      if (learnedCategoryId !== null) {
-        await categorizeTransaction(id, { categoryId: learnedCategoryId });
-        return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
-      }
-    } else {
-      const learnedIncomeSourceId = await suggestIncomeSourceFromHistory(row.payeeClean);
-      if (learnedIncomeSourceId !== null) {
-        await categorizeTransactionAsIncome(id, { incomeSourceId: learnedIncomeSourceId });
-        return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
-      }
-    }
   }
 
   return row;
@@ -1031,7 +983,7 @@ export async function createRuleAndCategorize(input: {
   applyToIds: number[];
 }): Promise<CreateRuleAndApplyResult> {
   const conditions = validateConditions(input.conditions);
-  const rule = await addCategoryRule({ conditions, ...input.target });
+  const rule = await addCategoryRule({ conditions, ...input.target }); // validates again; cheap and keeps addCategoryRule safe to call alone
 
   const skipped: { id: number; reason: string }[] = [];
   let categorized = 0;

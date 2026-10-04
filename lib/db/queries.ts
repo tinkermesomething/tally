@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db, inTransaction } from "./index";
 import { assertIsoDate } from "../validate";
+import { markCellPaid, unpayCellIfNoExpenses } from "./cells";
 import { resolvePeriodForDate } from "./pay-period";
 import { getAppSettings } from "./settings";
 import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
@@ -95,7 +96,6 @@ export type GridData = {
   };
 };
 
-type RawCategory = typeof categories.$inferSelect;
 type RawEntry = typeof categoryEntries.$inferSelect;
 type RawExpense = typeof expenseEntries.$inferSelect;
 
@@ -274,6 +274,23 @@ function effectiveParentOf(
   return effectiveParents.has(category.id) ? (effectiveParents.get(category.id) ?? null) : category.parentId;
 }
 
+/** parent id -> its children, using each category's EFFECTIVE parent for the
+ * year being viewed (not necessarily its original parentId). */
+function groupChildrenByParent<T extends { id: number; parentId: number | null }>(
+  cats: T[],
+  effectiveParents: Map<number, number | null>
+): Map<number, T[]> {
+  const byParent = new Map<number, T[]>();
+  for (const c of cats) {
+    const parentId = effectiveParentOf(effectiveParents, c);
+    if (parentId === null) continue;
+    const list = byParent.get(parentId) ?? [];
+    list.push(c);
+    byParent.set(parentId, list);
+  }
+  return byParent;
+}
+
 async function getEffectiveParentMap(year: number): Promise<Map<number, number | null>> {
   const cats = await db.select({ id: categories.id, parentId: categories.parentId }).from(categories);
   const moves = await db.select().from(categoryParentMoves);
@@ -407,14 +424,7 @@ export async function getGridData(year: number): Promise<GridData> {
   const effectiveParents = resolveEffectiveParents(cats, parentMoves, year);
 
   const topLevel = cats.filter((c) => effectiveParentOf(effectiveParents, c) === null);
-  const childrenByParent = new Map<number, RawCategory[]>();
-  for (const c of cats) {
-    const effectiveParentId = effectiveParentOf(effectiveParents, c);
-    if (effectiveParentId === null) continue;
-    const list = childrenByParent.get(effectiveParentId) ?? [];
-    list.push(c);
-    childrenByParent.set(effectiveParentId, list);
-  }
+  const childrenByParent = groupChildrenByParent(cats, effectiveParents);
 
   const gridCategories: GridCategory[] = topLevel.map((category) => {
     const childCats = childrenByParent.get(category.id) ?? [];
@@ -700,14 +710,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
   const moves = await db.select().from(categoryParentMoves);
   const effectiveParents = resolveEffectiveParents(cats, moves, currentYear);
 
-  const childrenByParent = new Map<number, typeof cats>();
-  for (const c of cats) {
-    const effectiveParentId = effectiveParentOf(effectiveParents, c);
-    if (effectiveParentId === null) continue;
-    const list = childrenByParent.get(effectiveParentId) ?? [];
-    list.push(c);
-    childrenByParent.set(effectiveParentId, list);
-  }
+  const childrenByParent = groupChildrenByParent(cats, effectiveParents);
   return cats
     .filter((c) => effectiveParentOf(effectiveParents, c) === null)
     .map((c) => ({
@@ -755,41 +758,21 @@ function incomeEntryMatch(incomeSourceId: number, year: number, month: number) {
   );
 }
 
-/** Shared "update if a matching row exists, otherwise insert" shape behind
- * both upsertCategoryEntry and upsertIncomeEntry - callers supply their own
- * typed find/update/insert so this stays a plain control-flow helper rather
- * than fighting Drizzle's per-table generics. */
-async function upsertViaFindFirst(
-  find: () => Promise<{ id: number } | undefined>,
-  update: (id: number) => Promise<unknown>,
-  insert: () => Promise<unknown>
-) {
-  const existing = await find();
-  if (existing) {
-    await update(existing.id);
-  } else {
-    await insert();
-  }
-}
-
 export async function upsertCategoryEntry(input: {
   categoryId: number;
   year: number;
   month: number;
   amountPence: number;
 }) {
-  await upsertViaFindFirst(
-    () =>
-      db.query.categoryEntries.findFirst({
-        where: categoryEntryMatch(input.categoryId, input.year, input.month),
-      }),
-    (id) =>
-      db
-        .update(categoryEntries)
-        .set({ amountPence: input.amountPence })
-        .where(eq(categoryEntries.id, id)),
-    () => db.insert(categoryEntries).values({ ...input, paid: false })
-  );
+  // One atomic statement against the unique (category, year, month) index.
+  // A replaced amount leaves the cell's paid flag alone.
+  await db
+    .insert(categoryEntries)
+    .values({ ...input, paid: false })
+    .onConflictDoUpdate({
+      target: [categoryEntries.categoryId, categoryEntries.year, categoryEntries.month],
+      set: { amountPence: input.amountPence },
+    });
 }
 
 /** Clearing a cell back to blank is a real, distinct state from "0" - it
@@ -893,20 +876,11 @@ async function logExpenseUnsafe(input: {
     });
   }
 
-  // Logging an expense means the money is already gone - that's the same
-  // real-world fact as ticking "paid", so mark it here too. Otherwise a
-  // logged expense correctly counts toward SUBTOTAL/AVAILABLE but still
-  // shows up in "Remaining to pay" as if it hadn't happened yet. A
+  // Otherwise a logged expense correctly counts toward SUBTOTAL/AVAILABLE but
+  // still shows up in "Remaining to pay" as if it hadn't happened yet. A
   // provisional entry gets the same treatment - that's the point of
   // pencilling it in: reflect money the bank's already earmarked.
-  const existing = await db.query.categoryEntries.findFirst({
-    where: categoryEntryMatch(input.categoryId, year, month),
-  });
-  if (existing) {
-    await db.update(categoryEntries).set({ paid: true }).where(eq(categoryEntries.id, existing.id));
-  } else {
-    await db.insert(categoryEntries).values({ categoryId: input.categoryId, year, month, amountPence: 0, paid: true });
-  }
+  await markCellPaid(input.categoryId, year, month);
 
   return created;
 }
@@ -923,6 +897,18 @@ export type ExpenseEntryRow = {
   provisional: boolean;
 };
 
+const expenseRowColumns = {
+  id: expenseEntries.id,
+  categoryId: expenseEntries.categoryId,
+  categoryName: categories.name,
+  year: expenseEntries.year,
+  month: expenseEntries.month,
+  amountPence: expenseEntries.amountPence,
+  note: expenseEntries.note,
+  entryDate: expenseEntries.entryDate,
+  provisional: expenseEntries.provisional,
+};
+
 /** Individual logged expenses for one category/month - the breakdown behind
  * a grid cell's "Paid £X" total, which is just their sum. */
 export async function getExpenseEntriesForCell(
@@ -931,17 +917,7 @@ export async function getExpenseEntriesForCell(
   month: number
 ): Promise<ExpenseEntryRow[]> {
   const rows = await db
-    .select({
-      id: expenseEntries.id,
-      categoryId: expenseEntries.categoryId,
-      categoryName: categories.name,
-      year: expenseEntries.year,
-      month: expenseEntries.month,
-      amountPence: expenseEntries.amountPence,
-      note: expenseEntries.note,
-      entryDate: expenseEntries.entryDate,
-      provisional: expenseEntries.provisional,
-    })
+    .select(expenseRowColumns)
     .from(expenseEntries)
     .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
     .where(
@@ -963,17 +939,7 @@ export async function getExpenseEntriesForMonth(
   month?: number
 ): Promise<ExpenseEntryRow[]> {
   const rows = await db
-    .select({
-      id: expenseEntries.id,
-      categoryId: expenseEntries.categoryId,
-      categoryName: categories.name,
-      year: expenseEntries.year,
-      month: expenseEntries.month,
-      amountPence: expenseEntries.amountPence,
-      note: expenseEntries.note,
-      entryDate: expenseEntries.entryDate,
-      provisional: expenseEntries.provisional,
-    })
+    .select(expenseRowColumns)
     .from(expenseEntries)
     .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
     .where(
@@ -1019,22 +985,7 @@ async function deleteExpenseEntryUnsafe(id: number) {
   await deleteDebtEntriesForExpense(id);
   await db.delete(expenseEntries).where(eq(expenseEntries.id, id));
 
-  // If that was the last logged expense for this cell, its "paid" status
-  // (set automatically by logExpense) no longer reflects anything real -
-  // revert it, the same way ticking the amount back to blank would.
-  const remaining = await db.query.expenseEntries.findFirst({
-    where: and(
-      eq(expenseEntries.categoryId, entry.categoryId),
-      eq(expenseEntries.year, entry.year),
-      eq(expenseEntries.month, entry.month)
-    ),
-  });
-  if (!remaining) {
-    await db
-      .update(categoryEntries)
-      .set({ paid: false })
-      .where(categoryEntryMatch(entry.categoryId, entry.year, entry.month));
-  }
+  await unpayCellIfNoExpenses(entry.categoryId, entry.year, entry.month);
 }
 
 /** "Pencil in" a pending-at-the-bank transaction as a real expense ahead of
@@ -1088,18 +1039,13 @@ export async function upsertIncomeEntry(input: {
   month: number;
   amountPence: number;
 }) {
-  await upsertViaFindFirst(
-    () =>
-      db.query.incomeEntries.findFirst({
-        where: incomeEntryMatch(input.incomeSourceId, input.year, input.month),
-      }),
-    (id) =>
-      db
-        .update(incomeEntries)
-        .set({ amountPence: input.amountPence })
-        .where(eq(incomeEntries.id, id)),
-    () => db.insert(incomeEntries).values(input)
-  );
+  await db
+    .insert(incomeEntries)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [incomeEntries.incomeSourceId, incomeEntries.year, incomeEntries.month],
+      set: { amountPence: input.amountPence },
+    });
 }
 
 /** Adds to whatever's already there for that source/month instead of
@@ -1112,18 +1058,13 @@ export async function incrementIncomeEntry(input: {
   month: number;
   amountPence: number;
 }) {
-  const existing = await db.query.incomeEntries.findFirst({
-    where: incomeEntryMatch(input.incomeSourceId, input.year, input.month),
-  });
-
-  if (existing) {
-    await db
-      .update(incomeEntries)
-      .set({ amountPence: existing.amountPence + input.amountPence })
-      .where(eq(incomeEntries.id, existing.id));
-  } else {
-    await db.insert(incomeEntries).values(input);
-  }
+  await db
+    .insert(incomeEntries)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [incomeEntries.incomeSourceId, incomeEntries.year, incomeEntries.month],
+      set: { amountPence: sql`${incomeEntries.amountPence} + ${input.amountPence}` },
+    });
 }
 
 export async function deleteIncomeEntry(input: {

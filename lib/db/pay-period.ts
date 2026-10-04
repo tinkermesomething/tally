@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, gte, lt, lte } from "drizzle-orm";
 import { db, inTransaction } from "./index";
-import { categoryEntries, expenseEntries, incomeSources, payPeriodAnchors } from "./schema";
+import { markCellPaid, unpayCellIfNoExpenses } from "./cells";
+import { expenseEntries, incomeSources, payPeriodAnchors } from "./schema";
 import { parseIsoDate } from "../date";
 
 /** Resolves which (year, month) budget period a real calendar date falls
@@ -122,40 +123,8 @@ async function refileExpensesUnsafe(fromDate: string): Promise<number> {
     if (year === e.year && month === e.month) continue;
     await db.update(expenseEntries).set({ year, month }).where(eq(expenseEntries.id, e.id));
 
-    const dest = await db.query.categoryEntries.findFirst({
-      where: and(
-        eq(categoryEntries.categoryId, e.categoryId),
-        eq(categoryEntries.year, year),
-        eq(categoryEntries.month, month)
-      ),
-    });
-    if (dest) {
-      await db.update(categoryEntries).set({ paid: true }).where(eq(categoryEntries.id, dest.id));
-    } else {
-      await db
-        .insert(categoryEntries)
-        .values({ categoryId: e.categoryId, year, month, amountPence: 0, paid: true });
-    }
-
-    const left = await db.query.expenseEntries.findFirst({
-      where: and(
-        eq(expenseEntries.categoryId, e.categoryId),
-        eq(expenseEntries.year, e.year),
-        eq(expenseEntries.month, e.month)
-      ),
-    });
-    if (!left) {
-      await db
-        .update(categoryEntries)
-        .set({ paid: false })
-        .where(
-          and(
-            eq(categoryEntries.categoryId, e.categoryId),
-            eq(categoryEntries.year, e.year),
-            eq(categoryEntries.month, e.month)
-          )
-        );
-    }
+    await markCellPaid(e.categoryId, year, month);
+    await unpayCellIfNoExpenses(e.categoryId, e.year, e.month);
     moved++;
   }
   return moved;
