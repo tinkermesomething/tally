@@ -1,5 +1,7 @@
 "use server";
 
+import { assertPositivePounds } from "@/lib/validate";
+import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import {
   addDebtEntry,
@@ -15,6 +17,7 @@ import { poundsToPence } from "@/lib/money";
 import { inTransaction } from "@/lib/db";
 
 export async function createPerson(name: string) {
+  await requireSession();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Name can't be empty.");
   const person = await addPersonQuery(trimmed);
@@ -23,12 +26,14 @@ export async function createPerson(name: string) {
 }
 
 export async function removePerson(personId: number) {
+  await requireSession();
   await archivePersonQuery(personId);
   revalidatePath("/debt");
   revalidatePath("/settings");
 }
 
 export async function restorePerson(personId: number) {
+  await requireSession();
   await unarchivePersonQuery(personId);
   revalidatePath("/debt");
   revalidatePath("/settings");
@@ -47,9 +52,8 @@ export async function addLedgerEntry(input: {
    * category, e.g. paying a loan back out of the Misc budget. */
   categoryId?: number;
 }) {
-  if (input.pounds <= 0) {
-    throw new Error("Amount must be greater than zero.");
-  }
+  await requireSession();
+  assertPositivePounds(input.pounds);
   const amountPence = poundsToPence(input.pounds);
 
   await inTransaction(async () => {
@@ -92,9 +96,8 @@ export async function editLedgerEntry(
   id: number,
   input: { pounds?: number; direction?: "loan" | "repayment"; entryDate?: string; note?: string }
 ) {
-  if (input.pounds !== undefined && input.pounds <= 0) {
-    throw new Error("Amount must be greater than zero.");
-  }
+  await requireSession();
+  if (input.pounds !== undefined) assertPositivePounds(input.pounds);
   await updateDebtEntry(id, {
     amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
     direction: input.direction,
@@ -106,6 +109,7 @@ export async function editLedgerEntry(
 }
 
 export async function removeLedgerEntry(personId: number, id: number) {
+  await requireSession();
   await deleteDebtEntry(id);
   revalidatePath(`/debt/${personId}`);
   revalidatePath("/debt");

@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "./index";
+import { assertIsoDate } from "../validate";
 import { people, debtLedgerEntries } from "./schema";
 
 export type PersonWithBalance = {
@@ -91,6 +92,7 @@ export async function addDebtEntry(input: {
    * later discard of a provisional expense can remove this too. */
   expenseEntryId?: number;
 }) {
+  assertIsoDate(input.entryDate);
   await db.insert(debtLedgerEntries).values({
     personId: input.personId,
     entryDate: input.entryDate,

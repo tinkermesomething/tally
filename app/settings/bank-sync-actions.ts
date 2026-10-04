@@ -1,5 +1,6 @@
 "use server";
 
+import { requireSession } from "@/lib/session";
 import { cookies } from "next/headers";
 import type { RuleCondition } from "@/lib/rules";
 import { revalidatePath } from "next/cache";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/gocardless";
 
 export async function syncBankAccountNow(id: number): Promise<{ staged: number }> {
+  await requireSession();
   const result = await syncBankAccount(id);
   revalidatePath("/settings");
   revalidatePath("/review");
@@ -27,11 +29,13 @@ export async function syncBankAccountNow(id: number): Promise<{ staged: number }
 }
 
 export async function archiveLinkedBankAccount(id: number) {
+  await requireSession();
   await archiveBankAccount(id);
   revalidatePath("/settings");
 }
 
 export async function listBankInstitutions() {
+  await requireSession();
   const institutions = await listInstitutions("GB");
   return institutions
     .map((i) => ({
@@ -56,6 +60,7 @@ export async function startBankConnection(institution: {
   transaction_total_days: number;
   max_access_valid_for_days: number;
 }): Promise<{ link: string }> {
+  await requireSession();
   const redirectUrl = process.env.GOCARDLESS_REDIRECT_URL;
   if (!redirectUrl) throw new Error("GOCARDLESS_REDIRECT_URL is not configured.");
 
@@ -93,6 +98,7 @@ export async function startBankConnection(institution: {
 export async function createCategoryRule(
   input: { conditions: RuleCondition[] } & RuleTarget
 ) {
+  await requireSession();
   // addCategoryRule validates the conditions itself (and throws a
   // readable message) - this is just the revalidating wrapper.
   await addCategoryRule(input);
@@ -103,11 +109,13 @@ export async function editCategoryRule(
   id: number,
   input: { conditions: RuleCondition[] } & RuleTarget
 ) {
+  await requireSession();
   await updateCategoryRule(id, input);
   revalidatePath("/settings");
 }
 
 export async function removeCategoryRule(id: number) {
+  await requireSession();
   await deactivateCategoryRule(id);
   revalidatePath("/settings");
 }

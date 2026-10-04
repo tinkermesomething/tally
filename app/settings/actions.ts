@@ -1,5 +1,6 @@
 "use server";
 
+import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import { updateAppSettings } from "@/lib/db/settings";
 import type { DateFormat } from "@/lib/date-format";
@@ -12,6 +13,7 @@ export async function updatePreferences(input: {
   bankSyncEnabled?: boolean;
   bankSyncFrequencyHours?: number;
 }) {
+  await requireSession();
   await updateAppSettings(input);
   // The root layout is what fetches these - bust it, not individual page
   // paths, so every route picks up the new values on next navigation.

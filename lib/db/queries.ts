@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db, inTransaction } from "./index";
+import { assertIsoDate } from "../validate";
 import { resolvePeriodForDate } from "./pay-period";
 import { getAppSettings } from "./settings";
 import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
@@ -850,6 +851,7 @@ async function logExpenseUnsafe(input: {
    * against the real settled transaction - see pencilInExpense. */
   provisional?: boolean;
 }) {
+  assertIsoDate(input.entryDate);
   const { year, month } = await resolvePeriodForDate(input.entryDate);
 
   let debtPersonId: number | undefined;
@@ -991,6 +993,7 @@ export async function updateExpenseEntry(
   if (input.amountPence !== undefined) set.amountPence = input.amountPence;
   if (input.note !== undefined) set.note = input.note;
   if (input.entryDate !== undefined) {
+    assertIsoDate(input.entryDate);
     set.entryDate = input.entryDate;
     const { year, month } = await resolvePeriodForDate(input.entryDate);
     set.year = year;

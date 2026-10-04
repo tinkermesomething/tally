@@ -20,8 +20,12 @@ export function parseIsoDate(entryDate: string): { year: number; month: number }
   return { year, month };
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Calendar date in the caller's LOCAL zone. toISOString() is UTC, so just
+ * after local midnight in BST it still says "yesterday" - while the
+ * year/month checks around it use local getters, so the two disagreed. */
+export function localIsoDate(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /** Sensible default date for confirming a specific grid cell's payment:
@@ -36,10 +40,9 @@ function todayIso(): string {
  * month" trick - day 0 of month's own 0-based next-month index rolls back
  * one day into the target month, with no local-offset involvement (the
  * same BST-safe pattern used in lib/db/bank-sync.ts). */
-export function defaultEntryDateFor(year: number, month: number): string {
-  const now = new Date();
+export function defaultEntryDateFor(year: number, month: number, now: Date = new Date()): string {
   if (now.getFullYear() === year && now.getMonth() + 1 === month) {
-    return todayIso();
+    return localIsoDate(now);
   }
   return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
 }

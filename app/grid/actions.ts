@@ -1,5 +1,7 @@
 "use server";
 
+import { assertNonNegativePounds, assertPositivePounds } from "@/lib/validate";
+import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import {
   addCategory as addCategoryQuery,
@@ -38,6 +40,8 @@ export async function updateAmount(input: {
   month: number;
   pounds: number;
 }) {
+  await requireSession();
+  assertNonNegativePounds(input.pounds);
   await upsertCategoryEntry({
     categoryId: input.categoryId,
     year: input.year,
@@ -48,6 +52,7 @@ export async function updateAmount(input: {
 }
 
 export async function clearAmount(input: { categoryId: number; year: number; month: number }) {
+  await requireSession();
   await deleteCategoryEntry(input);
   revalidatePath("/grid");
 }
@@ -57,6 +62,7 @@ export async function clearIncomeAmount(input: {
   year: number;
   month: number;
 }) {
+  await requireSession();
   await deleteIncomeEntry(input);
   revalidatePath("/grid");
 }
@@ -65,6 +71,7 @@ export async function clearIncomeAmount(input: {
  * genuinely blank cells (categories and income sources both), never
  * overwrites an existing entry, same as the per-cell hint it's built from. */
 export async function copyPreviousMonthValues(input: { year: number; month: number }) {
+  await requireSession();
   const data = await getGridData(input.year);
 
   await inTransaction(async () => {
@@ -104,6 +111,7 @@ export async function togglePaid(input: {
   month: number;
   paid: boolean;
 }) {
+  await requireSession();
   await setCategoryEntryPaid(input);
   revalidatePath("/grid");
 }
@@ -126,9 +134,8 @@ export async function confirmPayment(input: {
    * under today's month instead. */
   entryDate: string;
 }) {
-  if (input.pounds <= 0) {
-    throw new Error("Amount must be greater than zero.");
-  }
+  await requireSession();
+  assertPositivePounds(input.pounds);
   const { entryDate } = input;
   await inTransaction(async () => {
     await setCategoryEntryPaid({
@@ -157,9 +164,8 @@ export async function logExpense(input: {
    * duplicate that here. */
   debtPersonId?: number;
 }) {
-  if (input.pounds <= 0) {
-    throw new Error("Expense amount must be greater than zero.");
-  }
+  await requireSession();
+  assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
   const amountPence = poundsToPence(input.pounds);
   await logExpenseQuery({
     categoryId: input.categoryId,
@@ -173,6 +179,7 @@ export async function logExpense(input: {
 }
 
 export async function listExpenseEntries(categoryId: number, year: number, month: number) {
+  await requireSession();
   return getExpenseEntriesForCell(categoryId, year, month);
 }
 
@@ -180,9 +187,8 @@ export async function editExpenseEntry(
   id: number,
   input: { pounds?: number; note?: string; entryDate?: string }
 ) {
-  if (input.pounds !== undefined && input.pounds <= 0) {
-    throw new Error("Amount must be greater than zero.");
-  }
+  await requireSession();
+  if (input.pounds !== undefined) assertPositivePounds(input.pounds);
   await updateExpenseEntryQuery(id, {
     amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
     note: input.note !== undefined ? input.note || null : undefined,
@@ -193,6 +199,7 @@ export async function editExpenseEntry(
 }
 
 export async function removeExpenseEntry(id: number) {
+  await requireSession();
   await deleteExpenseEntryQuery(id);
   revalidatePath("/grid");
   revalidatePath("/entries");
@@ -218,9 +225,8 @@ export async function logIncome(input: {
   periodMonth?: number;
   debtPersonId?: number;
 }) {
-  if (input.pounds <= 0) {
-    throw new Error("Amount must be greater than zero.");
-  }
+  await requireSession();
+  assertPositivePounds(input.pounds);
   const amountPence = poundsToPence(input.pounds);
   await inTransaction(async () => {
     const source = await getIncomeSource(input.incomeSourceId);
@@ -268,6 +274,8 @@ export async function updateIncomeAmount(input: {
   month: number;
   pounds: number;
 }) {
+  await requireSession();
+  assertNonNegativePounds(input.pounds);
   await upsertIncomeEntry({
     incomeSourceId: input.incomeSourceId,
     year: input.year,
@@ -278,6 +286,7 @@ export async function updateIncomeAmount(input: {
 }
 
 export async function createIncomeSource(name: string) {
+  await requireSession();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Name can't be empty.");
   await addIncomeSourceQuery(trimmed);
@@ -291,6 +300,7 @@ export async function createCategory(input: {
   isAnnual: boolean;
   annualMonth: number | null;
 }) {
+  await requireSession();
   const trimmed = input.name.trim();
   if (!trimmed) throw new Error("Name can't be empty.");
   await addCategoryQuery({ ...input, name: trimmed });
@@ -299,6 +309,7 @@ export async function createCategory(input: {
 }
 
 export async function renameCategory(categoryId: number, name: string) {
+  await requireSession();
   const trimmed = name.trim();
   if (!trimmed) return;
   await renameCategoryQuery(categoryId, trimmed);
@@ -306,12 +317,14 @@ export async function renameCategory(categoryId: number, name: string) {
 }
 
 export async function updateCategoryGroup(categoryId: number, groupName: string) {
+  await requireSession();
   await updateCategoryGroupQuery(categoryId, groupName.trim() || null);
   revalidatePath("/grid");
   revalidatePath("/reports");
 }
 
 export async function updateCategoryDueDay(categoryId: number, dueDay: number | null) {
+  await requireSession();
   if (dueDay !== null && (dueDay < 1 || dueDay > 31)) {
     throw new Error("Due day must be between 1 and 31.");
   }
@@ -321,11 +334,13 @@ export async function updateCategoryDueDay(categoryId: number, dueDay: number | 
 }
 
 export async function updateCategoryDebtLink(categoryId: number, linkedDebtPersonId: number | null) {
+  await requireSession();
   await updateCategoryDebtLinkQuery(categoryId, linkedDebtPersonId);
   revalidatePath("/settings");
 }
 
 export async function archiveCategory(categoryId: number) {
+  await requireSession();
   await archiveCategoryQuery(categoryId);
   revalidatePath("/grid");
   revalidatePath("/reports");
@@ -336,6 +351,7 @@ export async function archiveCategory(categoryId: number) {
  * calendar year - see moveCategoryParent for the year-scoping and leaf-only
  * validation this wraps. */
 export async function moveCategory(categoryId: number, newParentId: number | null) {
+  await requireSession();
   await moveCategoryParentQuery(categoryId, newParentId);
   revalidatePath("/grid");
   revalidatePath("/reports");
@@ -345,18 +361,21 @@ export async function moveCategory(categoryId: number, newParentId: number | nul
 /** Marks one income source as the pay anchor (or clears it, with null) -
  * see setPayAnchorSource for why only one source can hold this at a time. */
 export async function setPayAnchor(incomeSourceId: number | null) {
+  await requireSession();
   await setPayAnchorSource(incomeSourceId);
   revalidatePath("/grid");
   revalidatePath("/settings");
 }
 
 export async function archiveIncomeSource(id: number) {
+  await requireSession();
   await archiveIncomeSourceQuery(id);
   revalidatePath("/grid");
   revalidatePath("/settings");
 }
 
 export async function unarchiveCategory(categoryId: number) {
+  await requireSession();
   await unarchiveCategoryQuery(categoryId);
   revalidatePath("/grid");
   revalidatePath("/reports");
@@ -364,6 +383,7 @@ export async function unarchiveCategory(categoryId: number) {
 }
 
 export async function unarchiveIncomeSource(id: number) {
+  await requireSession();
   await unarchiveIncomeSourceQuery(id);
   revalidatePath("/grid");
   revalidatePath("/settings");

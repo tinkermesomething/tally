@@ -1,5 +1,6 @@
 "use server";
 
+import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import {
   previewRuleMatches,
@@ -17,6 +18,7 @@ export async function previewRule(input: {
   conditions: RuleCondition[];
   direction: "expense" | "income" | "ignore";
 }): Promise<{ ok: true; preview: RulePreview } | { ok: false; error: string }> {
+  await requireSession();
   try {
     return { ok: true, preview: await previewRuleMatches(input.conditions, input.direction) };
   } catch (err) {
@@ -29,6 +31,7 @@ export async function saveRule(input: {
   target: RuleTarget;
   applyToIds: number[];
 }): Promise<{ ok: true; result: CreateRuleAndApplyResult } | { ok: false; error: string }> {
+  await requireSession();
   try {
     const ids = Array.isArray(input.applyToIds) ? input.applyToIds.filter((n) => Number.isInteger(n)) : [];
     const result = await createRuleAndCategorize({ conditions: input.conditions, target: input.target, applyToIds: ids });
