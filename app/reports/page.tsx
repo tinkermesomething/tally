@@ -10,6 +10,8 @@ import { YearSwitcher } from "@/components/grid/year-switcher";
 import { type GroupSlice, type CategoryBreakdown } from "@/components/reports/category-pie-chart";
 import { AddReportPanelButton } from "@/components/reports/report-panel-dialog";
 import { ReportPanelCard, ReportBody } from "@/components/reports/report-panel-card";
+import { TrendReport } from "@/components/reports/trend-report";
+import { buildTrendTree } from "@/lib/trend";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
 
 export default async function ReportsPage({
@@ -145,19 +147,18 @@ export default async function ReportsPage({
 
   const budgeted = aggregate("budgeted");
   const spent = aggregate("spent");
-  const periodLabel = month === "all" ? `${year}, full year` : `${MONTH_NAMES[parseInt(month, 10) - 1] ?? month} ${year}`;
+  const periodLabel = view === "trend" || month === "all" ? `${year}, full year` : `${MONTH_NAMES[parseInt(month, 10) - 1] ?? month} ${year}`;
   const exportedOn = new Date().toISOString().slice(0, 10);
   const budgetedTotal = budgeted.slices.reduce((sum, s) => sum + s.amountPence, 0);
   const spentTotal = spent.slices.reduce((sum, s) => sum + s.amountPence, 0);
 
-  return (
-    <div className="space-y-4">
+  const header = (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
         <div className="flex flex-wrap items-center gap-2 print:hidden">
           <ReportViewToggle view={view} year={year} month={month} />
           <YearSwitcher year={year} years={years} basePath="/reports" extraParams={{ month, view }} />
-          <MonthSelect year={year} month={month} extraParams={{ view }} />
+          {view !== "trend" && <MonthSelect year={year} month={month} extraParams={{ view }} />}
           <ExportPdfButton title={`Tally report - ${VIEW_PREFIX[view]} - ${periodLabel}`} />
         </div>
         {/* On paper the controls are gone; this says what the page shows. */}
@@ -165,6 +166,20 @@ export default async function ReportsPage({
           {VIEW_PREFIX[view]} · {periodLabel} · exported {exportedOn}
         </p>
       </div>
+  );
+
+  if (view === "trend") {
+    return (
+      <div className="space-y-4">
+        {header}
+        <TrendReport tree={buildTrendTree(data.categories, colorByGroup)} year={year} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {header}
 
       <div className="report-panel rounded-2xl border border-border bg-card p-6 shadow-sm">
         <h2 className="font-medium">{VIEW_PREFIX[view]}</h2>

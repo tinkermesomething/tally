@@ -143,13 +143,13 @@ export function MonthlySummaryTable({
               ))}
               <td
                 style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
-                className={cn("row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+                className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
               >
                 {formatPence(row.total, currency)}
               </td>
               <td
                 style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
-                className="row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
+                className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
               >
                 {row.showAverage ? formatPence(Math.round(row.total / 12), currency) : "—"}
               </td>

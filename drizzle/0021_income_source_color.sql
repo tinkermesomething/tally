@@ -1,0 +1,1 @@
+ALTER TABLE `income_sources` ADD `color` text;

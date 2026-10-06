@@ -50,6 +50,8 @@ export type IncomeSourceRow = {
   id: number;
   name: string;
   isPayAnchor: boolean;
+  /** "#rrggbb" chosen in Settings, or null for the automatic palette colour. */
+  color: string | null;
   months: Record<number, MonthCell>;
   yearTotalPence: number;
   monthlyAveragePence: number;
@@ -507,6 +509,7 @@ export async function getGridData(year: number): Promise<GridData> {
       id: source.id,
       name: source.name,
       isPayAnchor: source.isPayAnchor,
+      color: source.color,
       months,
       ...summarize(months),
     };

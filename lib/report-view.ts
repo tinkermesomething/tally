@@ -1,11 +1,12 @@
 /** Reports can show what was budgeted, what was actually spent, or both
  * side by side with the gap between them. */
-export type ReportView = "budgeted" | "spent" | "compare";
+export type ReportView = "budgeted" | "spent" | "compare" | "trend";
 
 export const REPORT_VIEWS: { id: ReportView; label: string }[] = [
   { id: "budgeted", label: "Budgeted" },
   { id: "spent", label: "Spent" },
   { id: "compare", label: "Compare" },
+  { id: "trend", label: "Trend" },
 ];
 
 export function parseReportView(value: string | undefined): ReportView {
@@ -18,6 +19,7 @@ export const VIEW_PREFIX: Record<ReportView, string> = {
   budgeted: "Budgeted",
   spent: "Spent",
   compare: "Budgeted vs spent",
+  trend: "Trend",
 };
 
 export type VarianceRow = {

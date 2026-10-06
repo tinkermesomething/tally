@@ -104,7 +104,7 @@ export function IncomeTable({
               <tr
                 key={source.id}
                 className="tinted-row border-t border-border"
-                style={{ "--row-color": GROUP_PALETTE[index % GROUP_PALETTE.length] } as React.CSSProperties}
+                style={{ "--row-color": source.color ?? GROUP_PALETTE[index % GROUP_PALETTE.length] } as React.CSSProperties}
               >
                 <td className="sticky left-0 z-10 bg-card px-3 py-1.5 font-medium">
                   {source.name}
@@ -130,13 +130,13 @@ export function IncomeTable({
                 })}
                 <td
                   style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
-                  className={cn("row-total sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+                  className={cn("sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
                 >
                   {formatPence(source.yearTotalPence, currency)}
                 </td>
                 <td
                   style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
-                  className="row-total sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
+                  className="sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
                 >
                   {formatPence(source.monthlyAveragePence, currency)}
                 </td>
@@ -154,13 +154,13 @@ export function IncomeTable({
             ))}
             <td
               style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--secondary") }}
-              className={cn("row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+              className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
             >
               {formatPence(yearTotal, currency)}
             </td>
             <td
               style={{ right: 0, backgroundColor: floatingPanelFill("--secondary") }}
-              className="row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
+              className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
             >
               {formatPence(Math.round(yearTotal / 12), currency)}
             </td>

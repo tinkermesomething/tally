@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ColourPicker } from "@/components/savings/colour-picker";
+import { nativePickerActive } from "@/components/swatch-row";
 import { createBucket, editBucket } from "@/app/savings/actions";
 import { runAction } from "@/lib/action-result";
 import { parsePounds } from "@/lib/money-input";
@@ -80,6 +81,7 @@ export function BucketDialog({ trigger, bucket }: { trigger: React.ReactElement;
     <Dialog
       open={open}
       onOpenChange={(next) => {
+        if (!next && nativePickerActive()) return;
         setOpen(next);
         setForm(initial(bucket)); // fresh on every open and close
         setError(null);

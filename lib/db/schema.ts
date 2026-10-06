@@ -99,6 +99,9 @@ export const incomeSources = sqliteTable("income_sources", {
   // layer, not the schema). Logging an entry against this source is what
   // creates a payPeriodAnchors boundary - see that table's comment.
   isPayAnchor: integer("is_pay_anchor", { mode: "boolean" }).notNull().default(false),
+  // "#rrggbb" - the colour of this source's row in the Grid's income table
+  // (set in Settings > Income). Null = a palette colour picked by position.
+  color: text("color"),
 });
 
 export const incomeEntries = sqliteTable(

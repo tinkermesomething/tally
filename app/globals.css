@@ -433,30 +433,44 @@
 }
 
 /*
-  Coloured rows for the Grid's income and summary tables: each row carries its
-  own colour (--row-color) as a left edge bar, the label text, a faint tint and
-  its totals - understated, never a fill. The tint is a background-IMAGE so it
-  sits on top of the cells' own (sticky, opaque) backgrounds. Wrapped in
-  @supports because of the minifier's solid-colour fallback line.
+  Income and summary rows: understated, like every other list. The row keeps the
+  neutral text; what identifies it is a small coloured dot before the label (the
+  same device as the pie legend and group tags), a soft edge bar and a barely-
+  there tint, both in the app's ACCENT colour. The label stays the normal text
+  colour; the figures take the row's colour (a negative one stays red).
+  Wrapped in @supports because of the minifier's solid-colour fallback line.
 */
 @supports (color: color-mix(in srgb, red 50%, blue)) {
   tr.tinted-row > td {
     background-image: linear-gradient(
-      color-mix(in srgb, var(--row-color) 5%, transparent),
-      color-mix(in srgb, var(--row-color) 5%, transparent)
+      color-mix(in srgb, var(--primary) 3%, transparent),
+      color-mix(in srgb, var(--primary) 3%, transparent)
     );
   }
   tr.tinted-row:hover > td {
     background-image: linear-gradient(
-      color-mix(in srgb, var(--row-color) 11%, transparent),
-      color-mix(in srgb, var(--row-color) 11%, transparent)
+      color-mix(in srgb, var(--primary) 7%, transparent),
+      color-mix(in srgb, var(--primary) 7%, transparent)
     );
   }
   tr.tinted-row > td:first-child {
-    box-shadow: inset 3px 0 0 var(--row-color);
-    color: color-mix(in srgb, var(--row-color) 78%, var(--foreground));
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--primary) 38%, transparent);
   }
-  tr.tinted-row > td.row-total {
-    color: color-mix(in srgb, var(--row-color) 80%, var(--foreground));
+  /* The VALUES take the row's colour (matching the dot); the label (first cell)
+     stays the normal text colour for contrast. A negative figure keeps its red -
+     that is a warning, not decoration. Inputs are covered too (income cells). */
+  tr.tinted-row > td:not(:first-child):not(.text-status-critical),
+  tr.tinted-row > td:not(:first-child) input {
+    color: color-mix(in srgb, var(--row-color) 82%, var(--foreground));
+  }
+  tr.tinted-row > td:first-child::before {
+    content: "";
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-right: 0.5rem;
+    border-radius: 9999px;
+    vertical-align: 0.05em;
+    background: color-mix(in srgb, var(--row-color) 80%, var(--background));
   }
 }

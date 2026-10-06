@@ -1,10 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-/** Full-width mode for the Grid page. The choice is kept in a cookie (not
+/** Full-width mode for the Grid page and the Reports trend. The choice is kept in a cookie (not
  * localStorage) so the server renders the right width on the first paint -
  * no jump from narrow to wide after load. */
 export const WIDE_COOKIE = "tally-grid-wide";
@@ -17,6 +17,7 @@ const PageWidthContext = createContext<{ wide: boolean; setWide: (next: boolean)
 export function PageContainer({ initialWide, children }: { initialWide: boolean; children: React.ReactNode }) {
   const [wide, setWideState] = useState(initialWide);
   const pathname = usePathname();
+  const view = useSearchParams().get("view");
 
   const setWide = useCallback((next: boolean) => {
     setWideState(next);
@@ -27,8 +28,9 @@ export function PageContainer({ initialWide, children }: { initialWide: boolean;
     }
   }, []);
 
-  // Only the Grid has a full-width mode; every other page keeps the readable width.
-  const expanded = wide && pathname.startsWith("/grid");
+  // Only the Grid and the Reports trend have a full-width mode; every other
+  // page keeps the readable width.
+  const expanded = wide && (pathname.startsWith("/grid") || (pathname.startsWith("/reports") && view === "trend"));
   return (
     <PageWidthContext.Provider value={{ wide, setWide }}>
       <main className={cn("mx-auto px-4 py-6", expanded ? "max-w-none" : "max-w-6xl")}>{children}</main>

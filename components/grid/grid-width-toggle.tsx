@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { usePageWidth } from "@/components/page-width";
 
 /** Desktop only - the phone layout is a card list, not a wide grid. */
-export function GridWidthToggle() {
+export function GridWidthToggle({ target = "grid" }: { target?: string }) {
   const { wide, setWide } = usePageWidth();
   return (
     <Button
@@ -14,7 +14,7 @@ export function GridWidthToggle() {
       variant={wide ? "secondary" : "outline"}
       className="hidden md:inline-flex"
       aria-pressed={wide}
-      title={wide ? "Back to the standard width" : "Stretch the grid to the full page width"}
+      title={wide ? "Back to the standard width" : `Stretch the ${target} to the full page width`}
       onClick={() => setWide(!wide)}
     >
       {wide ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}

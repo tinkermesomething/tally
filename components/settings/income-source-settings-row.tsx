@@ -1,24 +1,80 @@
 "use client";
 
-import { useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Anchor, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { archiveIncomeSource, setPayAnchor } from "@/app/grid/actions";
+import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner } from "@/components/ui/popover";
+import { SwatchRow, nativePickerActive } from "@/components/swatch-row";
+import { archiveIncomeSource, setIncomeColor, setPayAnchor } from "@/app/grid/actions";
+import { runAction } from "@/lib/action-result";
+import { cn } from "@/lib/utils";
 
 export function IncomeSourceSettingsRow({
   id,
   name,
   isPayAnchor,
+  color = null,
+  fallbackColor = "var(--chart-1)",
 }: {
   id: number;
   name: string;
   isPayAnchor: boolean;
+  /** The colour chosen for this source's Grid row ("#rrggbb"), or null for automatic. */
+  color?: string | null;
+  /** The automatic colour shown when none is chosen (what the Grid uses). */
+  fallbackColor?: string;
 }) {
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+
+  function save(next: string | null) {
+    setError(null);
+    startTransition(async () => {
+      setError(await runAction(() => setIncomeColor(id, next)));
+    });
+  }
 
   return (
     <div className="flex items-center justify-between gap-2 row-card rounded-lg bg-card px-3 py-2">
-      <span className="font-medium">{name}</span>
+      <span className="flex min-w-0 items-center gap-2 font-medium">
+        <button
+          ref={anchorRef}
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={`Colour of ${name} in the grid`}
+          title="Choose this source's row colour in the Grid"
+          data-testid="income-colour-dot"
+          className="size-4 shrink-0 rounded-full border border-border transition-transform hover:scale-110"
+          style={{ backgroundColor: color ?? fallbackColor }}
+        />
+        <Popover open={open} onOpenChange={(next) => { if (!next && nativePickerActive()) return; setOpen(next); }}>
+          <PopoverPortal>
+            <PopoverPositioner anchor={anchorRef} align="start" sideOffset={6}>
+              <PopoverPopup className="max-w-[calc(100vw-1rem)]">
+                <div className="min-w-0 space-y-2.5" data-testid="income-colour-panel">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Row colour in the Grid</span>
+                    <button
+                      type="button"
+                      aria-pressed={color === null}
+                      onClick={() => save(null)}
+                      className={cn("rounded-md border px-2 py-0.5 text-xs", color === null ? "border-foreground text-foreground" : "border-border text-muted-foreground hover:text-foreground")}
+                    >
+                      Auto
+                    </button>
+                  </div>
+                  <SwatchRow value={color ?? ""} onChange={(c) => save(c)} label="Income colour" />
+                  <p className="text-xs text-muted-foreground">Auto uses the next colour in the palette.</p>
+                  {error && <p className="text-xs text-status-critical">{error}</p>}
+                </div>
+              </PopoverPopup>
+            </PopoverPositioner>
+          </PopoverPortal>
+        </Popover>
+        {name}
+      </span>
       <div className="flex items-center gap-1.5">
         <button
           type="button"

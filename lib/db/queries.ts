@@ -471,7 +471,7 @@ export async function getArchivedCategories() {
 
 /** Lightweight active income source list (no months/amounts) for Settings. */
 export async function getIncomeSourceList(): Promise<
-  { id: number; name: string; isPayAnchor: boolean }[]
+  { id: number; name: string; isPayAnchor: boolean; color: string | null }[]
 > {
   return db.query.incomeSources.findMany({
     where: (s, { isNull }) => isNull(s.archivedAt),
@@ -531,4 +531,15 @@ export async function updateReportPanel(
 
 export async function deleteReportPanel(id: number) {
   await db.delete(reportPanels).where(eq(reportPanels.id, id));
+}
+
+
+/** Sets (or, with null, clears back to the automatic palette colour) the colour
+ * of an income source's row in the Grid. Only a plain "#rrggbb" is accepted:
+ * the value ends up in CSS, so nothing else may get through. */
+export async function setIncomeSourceColor(id: number, color: string | null) {
+  const value = color === null || color === "" ? null : color.trim();
+  if (value !== null && !/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error("Colour must look like #1a2b3c.");
+  const updated = await db.update(incomeSources).set({ color: value }).where(eq(incomeSources.id, id)).returning({ id: incomeSources.id });
+  if (updated.length === 0) throw new Error("That income source no longer exists.");
 }

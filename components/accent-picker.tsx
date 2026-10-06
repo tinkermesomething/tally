@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { Check, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner } from "@/components/ui/popover";
-import { SwatchRow } from "@/components/swatch-row";
+import { SwatchRow, nativePickerActive } from "@/components/swatch-row";
 import { ACCENTS, parseAccent } from "@/lib/accent";
 import { SpecialPicker } from "@/components/special-picker";
 import { useAccent } from "@/components/providers/accent-provider";
@@ -34,7 +34,7 @@ export function AccentPicker() {
       <Button ref={anchorRef} variant="ghost" size="icon" aria-label="Choose accent color" onClick={() => setOpen((v) => !v)}>
         <Palette className="size-4" />
       </Button>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(next) => { if (!next && nativePickerActive()) return; setOpen(next); }}>
         <PopoverPortal>
           <PopoverPositioner anchor={anchorRef} align="end" sideOffset={6}>
             {/* The popup is w-72 with p-3 padding, so its usable width is smaller

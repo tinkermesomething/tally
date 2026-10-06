@@ -11,7 +11,7 @@ import { getAppSettings } from "@/lib/db/settings";
 import { getBankAccounts, getCategoryRules, getRecentTransactions } from "@/lib/db/bank-sync";
 import { ruleConditionsOf } from "@/lib/rules";
 import { accountLabels } from "@/lib/accounts";
-import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
+import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
@@ -173,12 +173,14 @@ export default async function SettingsPage({
           </div>
 
           <div className="space-y-2">
-            {incomeSources.map((source) => (
+            {incomeSources.map((source, index) => (
               <IncomeSourceSettingsRow
                 key={source.id}
                 id={source.id}
                 name={source.name}
                 isPayAnchor={source.isPayAnchor}
+                color={source.color}
+                fallbackColor={GROUP_PALETTE[index % GROUP_PALETTE.length]}
               />
             ))}
           </div>

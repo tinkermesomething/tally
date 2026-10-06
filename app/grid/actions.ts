@@ -31,6 +31,7 @@ import {
 } from "@/lib/db/queries";
 import { addDebtEntry } from "@/lib/db/debt";
 import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
+import { setIncomeSourceColor } from "@/lib/db/queries";
 import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { parseIsoDate } from "@/lib/date";
@@ -429,4 +430,15 @@ export async function unarchiveIncomeSource(id: number) {
   await unarchiveIncomeSourceQuery(id);
   revalidatePath("/grid");
   revalidatePath("/settings");
+}
+
+
+/** The colour of an income source's row in the Grid (null = automatic). */
+export async function setIncomeColor(incomeSourceId: number, color: string | null): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    await setIncomeSourceColor(incomeSourceId, color);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+  });
 }
