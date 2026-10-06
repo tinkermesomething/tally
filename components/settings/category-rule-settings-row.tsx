@@ -4,6 +4,16 @@ import { useTransition } from "react";
 import { Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { removeCategoryRule } from "@/app/settings/bank-sync-actions";
+import { FIELD_COLOR } from "@/lib/field-colors";
+import { cn } from "@/lib/utils";
+
+// What a rule does decides the colour of its target, so a glance down the
+// list shows which rules ignore, which file expenses and which file income.
+const TARGET_STYLE = {
+  expense: "bg-chart-3/15 text-chart-3",
+  income: "bg-chart-6/15 text-chart-6",
+  ignore: "bg-chart-5/15 text-chart-5",
+} as const;
 
 const OPERATOR_LABEL: Record<string, string> = {
   contains: "contains",
@@ -25,8 +35,11 @@ export function CategoryRuleSettingsRow({
   targetName,
   debtPersonName,
   debtKind = "repayment",
+  targetKind = "expense",
   editor,
 }: {
+  /** Which kind of target this is, for its colour. */
+  targetKind?: keyof typeof TARGET_STYLE;
   /** The edit button (a dialog), rendered beside Remove. */
   editor?: React.ReactNode;
   id: number;
@@ -47,11 +60,11 @@ export function CategoryRuleSettingsRow({
         {conditions.map((c, i) => (
           <span key={i}>
             {i > 0 && <span className="text-muted-foreground"> and </span>}
-            <span className="font-medium">{c.field}</span> {OPERATOR_LABEL[c.operator]}{" "}
-            <span className="font-medium">&ldquo;{c.value}&rdquo;</span>
+            <span className={cn("font-semibold", FIELD_COLOR[c.field])}>{c.field}</span> {OPERATOR_LABEL[c.operator]}{" "}
+            <span className="rounded bg-primary/10 px-1 font-medium">&ldquo;{c.value}&rdquo;</span>
           </span>
         ))}{" "}
-        → <span className="font-medium">{targetName}</span>
+        → <span className={cn("rounded px-1.5 py-0.5 font-medium", TARGET_STYLE[targetKind])}>{targetName}</span>
         {debtPersonName && (
           <span className="text-muted-foreground">
             {" "}
@@ -68,7 +81,7 @@ export function CategoryRuleSettingsRow({
           title="Remove rule"
           onClick={() => startTransition(() => removeCategoryRule(id))}
         >
-          <Archive className="size-3.5" />
+          <Archive className="size-3.5 text-chart-2" />
         </Button>
       </div>
     </div>

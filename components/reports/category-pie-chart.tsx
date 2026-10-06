@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatPence } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 const PIE_INNER_RADIUS = 64;
@@ -34,7 +35,16 @@ export type GroupSlice = {
   categories: CategoryBreakdown[];
 };
 
-export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
+export function CategoryPieChart({
+  slices,
+  compact = false,
+  emptyLabel = "Nothing allocated for this period yet.",
+}: {
+  slices: GroupSlice[];
+  /** Pie above its legend (one column) - for the narrow side-by-side view. */
+  compact?: boolean;
+  emptyLabel?: string;
+}) {
   const { currency } = useAppSettings();
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const total = slices.reduce((sum, s) => sum + s.amountPence, 0);
@@ -52,13 +62,13 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
   if (total === 0) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
-        Nothing allocated for this period yet.
+        {emptyLabel}
       </div>
     );
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 md:items-center">
+    <div className={cn("min-w-0 gap-6", compact ? "flex flex-col" : "grid md:grid-cols-2 md:items-center")}>
       {/* A fixed height instead of aspect-square: Safari's ResizeObserver
           doesn't reliably report a height that comes purely from CSS
           aspect-ratio on first paint, so recharts' ResponsiveContainer would
@@ -66,7 +76,15 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
           (Chrome/Firefox happened to be fine). The pie's own radius is
           already a fixed pixel value below, so squareness here was only
           ever about whitespace, not the chart's actual size. */}
-      <ChartContainer config={config} className="mx-auto h-80 w-full">
+      {/* The chart is absolutely positioned inside a box sized only by CSS.
+          recharts measures its parent and then sets a pixel width; in Safari
+          that measurement can land a few dozen pixels wider than the column
+          (Firefox settles correctly), and a pixel-sized child makes the column
+          itself wider - which is what pushed one Compare half over the other.
+          Taken out of the flow, the chart can no longer influence its column
+          in any browser, and overflow-hidden clips any stray pixels. */}
+      <div className="relative h-80 w-full min-w-0 overflow-hidden" data-testid="pie-box">
+      <ChartContainer config={config} className="absolute inset-0 h-full w-full aspect-auto!">
         <PieChart>
           <ChartTooltip
             content={
@@ -96,8 +114,9 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
           </Pie>
         </PieChart>
       </ChartContainer>
+      </div>
 
-      <ul className="space-y-1">
+      <ul className="min-w-0 space-y-1" data-testid="pie-legend">
         {slices.map((s) => {
           const pct = total > 0 ? (s.amountPence / total) * 100 : 0;
           return (
@@ -105,7 +124,7 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
               <button
                 type="button"
                 onClick={() => setOpenGroup(s.group)}
-                className="flex w-full items-center gap-2.5 rounded-md px-1 py-1 text-sm transition-colors hover:bg-accent"
+                className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-sm transition-colors hover:bg-accent"
               >
                 <span
                   className="size-2.5 shrink-0 rounded-full"
@@ -116,7 +135,7 @@ export function CategoryPieChart({ slices }: { slices: GroupSlice[] }) {
                 <span className="shrink-0 tabular-nums text-muted-foreground">
                   {pct.toFixed(0)}%
                 </span>
-                <span className="w-24 shrink-0 text-right tabular-nums font-medium">
+                <span className="w-20 shrink-0 text-right tabular-nums font-medium">
                   {formatPence(s.amountPence, currency)}
                 </span>
               </button>

@@ -20,9 +20,9 @@ export function ArchivedList({
   }
 
   return (
-    <ul className="divide-y divide-border">
+    <ul className="space-y-1.5">
       {items.map((item) => (
-        <li key={item.id} className="flex items-center justify-between gap-3 py-2">
+        <li key={item.id} className="row-card flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-1.5">
           <span className="text-sm text-muted-foreground">{item.name}</span>
           <Button
             size="sm"
@@ -30,7 +30,7 @@ export function ArchivedList({
             disabled={pending}
             onClick={() => startTransition(() => restoreAction(item.id))}
           >
-            <RotateCcw className="size-3.5" />
+            <RotateCcw className="size-3.5 text-chart-3" />
             Restore
           </Button>
         </li>

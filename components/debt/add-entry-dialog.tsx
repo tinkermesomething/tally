@@ -100,7 +100,7 @@ export function AddEntryDialog({
       <DialogTrigger
         render={
           <Button size="sm">
-            <Plus className="size-4" />
+            <Plus className="size-4 text-chart-6" />
             Add entry
           </Button>
         }

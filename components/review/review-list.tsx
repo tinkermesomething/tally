@@ -20,6 +20,7 @@ import { DebtTagControl } from "@/components/review/debt-tag-control";
 import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
 import { findLoansSourceId } from "@/lib/loans";
 import { amountText, fuzzyScore } from "@/lib/fuzzy";
+import { FIELD_COLOR } from "@/lib/field-colors";
 import {
   bulkIgnoreImportedTransactions,
   bulkCategorizeImportedTransactionsAsExpense,
@@ -231,7 +232,7 @@ export function ReviewList({
       return;
     }
     if (bulkTagDebt && bulkPerson.personId === NEW_PERSON && !bulkPerson.newPersonName.trim()) {
-      setBulkError("Enter the new person's name.");
+      setBulkError("Enter the new lender's name.");
       return;
     }
     setBulkError(null);
@@ -402,11 +403,11 @@ export function ReviewList({
                 aria-label="Select all"
               />
             </TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead>Payee</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead>Category / Source</TableHead>
-            <TableHead>Debt</TableHead>
+            <TableHead className={FIELD_COLOR.date}>Date</TableHead>
+            <TableHead className={FIELD_COLOR.payee}>Payee</TableHead>
+            <TableHead className={`text-right ${FIELD_COLOR.amount}`}>Amount</TableHead>
+            <TableHead className={FIELD_COLOR.category}>Category / Source</TableHead>
+            <TableHead className={FIELD_COLOR.debt}>Debt</TableHead>
             <TableHead></TableHead>
           </TableRow>
         </TableHeader>

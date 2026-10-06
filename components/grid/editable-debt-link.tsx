@@ -48,7 +48,7 @@ export function EditableDebtLink({
         <SelectValue>
           {(value: string) =>
             value === NONE ? (
-              "+ link to debt person"
+              "+ link to a lender"
             ) : (
               <span className="inline-flex items-center gap-1">
                 <UserRound className="size-3" />
@@ -59,7 +59,7 @@ export function EditableDebtLink({
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NONE}>Not linked to a debt person</SelectItem>
+        <SelectItem value={NONE}>Not linked to a lender</SelectItem>
         {people.map((p) => (
           <SelectItem key={p.id} value={String(p.id)}>
             {p.name}

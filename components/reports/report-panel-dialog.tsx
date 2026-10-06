@@ -111,6 +111,10 @@ export function ReportPanelDialog({
         setError(failure);
         return;
       }
+      // setOpen(false) doesn't go through onOpenChange, so the form has to be
+      // cleared here - otherwise "Add report panel" reopened with the last
+      // panel's name and picks still ticked.
+      reset();
       setOpen(false);
     });
   }
@@ -120,7 +124,9 @@ export function ReportPanelDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) reset();
+        // Reset on every open and close: a cancelled edit never leaves
+        // stale input behind, and an edit always starts from the saved panel.
+        reset();
       }}
     >
       <DialogTrigger render={trigger} />
@@ -203,7 +209,7 @@ export function AddReportPanelButton({
       categories={categories}
       trigger={
         <Button size="sm" variant="outline">
-          <Plus className="size-4" />
+          <Plus className="size-4 text-chart-6" />
           Add report panel
         </Button>
       }

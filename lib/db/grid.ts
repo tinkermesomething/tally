@@ -38,6 +38,11 @@ export type GridCategory = {
   months: Record<number, MonthCell>;
   yearTotalPence: number;
   monthlyAveragePence: number;
+  /** What was actually spent per month (index 0 = January), by the same
+   * rule as the grid's "Actually spent" row (confirmedSpentPence) - so
+   * Reports and the Grid can never disagree. The budgeted counterpart is
+   * `months[m].amountPence` / `yearTotalPence`. */
+  actualByMonth: number[];
   children: GridCategory[];
 };
 
@@ -327,6 +332,10 @@ export async function getGridData(year: number): Promise<GridData> {
         dueDay: child.dueDay,
         months: childMonths,
         children: [],
+        actualByMonth: Array.from({ length: 12 }, (_, i) => {
+          const cell = childMonths[i + 1];
+          return cell ? confirmedSpentPence(cell) : 0;
+        }),
         ...summarize(childMonths),
       };
     });
@@ -449,19 +458,23 @@ export async function getGridData(year: number): Promise<GridData> {
     // has one specific child broken out separately). Using the cell as-is
     // for the direct case, rather than always summing children, is what a
     // naive "has children -> sum children" rule gets wrong.
+    const actualByMonth: number[] = Array(12).fill(0);
     for (let month = 1; month <= 12; month++) {
       const cell = months[month];
       if (!cell) continue;
+      let spent = 0;
       if (cell.computed) {
         for (const child of children) {
           const childCell = child.months[month];
           if (!childCell) continue;
-          actuallySpentByMonth[month - 1] += confirmedSpentPence(childCell);
+          spent += confirmedSpentPence(childCell);
         }
-        actuallySpentByMonth[month - 1] += ownLoggedSpentPence(month);
+        spent += ownLoggedSpentPence(month);
       } else {
-        actuallySpentByMonth[month - 1] += confirmedSpentPence(cell);
+        spent = confirmedSpentPence(cell);
       }
+      actualByMonth[month - 1] = spent;
+      actuallySpentByMonth[month - 1] += spent;
     }
 
     return {
@@ -473,6 +486,7 @@ export async function getGridData(year: number): Promise<GridData> {
       dueDay: category.dueDay,
       months,
       children,
+      actualByMonth,
       ...summarize(months),
     };
   });

@@ -34,7 +34,7 @@ export default async function DebtPage() {
       {people.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
           <Users className="size-6" />
-          <p>No one tracked yet. Add a person to start a ledger.</p>
+          <p>No lenders tracked yet. Add one to start a ledger.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -42,7 +42,7 @@ export default async function DebtPage() {
             <Link
               key={person.id}
               href={`/debt/${person.id}`}
-              className="flex flex-col gap-2 rounded-2xl border border-border bg-card px-4 py-3.5 shadow-sm transition-colors hover:border-primary/40"
+              className="flex flex-col gap-2 row-card rounded-2xl bg-card px-4 py-3.5 shadow-sm"
             >
               <span className="font-medium">{person.name}</span>
               {person.balancePence === 0 ? (

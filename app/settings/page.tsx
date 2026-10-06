@@ -5,8 +5,10 @@ import {
   getArchivedIncomeSources,
 } from "@/lib/db/queries";
 import { getPeopleWithBalances, getArchivedPeople } from "@/lib/db/debt";
+import { getBuckets } from "@/lib/db/savings";
+import { bucketColor } from "@/lib/savings-math";
 import { getAppSettings } from "@/lib/db/settings";
-import { getBankAccounts, getCategoryRules } from "@/lib/db/bank-sync";
+import { getBankAccounts, getCategoryRules, getRecentTransactions } from "@/lib/db/bank-sync";
 import { ruleConditionsOf } from "@/lib/rules";
 import { accountLabels } from "@/lib/accounts";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
@@ -35,7 +37,9 @@ export const dynamic = "force-dynamic";
 
 // Tab order as shown. `?tab=` can open any of them directly (the bank
 // connection callback uses ?tab=bank-sync).
-const SETTINGS_TABS = ["categories", "income", "people", "rules", "bank-sync", "preferences"];
+const SETTINGS_TABS = ["categories", "income", "lenders", "rules", "bank-sync", "preferences"];
+// The tab used to be called "people" - old links and bookmarks still open it.
+const TAB_ALIASES: Record<string, string> = { people: "lenders" };
 
 // Amounts are stored as pence; forms and the list show pounds.
 const displayConditions = (r: Parameters<typeof ruleConditionsOf>[0]) =>
@@ -61,6 +65,7 @@ export default async function SettingsPage({
     appSettings,
     bankAccounts,
     categoryRules,
+    savingsBuckets,
   ] = await Promise.all([
     getCategoryTree(),
     getIncomeSourceList(),
@@ -71,7 +76,11 @@ export default async function SettingsPage({
     getAppSettings(),
     getBankAccounts(),
     getCategoryRules(),
+    getBuckets(),
   ]);
+  const recentByAccount = await getRecentTransactions(bankAccounts.map((a) => a.id), 5);
+  const buckets = savingsBuckets.map((b) => ({ id: b.id, name: b.name, color: bucketColor(b) }));
+  const bucketNameById = new Map(buckets.map((b) => [b.id, b.name]));
 
   const groupColors = buildGroupColorMap(categoryTree);
   const existingGroups = Array.from(
@@ -92,11 +101,11 @@ export default async function SettingsPage({
     <div className="space-y-4">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
-      <Tabs defaultValue={tab && SETTINGS_TABS.includes(tab) ? tab : "categories"}>
+      <Tabs defaultValue={SETTINGS_TABS.includes(TAB_ALIASES[tab ?? ""] ?? tab ?? "") ? (TAB_ALIASES[tab ?? ""] ?? tab!) : "categories"}>
         <TabsList>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="income">Income</TabsTrigger>
-          <TabsTrigger value="people">People</TabsTrigger>
+          <TabsTrigger value="lenders">Lenders</TabsTrigger>
           <TabsTrigger value="rules">Rules</TabsTrigger>
           <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
@@ -116,22 +125,27 @@ export default async function SettingsPage({
           <FilterableList
             label="categories"
             placeholder="Search categories, subcategories or groups"
-            items={categoryTree.map((category) => ({
+            items={categoryTree.map((category, index) => ({
               key: category.id,
               // A parent row shows its subcategories, so it matches on them too.
               texts: [
                 category.name,
                 category.groupName,
                 category.linkedDebtPersonId ? personNameById.get(category.linkedDebtPersonId) : null,
+                category.linkedBucketId ? bucketNameById.get(category.linkedBucketId) : null,
                 ...category.children.flatMap((child) => [
                   child.name,
                   child.linkedDebtPersonId ? personNameById.get(child.linkedDebtPersonId) : null,
+                  child.linkedBucketId ? bucketNameById.get(child.linkedBucketId) : null,
                 ]),
               ],
               node: (
                 <CategorySettingsRow
                   category={category}
                   color={groupColors.get(category.groupName ?? UNGROUPED)!}
+                  buckets={buckets}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < categoryTree.length - 1}
                   existingGroups={existingGroups}
                   topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
                   people={people.map((p) => ({ id: p.id, name: p.name }))}
@@ -181,10 +195,10 @@ export default async function SettingsPage({
           )}
         </TabsContent>
 
-        <TabsContent value="people" className="space-y-4 pt-4">
+        <TabsContent value="lenders" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Add or archive people tracked in the debt ledger.
+              Add or archive lenders (people or companies) tracked in the debt ledger.
             </p>
             <AddPersonDialog />
           </div>
@@ -201,7 +215,7 @@ export default async function SettingsPage({
               <ArchivedList
                 items={archivedPeople}
                 restoreAction={restorePerson}
-                emptyLabel="No archived people."
+                emptyLabel="No archived lenders."
               />
             </div>
           )}
@@ -266,6 +280,7 @@ export default async function SettingsPage({
                         targetName={targetName}
                         debtPersonName={debtPersonName}
                         debtKind={r.targetType === "income" ? "loan" : "repayment"}
+                    targetKind={r.targetType}
                       />
                     ),
                   };
@@ -307,6 +322,8 @@ export default async function SettingsPage({
                     key={a.id}
                     id={a.id}
                     displayName={a.displayName}
+                    alias={a.alias}
+                    recent={recentByAccount.get(a.id) ?? []}
                     provider={a.provider}
                     consentExpiresAt={a.consentExpiresAt.toString()}
                     lastSyncedAt={a.lastSyncedAt ? a.lastSyncedAt.toString() : null}

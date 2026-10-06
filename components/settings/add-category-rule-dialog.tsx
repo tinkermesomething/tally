@@ -102,7 +102,7 @@ export function AddCategoryRuleDialog({
       return;
     }
     if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
-      setError("Enter the new person's name.");
+      setError("Enter the new lender's name.");
       return;
     }
     setError(null);
@@ -149,11 +149,11 @@ export function AddCategoryRuleDialog({
         render={
           rule ? (
             <Button size="icon-xs" variant="ghost" title="Edit rule" aria-label="Edit rule">
-              <Pencil className="size-3.5" />
+              <Pencil className="size-3.5 text-chart-1" />
             </Button>
           ) : (
             <Button size="sm" variant="outline">
-              <Plus className="size-4" />
+              <Plus className="size-4 text-chart-6" />
               Add rule
             </Button>
           )

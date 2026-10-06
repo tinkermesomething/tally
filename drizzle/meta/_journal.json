@@ -127,6 +127,27 @@
       "when": 1791027288074,
       "tag": "0017_imported_transaction_note",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791303077733,
+      "tag": "0018_savings_buckets",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791304137735,
+      "tag": "0019_csv_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791304978324,
+      "tag": "0020_bank_account_alias",
+      "breakpoints": true
     }
   ]
 }

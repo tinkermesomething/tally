@@ -210,3 +210,253 @@
     @apply font-sans;
   }
 }
+/*
+  Subtle accent-coloured rows. Every list of rows (Entries, Review, Settings,
+  Debt ...) uses these, so the contour follows the chosen accent colour and
+  rows are easy to tell apart without shouting. A tint is applied as a
+  background-IMAGE so it sits on top of whatever background the row already
+  has (card, selected, sticky) instead of replacing it. Wrapped in @supports
+  because the minifier adds a plain-colour fallback line, which an old browser
+  without color-mix would otherwise apply as a SOLID accent fill.
+*/
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  .row-card {
+    border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--primary) 4%, transparent),
+      color-mix(in srgb, var(--primary) 4%, transparent)
+    );
+    transition: border-color 0.15s;
+  }
+  .row-card:hover {
+    border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--primary) 8%, transparent),
+      color-mix(in srgb, var(--primary) 8%, transparent)
+    );
+  }
+  tbody > tr.row-line {
+    border-bottom: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+  }
+  tbody > tr.row-line:nth-child(even) {
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--primary) 3.5%, transparent),
+      color-mix(in srgb, var(--primary) 3.5%, transparent)
+    );
+  }
+  tbody > tr.row-line:hover {
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--primary) 8%, transparent),
+      color-mix(in srgb, var(--primary) 8%, transparent)
+    );
+  }
+  tbody > tr.row-line > :first-child {
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+  }
+}
+
+/* The animated "RGB lighting" option for a savings bucket: the gradient
+   slides sideways forever (it loops because its first and last colours
+   match). Switched off for anyone who asks their system for less motion. */
+@keyframes bucket-rgb-shift {
+  to {
+    background-position: 200% 0;
+  }
+}
+.bucket-rgb {
+  background-size: 200% 100%;
+  animation: bucket-rgb-shift 6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bucket-rgb {
+    animation: none;
+  }
+}
+
+/*
+  Understated accents. Accent-coloured controls are NOT filled: they get an accent
+  border, accent text/icons and a barely-there tint (deeper on hover). The text
+  colour is pulled toward the normal text colour so any accent - even a pale
+  yellow - stays readable in light and dark. Two-colour, RGB and flag accents put
+  their gradient on the BORDER only (a masked ring, so the inside stays see-through
+  and rounded corners are kept); RGB slides it. Wrapped in @supports because the
+  minifier adds a plain-colour fallback line that an old browser without
+  color-mix would otherwise apply as a SOLID accent fill.
+*/
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  .accent-outline {
+    position: relative;
+    border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 6%, transparent);
+    color: color-mix(in srgb, var(--primary) 72%, var(--foreground));
+  }
+  .accent-outline:hover {
+    border-color: color-mix(in srgb, var(--primary) 80%, transparent);
+    background-color: color-mix(in srgb, var(--primary) 14%, transparent);
+  }
+  :root[data-accent-gradient] .accent-outline {
+    border-color: transparent;
+  }
+  :root[data-accent-gradient] .accent-outline::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--accent-gradient);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  :root[data-accent-anim] .accent-outline::before {
+    background-size: 200% 100%;
+    animation: bucket-rgb-shift 6s linear infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-accent-anim] .accent-outline::before {
+    animation: none;
+  }
+}
+
+/*
+  Reports > Compare layout, in plain CSS rather than generated utility classes:
+  these grids are what keeps the figures on ONE line each and the two pies side
+  by side, so they must not depend on class ordering or scanning.
+  - .compare-columns: stacked on a phone, two equal columns from 768px. Every
+    column is minmax(0,1fr) so neither can grow wider than its half.
+  - .variance-row: one line per group = name | budgeted | spent | bar | difference.
+    On a phone the two amount columns are hidden and the row is name + difference
+    with the bar underneath.
+*/
+.compare-columns {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 768px) {
+  .compare-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+.variance-row {
+  display: grid;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.25rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+@media (min-width: 768px) {
+  .variance-row {
+    grid-template-columns: minmax(6rem, 11rem) 5.75rem 5.75rem minmax(4rem, 1fr) 9rem;
+  }
+}
+
+/* Press-and-hold drag to reorder: the held row lifts as a floating copy (shadow +
+   a soft accent outline) while the original rows slide to open a gap and the
+   original becomes a dimmed placeholder. Only transform/opacity move. */
+.reorder-ghost {
+  position: fixed;
+  z-index: 60;
+  overflow: hidden;
+  border-radius: 10px;
+  pointer-events: none;
+  background: var(--card);
+  transform: scale(1.012);
+  box-shadow: 0 12px 28px rgb(0 0 0 / 38%), 0 2px 6px rgb(0 0 0 / 25%);
+  cursor: grabbing;
+}
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  .reorder-ghost {
+    box-shadow:
+      0 12px 28px rgb(0 0 0 / 38%),
+      0 2px 6px rgb(0 0 0 / 25%),
+      0 0 0 1px color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  [data-reorder-placeholder] > td {
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--primary) 16%, transparent),
+      color-mix(in srgb, var(--primary) 16%, transparent)
+    );
+  }
+}
+
+/*
+  Printing / Save as PDF (Reports > Export PDF). Landscape A4 so the Compare
+  view keeps its two columns and figure columns; the screen-only controls are
+  hidden with Tailwind's print:hidden; a light palette is forced (a dark page
+  would print as a black slab and waste ink); each report panel stays on one
+  page; backgrounds and the chart colours are kept.
+*/
+@page {
+  size: A4 landscape;
+  margin: 12mm;
+}
+@media print {
+  :root,
+  :root.dark,
+  .dark {
+    color-scheme: light;
+    --background: #ffffff !important;
+    --foreground: #111111 !important;
+    --card: #ffffff !important;
+    --card-foreground: #111111 !important;
+    --popover: #ffffff !important;
+    --popover-foreground: #111111 !important;
+    --muted: #f4f4f5 !important;
+    --muted-foreground: #555555 !important;
+    --accent: #f4f4f5 !important;
+    --border: #d4d4d8 !important;
+    --input: #d4d4d8 !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .report-panel {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    margin-bottom: 8mm;
+  }
+}
+
+/*
+  Coloured rows for the Grid's income and summary tables: each row carries its
+  own colour (--row-color) as a left edge bar, the label text, a faint tint and
+  its totals - understated, never a fill. The tint is a background-IMAGE so it
+  sits on top of the cells' own (sticky, opaque) backgrounds. Wrapped in
+  @supports because of the minifier's solid-colour fallback line.
+*/
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  tr.tinted-row > td {
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--row-color) 5%, transparent),
+      color-mix(in srgb, var(--row-color) 5%, transparent)
+    );
+  }
+  tr.tinted-row:hover > td {
+    background-image: linear-gradient(
+      color-mix(in srgb, var(--row-color) 11%, transparent),
+      color-mix(in srgb, var(--row-color) 11%, transparent)
+    );
+  }
+  tr.tinted-row > td:first-child {
+    box-shadow: inset 3px 0 0 var(--row-color);
+    color: color-mix(in srgb, var(--row-color) 78%, var(--foreground));
+  }
+  tr.tinted-row > td.row-total {
+    color: color-mix(in srgb, var(--row-color) 80%, var(--foreground));
+  }
+}

@@ -1,5 +1,6 @@
-import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db, inTransaction } from "./index";
+import { accountDisplayName } from "../accounts";
 import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
 import { addDebtEntry } from "./debt";
 import { recordAnchorForWage } from "./pay-period";
@@ -24,6 +25,9 @@ import {
 
 // ---- Bank accounts ----
 
+/** bank_accounts.provider for accounts that only ever receive CSV imports. */
+export const CSV_PROVIDER = "csv";
+
 export async function addBankAccount(input: {
   provider: string;
   institutionId: string;
@@ -41,6 +45,47 @@ export async function getBankAccounts() {
     where: isNull(bankAccounts.archivedAt),
     orderBy: (a, { asc }) => [asc(a.displayName)],
   });
+}
+
+const MAX_ALIAS_LENGTH = 60;
+
+/** Sets (or, with an empty string, clears) the user's own name for an account. */
+export async function setBankAccountAlias(id: number, alias: string) {
+  const text = alias.replace(/\s+/g, " ").trim();
+  if (text.length > MAX_ALIAS_LENGTH) throw new Error(`Aliases can be at most ${MAX_ALIAS_LENGTH} characters.`);
+  const updated = await db
+    .update(bankAccounts)
+    .set({ alias: text || null })
+    .where(eq(bankAccounts.id, id))
+    .returning({ id: bankAccounts.id });
+  if (updated.length === 0) throw new Error("That account no longer exists.");
+}
+
+export type RecentTransaction = {
+  id: number;
+  bookingDate: string;
+  payee: string;
+  amountPence: number;
+  status: "pending_review" | "categorized" | "ignored";
+};
+
+/** The newest few transactions per account - enough to recognise which
+ * account is which at a glance. */
+export async function getRecentTransactions(accountIds: number[], limit = 5): Promise<Map<number, RecentTransaction[]>> {
+  const out = new Map<number, RecentTransaction[]>();
+  for (const id of accountIds) {
+    const rows = await db
+      .select()
+      .from(importedTransactions)
+      .where(eq(importedTransactions.bankAccountId, id))
+      .orderBy(desc(importedTransactions.bookingDate), desc(importedTransactions.id))
+      .limit(limit);
+    out.set(
+      id,
+      rows.map((r) => ({ id: r.id, bookingDate: r.bookingDate, payee: r.payeeClean ?? r.payeeRaw, amountPence: r.amountPence, status: r.status }))
+    );
+  }
+  return out;
 }
 
 /** Re-authorizing a bank (GoCardless consent expires every ~90 days, a
@@ -100,6 +145,7 @@ const SYNC_OVERLAP_DAYS = 7;
 export async function syncBankAccount(bankAccountId: number): Promise<{ staged: number }> {
   const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, bankAccountId) });
   if (!account) throw new Error(`Bank account ${bankAccountId} not found.`);
+  if (account.provider === CSV_PROVIDER) throw new Error("This account is CSV-only - import a CSV file instead of syncing.");
 
   const dateFrom = account.lastSyncedAt
     ? new Date(account.lastSyncedAt.getTime() - SYNC_OVERLAP_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -154,7 +200,8 @@ export function syncAllBankAccounts(): Promise<SyncResult[]> {
 let syncInFlight: Promise<SyncResult[]> | null = null;
 
 async function syncEachAccount(): Promise<SyncResult[]> {
-  const accounts = await getBankAccounts();
+  // CSV-only accounts have nothing to sync from.
+  const accounts = (await getBankAccounts()).filter((a) => a.provider !== CSV_PROVIDER);
   const results: SyncResult[] = [];
   for (const account of accounts) {
     try {
@@ -239,7 +286,7 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
       if (match) match.used = true;
       results.push({
         bankAccountId: account.id,
-        bankAccountName: account.displayName,
+        bankAccountName: accountDisplayName(account),
         amountPence: t.amountPence,
         date: typeof t.date === "string" ? t.date : null,
         payeeRaw: t.payeeRaw,
@@ -510,6 +557,9 @@ export type RawImportedTransaction = {
   bookingDate: string;
   payeeRaw: string;
   payeeClean?: string | null;
+  /** CSV rows that look like an already-imported transaction: kept (not
+   * dropped) but held in Review instead of being auto-categorized. */
+  possibleDuplicateImportedId?: number | null;
 };
 
 /** Bulk-stages a sync batch, deduped against anything already imported for
@@ -541,6 +591,7 @@ async function stageBatch(bankAccountId: number, transactions: RawImportedTransa
         bookingDate: t.bookingDate,
         payeeRaw: t.payeeRaw,
         payeeClean: t.payeeClean ?? null,
+        possibleDuplicateImportedId: t.possibleDuplicateImportedId ?? null,
       }))
     )
     .onConflictDoNothing({ target: [importedTransactions.bankAccountId, importedTransactions.importedId] })
@@ -571,6 +622,11 @@ async function stageBatch(bankAccountId: number, transactions: RawImportedTransa
  * `rules` is loaded once per batch by the caller, not once per row. */
 async function autoProcessStagedTransaction(row: typeof importedTransactions.$inferSelect, rules: CategoryRule[]) {
   const id = row.id;
+
+  // A CSV row that looks like something already imported waits in Review for a
+  // person to decide - rules and learned patterns must not file it behind
+  // their back (that would count the same money twice).
+  if (row.possibleDuplicateImportedId) return row;
 
   const duplicateOf = await findPossibleManualDuplicate(row.amountPence, row.bookingDate, row.payeeRaw);
   if (duplicateOf !== null) {
@@ -670,6 +726,15 @@ export async function getPossibleDuplicateDetails(expenseEntryId: number): Promi
  * makes that draft permanent and marks this bank row as already logged
  * (same "ignored" status as any other already-logged duplicate, see
  * ignoreTransaction). */
+/** What an "already imported" duplicate flag points at, for Review's tooltip. */
+export async function getImportedDuplicateDetails(ids: number[]) {
+  const map = new Map<number, { payee: string; bookingDate: string; status: string }>();
+  if (ids.length === 0) return map;
+  const rows = await db.select().from(importedTransactions).where(inArray(importedTransactions.id, ids));
+  for (const r of rows) map.set(r.id, { payee: r.payeeClean ?? r.payeeRaw, bookingDate: r.bookingDate, status: r.status });
+  return map;
+}
+
 export async function confirmPencilledMatch(importedTransactionId: number, expenseEntryId: number) {
   await inTransaction(async () => {
     await confirmPencilledExpense(expenseEntryId, importedTransactionId);

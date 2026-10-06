@@ -21,6 +21,9 @@ export const categories = sqliteTable("categories", {
   // mean "pay this one person back" (e.g. "Roberto"), so it's not a
   // per-transaction tickbox someone has to remember.
   linkedDebtPersonId: integer("linked_debt_person_id").references(() => people.id),
+  // Every expense logged against this category also pays into this savings
+  // bucket (see logExpense) - the same idea as linkedDebtPersonId.
+  linkedBucketId: integer("linked_bucket_id").references(() => savingsBuckets.id),
   // Null = active. Set = hidden from the grid/rollups for any year AFTER the
   // one archivedAt falls in, but still visible and counted for that year and
   // every year before it - archiving something today must not rewrite what a
@@ -158,6 +161,39 @@ export const people = sqliteTable("people", {
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
 });
 
+/** A pot of money being set aside - kids' savings, a holiday, a Revolut
+ * bucket. Its balance is opening + deposits - withdrawals, computed on read
+ * (never stored), so it can't drift if an entry is edited or deleted. Every
+ * setting except the name is optional. */
+export const savingsBuckets = sqliteTable("savings_buckets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  color: text("color"), // "#rrggbb"; null = a palette colour picked by id
+  goalPence: integer("goal_pence"),
+  goalDate: text("goal_date"), // ISO date
+  openingPence: integer("opening_pence").notNull().default(0),
+  note: text("note"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+});
+
+export const savingsEntries = sqliteTable("savings_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  bucketId: integer("bucket_id")
+    .notNull()
+    .references(() => savingsBuckets.id),
+  entryDate: text("entry_date").notNull(), // ISO date
+  amountPence: integer("amount_pence").notNull(), // always positive
+  direction: text("direction", { enum: ["deposit", "withdrawal"] }).notNull(),
+  note: text("note"),
+  // Set only when this deposit was created automatically alongside an
+  // expense in a linked category - lets deleting or editing that expense
+  // keep the bucket in step. Null for anything entered by hand.
+  expenseEntryId: integer("expense_entry_id").references(() => expenseEntries.id),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(current_timestamp)`),
+});
+
 export const reportPanels = sqliteTable("report_panels", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
@@ -243,6 +279,13 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   // Freshness is tied to whenever the account last synced, which is the
   // right cadence anyway - this was never meant to be live-live.
   pendingPreviewJson: text("pending_preview_json"),
+  // JSON: how this account's CSV exports map to date/amount/payee, saved
+  // after a successful CSV import so the next file needs no re-mapping.
+  // provider "csv" accounts are CSV-only: never synced, never expire.
+  csvMapping: text("csv_mapping"),
+  // A name the user chose ("Main account", "Holiday pot"), shown everywhere
+  // instead of the bank's own label. Null = use displayName.
+  alias: text("alias"),
 });
 
 /** A single staged bank transaction, before (or instead of) becoming a real
@@ -284,6 +327,10 @@ export const importedTransactions = sqliteTable(
       .notNull()
       .default("pending_review"),
     possibleDuplicateExpenseEntryId: integer("possible_duplicate_expense_entry_id"),
+    // A CSV row that looks like a transaction already imported for the same
+    // account (same amount, date within a day) - flagged in Review instead
+    // of being silently dropped or auto-categorized.
+    possibleDuplicateImportedId: integer("possible_duplicate_imported_id"),
     // Set when this row was categorized as INCOME rather than an expense -
     // income_entries is one aggregate row per (source, year, month), not
     // one row per transaction like expenseEntries, so there's no

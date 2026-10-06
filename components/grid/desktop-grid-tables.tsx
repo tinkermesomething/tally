@@ -179,7 +179,7 @@ export function DesktopGridTables({
           </colgroup>
           <thead>
             <tr className="bg-muted">
-              <th className="sticky left-0 top-0 z-30 bg-muted px-3 py-2 text-left font-medium">
+              <th className="sticky left-0 top-0 z-30 bg-muted px-3 py-2 text-left font-medium" title="Press and hold a category row to drag it up or down">
                 <div className="flex items-center gap-1">
                   Category
                   <AddCategoryDialog

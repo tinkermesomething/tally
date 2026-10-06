@@ -3,6 +3,7 @@ import {
   getPossibleDuplicateDetails,
   getBankAccounts,
   getPendingPreview,
+  getImportedDuplicateDetails,
 } from "@/lib/db/bank-sync";
 import { getCategoryTree, getIncomeSourceList } from "@/lib/db/queries";
 import { getPeopleWithBalances } from "@/lib/db/debt";
@@ -11,10 +12,13 @@ import { ReviewList } from "@/components/review/review-list";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPence } from "@/lib/money";
-import { accountLabels } from "@/lib/accounts";
+import { accountDisplayName, accountLabels } from "@/lib/accounts";
 import { formatDate } from "@/lib/date-format";
 import type { ReviewRow } from "@/components/review/review-transaction-row";
 import { PencilInButton } from "@/components/review/pencil-in-button";
+import { ImportCsvDialog } from "@/components/review/import-csv-dialog";
+import { CSV_PROVIDER } from "@/lib/db/bank-sync";
+import { isCsvMapping } from "@/lib/csv-import";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +50,9 @@ export default async function ReviewPage({
   const accounts = accountLabels(bankAccounts);
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
 
+  const importedDuplicates = await getImportedDuplicateDetails(
+    pending.map((t) => t.possibleDuplicateImportedId).filter((id): id is number => id !== null)
+  );
   const transactions: ReviewRow[] = await Promise.all(
     pending.map(async (t) => ({
       id: t.id,
@@ -56,6 +63,7 @@ export default async function ReviewPage({
       note: t.note,
       accountId: t.bankAccountId,
       accountName: accountName.get(t.bankAccountId) ?? "Unknown account",
+      importedDuplicate: t.possibleDuplicateImportedId !== null ? (importedDuplicates.get(t.possibleDuplicateImportedId) ?? null) : null,
       duplicateOf:
         t.possibleDuplicateExpenseEntryId !== null
           ? await getPossibleDuplicateDetails(t.possibleDuplicateExpenseEntryId)
@@ -72,9 +80,23 @@ export default async function ReviewPage({
             Imported bank transactions waiting for a category.
           </p>
         </div>
-        {bankAccounts.length === 0 && (
-          <p className="text-xs text-muted-foreground">No bank accounts linked yet.</p>
-        )}
+        <div className="flex items-center gap-3">
+          {bankAccounts.length === 0 && (
+            <p className="text-xs text-muted-foreground">No bank accounts linked yet.</p>
+          )}
+          <ImportCsvDialog
+            accounts={bankAccounts.map((a) => {
+              let mapping = null;
+              try {
+                const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
+                mapping = isCsvMapping(parsed) ? parsed : null;
+              } catch {
+                // a damaged saved mapping is ignored: the file is mapped fresh
+              }
+              return { id: a.id, name: accountName.get(a.id) ?? accountDisplayName(a), csvOnly: a.provider === CSV_PROVIDER, mapping };
+            })}
+          />
+        </div>
       </div>
 
       <form className="flex flex-wrap items-end gap-3" method="get">

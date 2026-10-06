@@ -27,6 +27,7 @@ import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker"
 import type { RuleContext } from "@/components/review/rule-dialog";
 import { DebtTagControl } from "@/components/review/debt-tag-control";
 import { findLoansSourceId } from "@/lib/loans";
+import { FIELD_COLOR } from "@/lib/field-colors";
 
 export type ReviewRow = {
   id: number;
@@ -37,6 +38,8 @@ export type ReviewRow = {
   note: string | null;
   accountId: number;
   accountName: string;
+  /** A CSV row that looks like a transaction already imported. */
+  importedDuplicate?: { payee: string; bookingDate: string; status: string } | null;
   duplicateOf: {
     id: number;
     categoryName: string;
@@ -141,7 +144,7 @@ export function ReviewTransactionRow({
         : "Pick who this repayment is to, or turn off the debt tag.";
     }
     if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
-      return "Enter the new person's name.";
+      return "Enter the new lender's name.";
     }
     try {
       const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
@@ -223,12 +226,12 @@ export function ReviewTransactionRow({
         </TableCell>
         <TableCell className="text-xs text-muted-foreground">
           {formatDate(transaction.bookingDate, dateFormat)}
-          {showAccount && <span className="block truncate" data-testid="row-account">{transaction.accountName}</span>}
+          {showAccount && <span className={`block truncate ${FIELD_COLOR.account}`} data-testid="row-account">{transaction.accountName}</span>}
         </TableCell>
         <TableCell className="max-w-48 min-w-0 whitespace-normal">
           <div className="flex items-center gap-1.5">
             <span title={duplicateTitle}>
-              <Pencil className="size-3.5 shrink-0 text-muted-foreground" />
+              <Pencil className="size-3.5 shrink-0 text-chart-5" />
             </span>
             <div className="min-w-0">
               <p className="truncate font-medium">{transaction.payeeClean ?? transaction.payeeRaw}</p>
@@ -243,11 +246,11 @@ export function ReviewTransactionRow({
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-1">
-            <Button size="icon-xs" onClick={handleConfirmMatch} disabled={pending} title="Confirm match">
-              <Check className="size-3.5" />
+            <Button size="icon-xs" variant="outline" className="border-status-good/50 hover:bg-status-good/10" onClick={handleConfirmMatch} disabled={pending} title="Confirm match">
+              <Check className="size-3.5 text-status-good" />
             </Button>
-            <Button size="icon-xs" variant="outline" onClick={handleDiscardMatch} disabled={pending} title="Discard - wasn't a match">
-              <X className="size-3.5" />
+            <Button size="icon-xs" variant="outline" className="border-status-critical/50 hover:bg-status-critical/10" onClick={handleDiscardMatch} disabled={pending} title="Discard - wasn't a match">
+              <X className="size-3.5 text-status-critical" />
             </Button>
           </div>
         </TableCell>
@@ -266,13 +269,21 @@ export function ReviewTransactionRow({
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
         {formatDate(transaction.bookingDate, dateFormat)}
-        {showAccount && <span className="block truncate" data-testid="row-account">{transaction.accountName}</span>}
+        {showAccount && <span className={`block truncate ${FIELD_COLOR.account}`} data-testid="row-account">{transaction.accountName}</span>}
       </TableCell>
       <TableCell className="max-w-48 min-w-0 whitespace-normal">
         <div className="flex items-center gap-1.5">
           {transaction.duplicateOf && (
             <span title={duplicateTitle}>
               <TriangleAlert className="size-3.5 shrink-0 text-status-critical" />
+            </span>
+          )}
+          {!transaction.duplicateOf && transaction.importedDuplicate && (
+            <span
+              title={`Looks like ${transaction.importedDuplicate.payee} on ${formatDate(transaction.importedDuplicate.bookingDate, dateFormat)}, already imported (${transaction.importedDuplicate.status.replace("_", " ")}). If it is the same transaction, ignore this row.`}
+              data-testid="imported-duplicate"
+            >
+              <TriangleAlert className="size-3.5 shrink-0 text-chart-4" />
             </span>
           )}
           <div className="min-w-0">
@@ -313,7 +324,7 @@ export function ReviewTransactionRow({
                 title={note ? "Edit note" : "Add a note"}
                 className="mt-0.5 flex max-w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               >
-                <StickyNote className="size-3 shrink-0" />
+                <StickyNote className="size-3 shrink-0 text-chart-4" />
                 <span className="truncate">{note || "Add a note"}</span>
               </button>
             )}
@@ -393,7 +404,7 @@ export function ReviewTransactionRow({
             })
           }
         >
-          <Zap className="size-3" />
+          <Zap className="size-3 text-chart-4" />
           Rule
         </Button>
         </div>
@@ -413,11 +424,11 @@ export function ReviewTransactionRow({
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-1">
-          <Button size="icon-xs" onClick={handleCategorize} disabled={pending} title="Categorize">
-            <Check className="size-3.5" />
+          <Button size="icon-xs" variant="outline" className="border-status-good/50 hover:bg-status-good/10" onClick={handleCategorize} disabled={pending} title="Categorize">
+            <Check className="size-3.5 text-status-good" />
           </Button>
-          <Button size="icon-xs" variant="outline" onClick={handleIgnore} disabled={pending} title="Ignore">
-            <X className="size-3.5" />
+          <Button size="icon-xs" variant="outline" className="border-status-critical/50 hover:bg-status-critical/10" onClick={handleIgnore} disabled={pending} title="Ignore">
+            <X className="size-3.5 text-status-critical" />
           </Button>
         </div>
         {error && <p className="mt-1 max-w-32 text-xs text-status-critical">{error}</p>}

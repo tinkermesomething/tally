@@ -5,6 +5,7 @@ import { assertIsoDate } from "../validate";
 import { markCellPaid, unpayCellIfNoExpenses } from "./cells";
 import { resolvePeriodForDate } from "./pay-period";
 import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
+import { addSavingsEntry, deleteSavingsEntriesForExpense, syncSavingsEntriesForExpense } from "./savings";
 import {
   categories,
   categoryEntries,
@@ -112,6 +113,9 @@ async function logExpenseUnsafe(input: {
    * linkedDebtPersonId, if it has one. Pass null to force "no debt tag" even
    * if the category has a link. */
   debtPersonId?: number | null;
+  /** Which savings bucket this expense also pays into. Same rule as
+   * debtPersonId: omit to use the category's own link, null for none. */
+  bucketId?: number | null;
   /** Set when this expense was created by categorizing a staged bank-sync
    * row, rather than typed in directly - purely for traceability back to
    * its source (lib/db/bank-sync.ts). */
@@ -123,15 +127,11 @@ async function logExpenseUnsafe(input: {
   assertIsoDate(input.entryDate);
   const { year, month } = await resolvePeriodForDate(input.entryDate);
 
-  let debtPersonId: number | undefined;
-  if (input.debtPersonId !== undefined) {
-    debtPersonId = input.debtPersonId ?? undefined;
-  } else {
-    const category = await db.query.categories.findFirst({
-      where: eq(categories.id, input.categoryId),
-    });
-    debtPersonId = category?.linkedDebtPersonId ?? undefined;
-  }
+  const category = await db.query.categories.findFirst({ where: eq(categories.id, input.categoryId) });
+  const debtPersonId: number | undefined =
+    input.debtPersonId !== undefined ? (input.debtPersonId ?? undefined) : (category?.linkedDebtPersonId ?? undefined);
+  const bucketId: number | undefined =
+    input.bucketId !== undefined ? (input.bucketId ?? undefined) : (category?.linkedBucketId ?? undefined);
 
   const [created] = await db
     .insert(expenseEntries)
@@ -157,6 +157,18 @@ async function logExpenseUnsafe(input: {
       entryDate: input.entryDate,
       amountPence: input.amountPence,
       direction: "repayment",
+      note: input.note,
+      expenseEntryId: created.id,
+    });
+  }
+
+  // A category linked to a savings bucket pays into it automatically.
+  if (bucketId) {
+    await addSavingsEntry({
+      bucketId,
+      entryDate: input.entryDate,
+      amountPence: input.amountPence,
+      direction: "deposit",
       note: input.note,
       expenseEntryId: created.id,
     });
@@ -252,6 +264,8 @@ export async function updateExpenseEntry(
     set.month = month;
   }
   await db.update(expenseEntries).set(set).where(eq(expenseEntries.id, id));
+  // The deposit this expense made (if any) follows its amount and date.
+  await syncSavingsEntriesForExpense(id, { amountPence: input.amountPence, entryDate: input.entryDate });
 }
 
 /** Real, permanent delete - unlike everything else in this app (categories,
@@ -269,6 +283,7 @@ async function deleteExpenseEntryUnsafe(id: number) {
   const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
   if (!entry) return;
   await deleteDebtEntriesForExpense(id);
+  await deleteSavingsEntriesForExpense(id);
   await db.delete(expenseEntries).where(eq(expenseEntries.id, id));
 
   await unpayCellIfNoExpenses(entry.categoryId, entry.year, entry.month);

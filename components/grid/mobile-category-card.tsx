@@ -6,6 +6,7 @@ import { CategoryMonthCell } from "@/components/grid/category-row";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
+import { useCategoryDrag } from "@/components/grid/use-category-drag";
 import { cn } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
@@ -26,10 +27,16 @@ export function MobileCategoryCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasChildren = category.children.length > 0;
+  const drag = useCategoryDrag(year);
 
   return (
-    <div className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-sm">
-      <div className="flex items-start justify-between gap-2">
+    <div className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-sm" data-reorder-group="mobile-top" data-reorder-id={category.id}>
+      {drag.error && (
+        <p role="alert" className="mb-1 text-[0.65rem] text-status-critical">
+          {drag.error}
+        </p>
+      )}
+      <div className="flex items-start justify-between gap-2" onPointerDown={(e) => drag.onPointerDown(e, "mobile-top", category.id)}>
         <div className="flex min-w-0 flex-1 items-center gap-1">
           {hasChildren ? (
             <button
@@ -70,7 +77,13 @@ export function MobileCategoryCard({
       {expanded && hasChildren && (
         <div className="mt-2 ml-[18px] space-y-2 border-l border-border pl-3">
           {category.children.map((child) => (
-            <div key={child.id} className="flex items-center justify-between gap-2">
+            <div
+              key={child.id}
+              className="flex items-center justify-between gap-2"
+              data-reorder-group={`mobile-kids-${category.id}`}
+              data-reorder-id={child.id}
+              onPointerDown={(e) => drag.onPointerDown(e, `mobile-kids-${category.id}`, child.id)}
+            >
               <InlineEditText
                 value={child.name}
                 onCommit={(next) => renameCategory(child.id, next)}

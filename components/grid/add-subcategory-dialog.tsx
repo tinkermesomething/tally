@@ -79,7 +79,7 @@ export function AddSubcategoryDialog({
             aria-label={`Add item under ${parentName}`}
             className="shrink-0 rounded p-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
           >
-            <Plus className="size-3" />
+            <Plus className="size-3 text-chart-6" />
           </button>
         }
       />

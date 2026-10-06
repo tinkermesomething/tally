@@ -72,7 +72,7 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
         </thead>
         <tbody>
           {newestFirst.map((entry) => (
-            <tr key={entry.id} className="border-t border-border">
+            <tr key={entry.id} className="row-line border-t border-border">
               <td className="px-3 py-2">
                 <input
                   type="date"
@@ -138,7 +138,7 @@ export function LedgerTable({ personId, entries }: { personId: number; entries: 
                   className="rounded p-1 text-muted-foreground hover:bg-status-critical/10 hover:text-status-critical"
                   title="Delete this entry"
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash2 className="size-3.5 text-status-critical" />
                 </button>
               </td>
             </tr>

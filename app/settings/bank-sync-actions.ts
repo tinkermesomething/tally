@@ -11,7 +11,9 @@ import {
   updateCategoryRule,
   deactivateCategoryRule,
   syncBankAccount,
+  setBankAccountAlias,
 } from "@/lib/db/bank-sync";
+import { toResult, type ActionResult } from "@/lib/action-result";
 import {
   listInstitutions,
   createAgreement,
@@ -26,6 +28,16 @@ export async function syncBankAccountNow(id: number): Promise<{ staged: number }
   revalidatePath("/settings");
   revalidatePath("/review");
   return result;
+}
+
+/** Gives an account your own name (empty clears it back to the bank's label). */
+export async function renameBankAccount(id: number, alias: string): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    await setBankAccountAlias(id, alias);
+    revalidatePath("/settings");
+    revalidatePath("/review");
+  });
 }
 
 export async function archiveLinkedBankAccount(id: number) {

@@ -88,7 +88,7 @@ export function ExpenseEntriesPopover({
               {entries?.map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex items-start gap-1.5 rounded-md border border-border/60 p-1.5"
+                  className="flex items-start gap-1.5 row-card rounded-md p-1.5"
                 >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center justify-between gap-1">
@@ -121,7 +121,7 @@ export function ExpenseEntriesPopover({
                     className="shrink-0 rounded p-1 text-muted-foreground hover:bg-status-critical/10 hover:text-status-critical"
                     title="Delete this entry"
                   >
-                    <Trash2 className="size-3.5" />
+                    <Trash2 className="size-3.5 text-status-critical" />
                   </button>
                 </div>
               ))}

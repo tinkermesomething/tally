@@ -17,7 +17,7 @@ export function IncomeSourceSettingsRow({
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
+    <div className="flex items-center justify-between gap-2 row-card rounded-lg bg-card px-3 py-2">
       <span className="font-medium">{name}</span>
       <div className="flex items-center gap-1.5">
         <button
@@ -45,7 +45,7 @@ export function IncomeSourceSettingsRow({
           title="Archive"
           onClick={() => startTransition(() => archiveIncomeSource(id))}
         >
-          <Archive className="size-3.5" />
+          <Archive className="size-3.5 text-chart-2" />
         </Button>
       </div>
     </div>

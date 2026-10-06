@@ -27,7 +27,7 @@ export function usePersonSelection() {
   }
 
   /** Resolves the current selection to a real person id, creating the new
-   * person first if "+ New person…" was chosen. Callers validate personId
+   * person first if "+ New lender…" was chosen. Callers validate personId
    * (and, when it's NEW_PERSON, that a name was entered) before calling
    * this - it doesn't re-validate. */
   async function resolvePersonId(): Promise<number> {
@@ -68,7 +68,7 @@ export function PersonPickerField({
           <SelectValue>
             {(value: string) => {
               if (!value) return placeholder;
-              if (value === NEW_PERSON) return "+ New person…";
+              if (value === NEW_PERSON) return "+ New lender…";
               return people.find((p) => String(p.id) === value)?.name ?? value;
             }}
           </SelectValue>
@@ -79,7 +79,7 @@ export function PersonPickerField({
               {p.name}
             </SelectItem>
           ))}
-          <SelectItem value={NEW_PERSON}>+ New person…</SelectItem>
+          <SelectItem value={NEW_PERSON}>+ New lender…</SelectItem>
         </SelectContent>
       </Select>
       {personId === NEW_PERSON && (

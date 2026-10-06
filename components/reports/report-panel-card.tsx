@@ -4,42 +4,58 @@ import { useTransition } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CategoryPieChart, type GroupSlice } from "@/components/reports/category-pie-chart";
+import { VarianceChart } from "@/components/reports/variance-chart";
 import { ReportPanelDialog } from "@/components/reports/report-panel-dialog";
 import { deleteReportPanel } from "@/app/reports/actions";
 import { formatPence } from "@/lib/money";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
+import { buildVarianceRows, VIEW_PREFIX, type ReportView } from "@/lib/report-view";
 import type { ReportPanel } from "@/lib/db/queries";
+
+const sum = (slices: GroupSlice[]) => slices.reduce((s, x) => s + x.amountPence, 0);
 
 export function ReportPanelCard({
   panel,
-  slices,
+  view,
+  budgeted,
+  spent,
   existingGroups,
   categories,
 }: {
   panel: ReportPanel;
-  slices: GroupSlice[];
+  view: ReportView;
+  budgeted: GroupSlice[];
+  spent: GroupSlice[];
   existingGroups: string[];
   categories: { id: number; name: string }[];
 }) {
   const { currency } = useAppSettings();
   const [pending, startTransition] = useTransition();
-  const total = slices.reduce((sum, s) => sum + s.amountPence, 0);
+
+  const subtitle =
+    view === "budgeted"
+      ? `Where ${formatPence(sum(budgeted), currency)} is budgeted.`
+      : view === "spent"
+        ? `Where ${formatPence(sum(spent), currency)} was actually spent.`
+        : `${formatPence(sum(budgeted), currency)} budgeted, ${formatPence(sum(spent), currency)} spent.`;
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+    <div className="report-panel rounded-2xl border border-border bg-card p-6 shadow-sm">
       <div className="mb-2 flex items-center justify-between">
         <div>
-          <h2 className="font-medium">{panel.name}</h2>
-          <p className="text-sm text-muted-foreground">Where {formatPence(total, currency)} is allocated.</p>
+          <h2 className="font-medium">
+            {VIEW_PREFIX[view]} — {panel.name}
+          </h2>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 print:hidden">
           <ReportPanelDialog
             panel={panel}
             existingGroups={existingGroups}
             categories={categories}
             trigger={
               <Button size="icon-xs" variant="ghost" title="Edit panel">
-                <Pencil className="size-3.5" />
+                <Pencil className="size-3.5 text-chart-1" />
               </Button>
             }
           />
@@ -50,11 +66,44 @@ export function ReportPanelCard({
             title="Delete panel"
             onClick={() => startTransition(() => deleteReportPanel(panel.id))}
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-3.5 text-status-critical" />
           </Button>
         </div>
       </div>
-      <CategoryPieChart slices={slices} />
+      <ReportBody view={view} budgeted={budgeted} spent={spent} />
+    </div>
+  );
+}
+
+/** The charts for one panel (or the main one) in the chosen view. */
+export function ReportBody({
+  view,
+  budgeted,
+  spent,
+}: {
+  view: ReportView;
+  budgeted: GroupSlice[];
+  spent: GroupSlice[];
+}) {
+  const { currency } = useAppSettings();
+  if (view === "budgeted") return <CategoryPieChart slices={budgeted} />;
+  if (view === "spent") return <CategoryPieChart slices={spent} emptyLabel="Nothing spent for this period yet." />;
+  return (
+    <div className="space-y-6">
+      {/* .compare-columns (globals.css): two equal halves that can't outgrow the card. */}
+      <div className="compare-columns" data-testid="compare-columns">
+        <div className="min-w-0" data-testid="compare-budgeted">
+          <h3 className="text-sm font-medium">Budgeted</h3>
+          <p className="mb-1 text-xs text-muted-foreground">{formatPence(sum(budgeted), currency)}</p>
+          <CategoryPieChart slices={budgeted} compact />
+        </div>
+        <div className="min-w-0" data-testid="compare-spent">
+          <h3 className="text-sm font-medium">Spent</h3>
+          <p className="mb-1 text-xs text-muted-foreground">{formatPence(sum(spent), currency)}</p>
+          <CategoryPieChart slices={spent} compact emptyLabel="Nothing spent for this period yet." />
+        </div>
+      </div>
+      <VarianceChart rows={buildVarianceRows(budgeted, spent)} />
     </div>
   );
 }

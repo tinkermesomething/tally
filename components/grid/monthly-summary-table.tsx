@@ -15,6 +15,8 @@ type SummaryRow = {
    * the two "money you actually have" rows get this; WAGES/Budgeted/
    * Actually spent are plain facts, not a health signal either way. */
   signed: boolean;
+  /** This row's colour (a chart token): edge bar, label, tint and totals. */
+  color: string;
 };
 
 /** WAGES/Budgeted/AVAILABLE/Actually spent/Left to spend aren't expense line
@@ -59,15 +61,16 @@ export function MonthlySummaryTable({
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
 
   const rows: SummaryRow[] = [
-    { label: "WAGES", values: wagesByMonth, total: yearTotal.wages, showAverage: true, signed: false },
-    { label: "BUDGETED", values: plannedByMonth, total: yearTotal.planned, showAverage: true, signed: false },
-    { label: "AVAILABLE", values: availableByMonth, total: yearTotal.available, showAverage: true, signed: true },
+    { label: "WAGES", values: wagesByMonth, total: yearTotal.wages, showAverage: true, signed: false, color: "var(--chart-6)" },
+    { label: "BUDGETED", values: plannedByMonth, total: yearTotal.planned, showAverage: true, signed: false, color: "var(--chart-1)" },
+    { label: "AVAILABLE", values: availableByMonth, total: yearTotal.available, showAverage: true, signed: true, color: "var(--chart-3)" },
     {
       label: "ACTUALLY SPENT",
       values: actuallySpentByMonth,
       total: yearTotal.actuallySpent,
       showAverage: true,
       signed: false,
+      color: "var(--chart-2)",
     },
     {
       label: "Left to spend",
@@ -75,6 +78,7 @@ export function MonthlySummaryTable({
       total: yearTotal.leftToSpend,
       showAverage: false,
       signed: true,
+      color: "var(--chart-7)",
     },
   ];
 
@@ -124,7 +128,7 @@ export function MonthlySummaryTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.label} className="border-t border-border font-medium">
+            <tr key={row.label} className="tinted-row border-t border-border font-medium" style={{ "--row-color": row.color } as React.CSSProperties}>
               <td className="sticky left-0 z-10 bg-card px-3 py-2">{row.label}</td>
               {row.values.map((value, i) => (
                 <td
@@ -139,13 +143,13 @@ export function MonthlySummaryTable({
               ))}
               <td
                 style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
-                className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+                className={cn("row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
               >
                 {formatPence(row.total, currency)}
               </td>
               <td
                 style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
-                className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
+                className="row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
               >
                 {row.showAverage ? formatPence(Math.round(row.total / 12), currency) : "—"}
               </td>

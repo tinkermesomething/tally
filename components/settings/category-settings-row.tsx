@@ -7,8 +7,10 @@ import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { EditableDueDay } from "@/components/grid/editable-due-day";
 import { EditableDebtLink } from "@/components/grid/editable-debt-link";
+import { EditableBucketLink } from "@/components/settings/editable-bucket-link";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { MoveCategoryButton } from "@/components/settings/move-category-button";
+import { ReorderButtons } from "@/components/grid/reorder-buttons";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
 import type { CategoryTreeNode } from "@/lib/db/queries";
 
@@ -18,7 +20,13 @@ export function CategorySettingsRow({
   existingGroups,
   topLevelCategories,
   people,
+  buckets = [],
+  canMoveUp = false,
+  canMoveDown = false,
 }: {
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  buckets?: { id: number; name: string; color: string }[];
   category: CategoryTreeNode;
   color: string;
   existingGroups: string[];
@@ -31,7 +39,8 @@ export function CategorySettingsRow({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+      <div className="flex items-center gap-2 row-card rounded-lg bg-card px-3 py-2">
+        <ReorderButtons categoryId={category.id} categoryName={category.name} year={new Date().getFullYear()} canMoveUp={canMoveUp} canMoveDown={canMoveDown} />
         <InlineEditText
           value={category.name}
           onCommit={(next) => renameCategory(category.id, next)}
@@ -51,6 +60,12 @@ export function CategorySettingsRow({
               linkedDebtPersonId={category.linkedDebtPersonId}
               people={people}
             />
+            <EditableBucketLink
+              categoryId={category.id}
+              categoryName={category.name}
+              linkedBucketId={category.linkedBucketId}
+              buckets={buckets}
+            />
             <MoveCategoryButton
               categoryId={category.id}
               currentParentId={null}
@@ -66,16 +81,17 @@ export function CategorySettingsRow({
           title="Archive"
           onClick={() => startTransition(() => archiveCategory(category.id))}
         >
-          <Archive className="size-3.5" />
+          <Archive className="size-3.5 text-chart-2" />
         </Button>
       </div>
       {category.children.length > 0 && (
         <div className="ml-5 space-y-1.5 border-l border-border pl-3">
-          {category.children.map((child) => (
+          {category.children.map((child, i) => (
             <div
               key={child.id}
-              className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5"
+              className="flex items-center gap-2 row-card rounded-lg bg-card px-3 py-1.5"
             >
+              <ReorderButtons categoryId={child.id} categoryName={child.name} year={new Date().getFullYear()} canMoveUp={i > 0} canMoveDown={i < category.children.length - 1} />
               <InlineEditText
                 value={child.name}
                 onCommit={(next) => renameCategory(child.id, next)}
@@ -85,6 +101,12 @@ export function CategorySettingsRow({
                 categoryId={child.id}
                 linkedDebtPersonId={child.linkedDebtPersonId}
                 people={people}
+              />
+              <EditableBucketLink
+                categoryId={child.id}
+                categoryName={child.name}
+                linkedBucketId={child.linkedBucketId}
+                buckets={buckets}
               />
               <MoveCategoryButton
                 categoryId={child.id}
@@ -98,7 +120,7 @@ export function CategorySettingsRow({
                 title="Archive"
                 onClick={() => startTransition(() => archiveCategory(child.id))}
               >
-                <Archive className="size-3.5" />
+                <Archive className="size-3.5 text-chart-2" />
               </Button>
             </div>
           ))}

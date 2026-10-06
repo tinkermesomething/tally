@@ -1,5 +1,5 @@
-import { eq, isNull } from "drizzle-orm";
-import { db } from "./index";
+import { eq, gte, isNull, or } from "drizzle-orm";
+import { db, inTransaction } from "./index";
 import { categories, categoryParentMoves } from "./schema";
 
 export type ParentMove = { id: number; categoryId: number; parentId: number | null; effectiveYear: number };
@@ -111,6 +111,72 @@ export async function moveCategoryParent(categoryId: number, newParentId: number
   });
 }
 
+/** Moves a category to a given position (`toIndex`, 0 = first) among its
+ * SIBLINGS: top-level categories among the top-level ones, a subcategory only
+ * among the other subcategories of its own parent (moving to a different
+ * parent is a separate, deliberate action - see moveCategoryParent).
+ * "Siblings" are the categories the grid shows for `year`, so what you see is
+ * what moves.
+ *
+ * It only ever rewrites sort_order, and only among those siblings: no amount,
+ * paid flag, entry or parent link is touched, so no total can change. An index
+ * past either end is clamped. Returns false when nothing moved (already
+ * there), which is not an error. */
+export function reorderCategoryTo(categoryId: number, toIndex: number, year: number): Promise<boolean> {
+  return inTransaction(async () => {
+    if (!Number.isInteger(toIndex)) throw new Error("Pick a position.");
+    const startOfNextYear = new Date(year + 1, 0, 1);
+    const cats = await db.query.categories.findMany({
+      where: or(isNull(categories.archivedAt), gte(categories.archivedAt, startOfNextYear)),
+      orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.id)], // same order the grid uses (id breaks ties)
+    });
+    const effectiveParents = resolveEffectiveParents(cats, await db.select().from(categoryParentMoves), year);
+    const me = cats.find((c) => c.id === categoryId);
+    if (!me) throw new Error("That category isn't shown for this year.");
+
+    const parent = effectiveParentOf(effectiveParents, me);
+    const siblings = cats.filter((c) => effectiveParentOf(effectiveParents, c) === parent);
+    const from = siblings.findIndex((c) => c.id === categoryId);
+    const to = Math.max(0, Math.min(siblings.length - 1, toIndex));
+    if (to === from) return false;
+
+    const reordered = [...siblings];
+    reordered.splice(from, 1);
+    reordered.splice(to, 0, me);
+
+    // Hand the siblings' own sort values back out in the new order. If two of
+    // them tied (older data), number them afresh - still only among themselves.
+    const values = siblings.map((c) => c.sortOrder);
+    const distinct = new Set(values).size === values.length;
+    const next = distinct ? [...values].sort((a, b) => a - b) : reordered.map((_, i) => Math.min(...values) + i);
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].sortOrder !== next[i]) {
+        await db.update(categories).set({ sortOrder: next[i] }).where(eq(categories.id, reordered[i].id));
+      }
+    }
+    return true;
+  });
+}
+
+/** One place up or down - the same move, a step at a time. Returns false at
+ * either end. */
+export async function moveCategoryOrder(categoryId: number, direction: "up" | "down", year: number): Promise<boolean> {
+  const startOfNextYear = new Date(year + 1, 0, 1);
+  const cats = await db.query.categories.findMany({
+    where: or(isNull(categories.archivedAt), gte(categories.archivedAt, startOfNextYear)),
+    orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.id)],
+  });
+  const effectiveParents = resolveEffectiveParents(cats, await db.select().from(categoryParentMoves), year);
+  const me = cats.find((c) => c.id === categoryId);
+  if (!me) throw new Error("That category isn't shown for this year.");
+  const parent = effectiveParentOf(effectiveParents, me);
+  const siblings = cats.filter((c) => effectiveParentOf(effectiveParents, c) === parent);
+  const from = siblings.findIndex((c) => c.id === categoryId);
+  const to = direction === "up" ? from - 1 : from + 1;
+  if (to < 0 || to >= siblings.length) return false;
+  return reorderCategoryTo(categoryId, to, year);
+}
+
 export type CategoryTreeNode = {
   id: number;
   name: string;
@@ -119,6 +185,7 @@ export type CategoryTreeNode = {
   annualMonth: number | null;
   dueDay: number | null;
   linkedDebtPersonId: number | null;
+  linkedBucketId: number | null;
   children: CategoryTreeNode[];
 };
 
@@ -146,6 +213,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
       annualMonth: c.annualMonth,
       dueDay: c.dueDay,
       linkedDebtPersonId: c.linkedDebtPersonId,
+      linkedBucketId: c.linkedBucketId,
       children: (childrenByParent.get(c.id) ?? []).map((child) => ({
         id: child.id,
         name: child.name,
@@ -154,6 +222,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
         annualMonth: child.annualMonth,
         dueDay: child.dueDay,
         linkedDebtPersonId: child.linkedDebtPersonId,
+        linkedBucketId: child.linkedBucketId,
         children: [],
       })),
     }));

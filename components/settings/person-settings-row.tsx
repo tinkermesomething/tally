@@ -14,7 +14,7 @@ export function PersonSettingsRow({ person }: { person: PersonWithBalance }) {
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
+    <div className="flex items-center justify-between gap-2 row-card rounded-lg bg-card px-3 py-2">
       <div className="flex flex-col">
         <span className="font-medium">{person.name}</span>
         {person.balancePence !== 0 && (
@@ -37,7 +37,7 @@ export function PersonSettingsRow({ person }: { person: PersonWithBalance }) {
         title="Archive"
         onClick={() => startTransition(() => removePerson(person.id))}
       >
-        <Archive className="size-3.5" />
+        <Archive className="size-3.5 text-chart-2" />
       </Button>
     </div>
   );

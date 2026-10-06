@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/entries", label: "Entries" },
   { href: "/review", label: "Review" },
   { href: "/debt", label: "Debt" },
+  { href: "/savings", label: "Savings" },
   { href: "/reports", label: "Reports" },
   { href: "/settings", label: "Settings" },
 ] as const;
@@ -37,7 +38,7 @@ export async function AppHeader() {
     : 0;
 
   return (
-    <header className="sticky top-0 z-30 bg-background/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/60">
+    <header className="sticky top-0 z-30 bg-background/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/60 print:hidden">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
         <Link href="/grid" className="font-semibold tracking-tight">
           Tally

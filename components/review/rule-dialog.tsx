@@ -187,7 +187,7 @@ function RuleDialogBody({
     if (!ignoring && tagDebt && !personId) {
       return setError(isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
     }
-    if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new person's name.");
+    if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new lender's name.");
     setError(null);
     startSaving(async () => {
       try {
@@ -357,7 +357,7 @@ function RuleDialogBody({
               <table className="w-full text-sm">
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.id} className="border-b border-border last:border-0" data-testid="preview-row">
+                    <tr key={row.id} className="row-line border-b border-border last:border-0" data-testid="preview-row">
                       <td className="w-8 px-2 py-1.5">
                         <Checkbox
                           checked={isTicked(row)}

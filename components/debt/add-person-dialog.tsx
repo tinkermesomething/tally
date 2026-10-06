@@ -34,7 +34,7 @@ export function AddPersonDialog() {
         setName("");
         setOpen(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to add person.");
+        setError(err instanceof Error ? err.message : "Failed to add lender.");
       }
     });
   }
@@ -54,20 +54,20 @@ export function AddPersonDialog() {
         render={
           <Button size="sm" variant="outline">
             <UserPlus className="size-4" />
-            Add person
+            Add lender
           </Button>
         }
       />
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Track debt with someone new</DialogTitle>
+          <DialogTitle>Add a lender</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="person-name">Name</Label>
             <Input
               id="person-name"
-              placeholder="e.g. Roberto"
+              placeholder="e.g. Roberto, Lendable, Mum"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus

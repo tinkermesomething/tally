@@ -9,6 +9,7 @@ import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { ExpenseEntryRow } from "@/lib/db/queries";
 import { amountText, fuzzyScore } from "@/lib/fuzzy";
+import { FIELD_COLOR } from "@/lib/field-colors";
 
 export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
   const { currency, dateFormat } = useAppSettings();
@@ -85,10 +86,10 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border bg-muted text-left">
-            <th className="px-3 py-2 font-medium">Date</th>
-            <th className="px-3 py-2 font-medium">Category</th>
-            <th className="px-3 py-2 text-right font-medium">Amount</th>
-            <th className="px-3 py-2 font-medium">Note</th>
+            <th className={`px-3 py-2 font-medium ${FIELD_COLOR.date}`}>Date</th>
+            <th className={`px-3 py-2 font-medium ${FIELD_COLOR.category}`}>Category</th>
+            <th className={`px-3 py-2 text-right font-medium ${FIELD_COLOR.amount}`}>Amount</th>
+            <th className={`px-3 py-2 font-medium ${FIELD_COLOR.note}`}>Note</th>
             <th className="w-8 px-2 py-2" />
           </tr>
         </thead>
@@ -101,7 +102,7 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
             </tr>
           )}
           {shown.map((entry) => (
-            <tr key={entry.id} className={`border-t border-border ${entry.provisional ? "bg-muted/40" : ""}`}>
+            <tr key={entry.id} className={`row-line border-t border-border ${entry.provisional ? "bg-muted/40" : ""}`}>
               <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(entry.entryDate, dateFormat)}</td>
               <td className="px-3 py-2 font-medium">
                 {entry.categoryName}
@@ -147,7 +148,7 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
                   className="rounded p-1 text-muted-foreground hover:bg-status-critical/10 hover:text-status-critical"
                   title="Delete this entry"
                 >
-                  <Trash2 className="size-3.5" />
+                  <Trash2 className="size-3.5 text-status-critical" />
                 </button>
               </td>
             </tr>

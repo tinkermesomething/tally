@@ -19,10 +19,13 @@ export function MonthSelect({
   year,
   month,
   basePath = "/reports",
+  extraParams = {},
 }: {
   year: number;
   month: string; // "all" | "1".."12"
   basePath?: string;
+  /** Other query params to keep when the month changes (e.g. the report view). */
+  extraParams?: Record<string, string>;
 }) {
   const router = useRouter();
 
@@ -31,7 +34,7 @@ export function MonthSelect({
       value={month}
       onValueChange={(value) => {
         if (!value) return;
-        router.push(`${basePath}?year=${year}&month=${value}`);
+        router.push(`${basePath}?${new URLSearchParams({ year: String(year), month: value, ...extraParams })}`);
       }}
     >
       <SelectTrigger className="w-44">

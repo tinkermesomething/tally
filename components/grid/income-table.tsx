@@ -7,6 +7,7 @@ import { ScrollFade } from "@/components/scroll-fade";
 import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
 import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
 import type { IncomeSourceRow } from "@/lib/db/queries";
+import { GROUP_PALETTE } from "@/lib/group-colors";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
 import { MONTH_ABBREVIATIONS as MONTHS, MONTH_NUMBERS } from "@/lib/months";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -99,8 +100,12 @@ export function IncomeTable({
               </td>
             </tr>
           ) : (
-            sources.map((source) => (
-              <tr key={source.id} className="border-t border-border">
+            sources.map((source, index) => (
+              <tr
+                key={source.id}
+                className="tinted-row border-t border-border"
+                style={{ "--row-color": GROUP_PALETTE[index % GROUP_PALETTE.length] } as React.CSSProperties}
+              >
                 <td className="sticky left-0 z-10 bg-card px-3 py-1.5 font-medium">
                   {source.name}
                 </td>
@@ -125,13 +130,13 @@ export function IncomeTable({
                 })}
                 <td
                   style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
-                  className={cn("sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+                  className={cn("row-total sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
                 >
                   {formatPence(source.yearTotalPence, currency)}
                 </td>
                 <td
                   style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
-                  className="sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
+                  className="row-total sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
                 >
                   {formatPence(source.monthlyAveragePence, currency)}
                 </td>
@@ -140,7 +145,7 @@ export function IncomeTable({
           )}
         </tbody>
         <tfoot>
-          <tr className="border-t border-border bg-secondary font-medium">
+          <tr className="tinted-row border-t border-border bg-secondary font-medium" style={{ "--row-color": "var(--status-good)" } as React.CSSProperties}>
             <td className="sticky left-0 z-10 bg-secondary px-3 py-2">Total income</td>
             {totalByMonth.map((value, i) => (
               <td key={i} className="px-3 py-2 text-right tabular-nums">
@@ -149,13 +154,13 @@ export function IncomeTable({
             ))}
             <td
               style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--secondary") }}
-              className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+              className={cn("row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
             >
               {formatPence(yearTotal, currency)}
             </td>
             <td
               style={{ right: 0, backgroundColor: floatingPanelFill("--secondary") }}
-              className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
+              className="row-total sticky z-10 px-3 py-2 text-right font-bold tabular-nums"
             >
               {formatPence(Math.round(yearTotal / 12), currency)}
             </td>

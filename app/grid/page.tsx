@@ -10,6 +10,8 @@ import { AddIncomeDialog } from "@/components/grid/add-income-dialog";
 import { DesktopGridTables } from "@/components/grid/desktop-grid-tables";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { GridWidthToggle } from "@/components/grid/grid-width-toggle";
+import { ExportGridButton } from "@/components/grid/export-grid-button";
+import { GRID_CSV_VIEWS, gridToCsv, type GridCsvView } from "@/lib/grid-csv";
 import { MonthPager } from "@/components/grid/month-pager";
 import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
 import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
@@ -70,6 +72,10 @@ export default async function GridPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <GridWidthToggle />
+          <ExportGridButton
+            year={year}
+            csv={Object.fromEntries(GRID_CSV_VIEWS.map((v) => [v.id, gridToCsv(data, v.id, currency)])) as Record<GridCsvView, string>}
+          />
           <LogExpenseDialog
             categories={data.categories.flatMap((c) => [
               { id: c.id, name: c.name },

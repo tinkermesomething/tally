@@ -6,7 +6,7 @@ export function Footer() {
   const version = rawVersion.replace(/^v/i, "");
 
   return (
-    <footer className="mx-auto max-w-6xl px-4 py-6 text-center text-xs text-muted-foreground">
+    <footer className="mx-auto max-w-6xl px-4 py-6 text-center text-xs text-muted-foreground print:hidden">
       Tally · v{version} ·{" "}
       <a
         href="https://github.com/tinkermesomething/tally"

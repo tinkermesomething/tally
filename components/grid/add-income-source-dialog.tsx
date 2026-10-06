@@ -18,7 +18,7 @@ import { createIncomeSource } from "@/app/grid/actions";
 
 const DEFAULT_TRIGGER = (
   <Button size="sm" variant="outline">
-    <Plus className="size-4" />
+    <Plus className="size-4 text-chart-6" />
     Add income source
   </Button>
 );

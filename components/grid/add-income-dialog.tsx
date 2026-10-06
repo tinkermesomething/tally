@@ -97,11 +97,11 @@ export function AddIncomeDialog({
       return;
     }
     if (isLoan && !personId) {
-      setError("Pick who it's from, or add a new person.");
+      setError("Pick who it's from, or add a new lender.");
       return;
     }
     if (isLoan && personId === NEW_PERSON && !newPersonName.trim()) {
-      setError("Enter the new person's name.");
+      setError("Enter the new lender's name.");
       return;
     }
     setError(null);
@@ -137,7 +137,7 @@ export function AddIncomeDialog({
       <DialogTrigger
         render={
           <Button size="sm">
-            <Plus className="size-4" />
+            <Plus className="size-4 text-chart-6" />
             Add income
           </Button>
         }

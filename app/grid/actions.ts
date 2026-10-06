@@ -1,7 +1,7 @@
 "use server";
 
 import { assertNonNegativePounds, assertPositivePounds } from "@/lib/validate";
-import { toResult } from "@/lib/action-result";
+import { toResult, type ActionResult } from "@/lib/action-result";
 import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import {
@@ -30,6 +30,7 @@ import {
   upsertIncomeEntry,
 } from "@/lib/db/queries";
 import { addDebtEntry } from "@/lib/db/debt";
+import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
 import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { parseIsoDate } from "@/lib/date";
@@ -314,6 +315,38 @@ export async function createCategory(input: {
     await addCategoryQuery({ ...input, name: trimmed });
     revalidatePath("/grid");
     revalidatePath("/reports");
+  });
+}
+
+/** Drop a category at a position among its siblings (see reorderCategoryTo) -
+ * what the press-and-hold drag calls. */
+export async function moveCategoryToIndex(categoryId: number, toIndex: number, year: number): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    if (!Number.isInteger(year)) throw new Error("Pick a year.");
+    await reorderCategoryTo(categoryId, toIndex, year);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+    revalidatePath("/reports");
+    revalidatePath("/entries");
+  });
+}
+
+/** One place up or down among its siblings (see moveCategoryOrder). */
+export async function reorderCategory(
+  categoryId: number,
+  direction: "up" | "down",
+  year: number
+): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    if (direction !== "up" && direction !== "down") throw new Error("Pick up or down.");
+    if (!Number.isInteger(year)) throw new Error("Pick a year.");
+    await moveCategoryOrder(categoryId, direction, year);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+    revalidatePath("/reports");
+    revalidatePath("/entries");
   });
 }
 

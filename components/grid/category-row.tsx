@@ -8,6 +8,8 @@ import { overdueItemsFor, type OverdueItem } from "@/lib/overdue";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
+import { useCategoryDrag } from "@/components/grid/use-category-drag";
+import { spentTotals } from "@/lib/grid-totals";
 import { formatPence } from "@/lib/money";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill, budgetValueColorClass } from "@/lib/utils";
 import type { GridCategory } from "@/lib/db/queries";
@@ -21,6 +23,21 @@ import {
 } from "@/app/grid/actions";
 import { MONTH_ABBREVIATIONS as MONTH_NAMES, MONTH_NUMBERS } from "@/lib/months";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
+
+/** A total or average with, underneath, what was actually spent - the same
+ * "Paid" line the month cells show, so the year columns tell the whole story. */
+function TotalWithPaid({ budgeted, paid, currency, label = "Paid" }: { budgeted: number; paid: number | undefined; currency: string; label?: string }) {
+  return (
+    <>
+      <div>{formatPence(budgeted, currency)}</div>
+      {paid !== undefined && paid > 0 && (
+        <div className="text-xs font-normal tabular-nums text-primary" data-testid="paid-total">
+          {label} {formatPence(paid, currency)}
+        </div>
+      )}
+    </>
+  );
+}
 
 function AnnualBadge({ annualMonth }: { annualMonth: number | null }) {
   return (
@@ -112,10 +129,19 @@ export function CategoryMonthCell({
 /** Renders a child (leaf) category's own row cells - always directly
  * editable, never computed, since only top-level categories can have
  * children in this app. */
-function ChildRowCells({ category, year }: { category: GridCategory; year: number }) {
+function ChildRowCells({
+  category,
+  year,
+  onHold,
+}: {
+  category: GridCategory;
+  year: number;
+  /** Press-and-hold on the name cell starts dragging this subcategory. */
+  onHold: (e: React.PointerEvent<HTMLElement>) => void;
+}) {
   return (
     <>
-      <td className="sticky left-0 z-10 bg-muted px-3 py-1.5 pl-8 text-muted-foreground">
+      <td onPointerDown={onHold} className="sticky left-0 z-10 bg-muted px-3 py-1.5 pl-8 text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <InlineEditText
             value={category.name}
@@ -151,11 +177,21 @@ export function CategoryRow({
   const { currency } = useAppSettings();
   const [expanded, setExpanded] = useState(false);
   const hasChildren = category.children.length > 0;
+  const drag = useCategoryDrag(year);
 
   return (
     <>
-      <tr className="group border-t border-border/60">
-        <td className="sticky left-0 z-10 bg-card px-3 py-1.5 font-medium">
+      <tr className="group border-t border-border/60" data-reorder-group="top" data-reorder-id={category.id}>
+        <td
+          onPointerDown={(e) => drag.onPointerDown(e, "top", category.id, "kids-")}
+          className="sticky left-0 z-10 bg-card px-3 py-1.5 font-medium"
+          title="Press and hold to drag this category up or down"
+        >
+          {drag.error && (
+            <p role="alert" className="mb-1 text-[0.65rem] text-status-critical">
+              {drag.error}
+            </p>
+          )}
           <div className="flex items-center gap-1">
             {hasChildren ? (
               <button
@@ -200,19 +236,24 @@ export function CategoryRow({
           style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
           className={cn("sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
         >
-          {formatPence(category.yearTotalPence, currency)}
+          <TotalWithPaid budgeted={category.yearTotalPence} paid={spentTotals(category.actualByMonth).total} currency={currency} />
         </td>
         <td
           style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
           className="sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
         >
-          {formatPence(category.monthlyAveragePence, currency)}
+          <TotalWithPaid budgeted={category.monthlyAveragePence} paid={spentTotals(category.actualByMonth).average} currency={currency} />
         </td>
       </tr>
       {expanded &&
         category.children.map((child) => (
-          <tr key={child.id} className="border-t border-border/40 bg-muted">
-            <ChildRowCells category={child} year={year} />
+          <tr
+            key={child.id}
+            className="group border-t border-border/40 bg-muted"
+            data-reorder-group={`kids-${category.id}`}
+            data-reorder-id={child.id}
+          >
+            <ChildRowCells category={child} year={year} onHold={(e) => drag.onPointerDown(e, `kids-${category.id}`, child.id)} />
             <td
               style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--muted") }}
               className={cn(
@@ -220,13 +261,13 @@ export function CategoryRow({
                 FLOATING_PANEL_EDGE
               )}
             >
-              {formatPence(child.yearTotalPence, currency)}
+              <TotalWithPaid budgeted={child.yearTotalPence} paid={spentTotals(child.actualByMonth).total} currency={currency} />
             </td>
             <td
               style={{ right: 0, backgroundColor: floatingPanelFill("--muted") }}
               className="sticky z-10 px-3 py-1.5 text-right font-bold text-muted-foreground tabular-nums"
             >
-              {formatPence(child.monthlyAveragePence, currency)}
+              <TotalWithPaid budgeted={child.monthlyAveragePence} paid={spentTotals(child.actualByMonth).average} currency={currency} />
             </td>
           </tr>
         ))}
