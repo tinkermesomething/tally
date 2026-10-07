@@ -2,21 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { PiggyBank } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { runAction } from "@/lib/action-result";
 import { linkCategory } from "@/app/savings/actions";
+import { linkCategoryTagging, previewCategoryTags } from "@/app/grid/actions";
+import { LinkTaggingDialog, type LinkTarget } from "@/components/settings/link-tagging-dialog";
 
 const NONE = "none";
 
 /** Links a category to a savings bucket: every expense in it then pays into
- * the bucket. Choosing a bucket asks (optionally) for a date to back-fill
- * the category's past expenses from; unlinking is immediate and keeps the
- * deposits already made. */
+ * the bucket. If the category already has expenses that would count, they are
+ * offered as a ticked list so the past ones can be added at the same time;
+ * unlinking is immediate and keeps the deposits already made. */
 export function EditableBucketLink({
   categoryId,
   categoryName,
@@ -28,13 +26,10 @@ export function EditableBucketLink({
   linkedBucketId: number | null;
   buckets: { id: number; name: string; color: string }[];
 }) {
-  const [target, setTarget] = useState<number | null>(null); // bucket being linked, awaiting the back-fill choice
-  const [from, setFrom] = useState("");
+  const [target, setTarget] = useState<LinkTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [added, setAdded] = useState<number | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const current = buckets.find((b) => b.id === linkedBucketId);
-  const targetBucket = buckets.find((b) => b.id === target);
 
   function handleChange(value: string | null) {
     if (!value || value === NONE) {
@@ -46,27 +41,17 @@ export function EditableBucketLink({
     }
     const next = parseInt(value, 10);
     if (next === linkedBucketId) return;
-    setFrom("");
     setError(null);
-    setAdded(null);
-    setTarget(next);
-  }
-
-  function confirm() {
-    if (target === null) return;
     startTransition(async () => {
-      let count = 0;
-      const failure = await runAction(async () => {
-        const res = await linkCategory(categoryId, target, from || undefined);
-        if (res.ok && res.added) count = res.added;
-        return res;
-      });
-      if (failure) return setError(failure);
-      if (from && count > 0) {
-        setAdded(count); // show how many were added before closing
-      } else {
-        setTarget(null);
+      const link = { savingsBucketId: next };
+      const preview = await previewCategoryTags(categoryId, link);
+      if (!preview.ok) return setError(preview.error);
+      if (preview.total === 0) {
+        const res = await linkCategoryTagging(categoryId, link, []);
+        if (!res.ok) setError(res.error);
+        return;
       }
+      setTarget({ link, name: buckets.find((b) => b.id === next)?.name ?? "this bucket", kind: "savings", rows: preview.rows, total: preview.total });
     });
   }
 
@@ -106,42 +91,12 @@ export function EditableBucketLink({
         </SelectContent>
       </Select>
 
-      <Dialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              Pay {categoryName} into {targetBucket?.name}
-            </DialogTitle>
-            <DialogDescription>
-              From now on, every expense in this category also pays into the bucket. Add its past expenses too if you like.
-            </DialogDescription>
-          </DialogHeader>
-          {added === null ? (
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor={`backfill-${categoryId}`}>Include past expenses from (optional)</Label>
-                <Input id={`backfill-${categoryId}`} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Leave empty to start from now. Each expense is only ever counted once.</p>
-              </div>
-              {error && <p className="text-sm text-status-critical">{error}</p>}
-              <DialogFooter>
-                <Button disabled={pending} onClick={confirm}>
-                  {pending ? "Linking…" : "Link"}
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="space-y-4" data-testid="backfill-result">
-              <p className="text-sm">
-                Linked. Added {added} past {added === 1 ? "expense" : "expenses"} to the bucket.
-              </p>
-              <DialogFooter>
-                <Button onClick={() => setTarget(null)}>Done</Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {error && (
+        <span role="alert" className="text-[0.65rem] text-status-critical">
+          {error}
+        </span>
+      )}
+      <LinkTaggingDialog categoryId={categoryId} categoryName={categoryName} target={target} onClose={() => setTarget(null)} />
     </>
   );
 }

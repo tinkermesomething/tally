@@ -8,6 +8,7 @@ import {
 import { getCategoryTree, getIncomeSourceList } from "@/lib/db/queries";
 import { getPeopleWithBalances } from "@/lib/db/debt";
 import { getAppSettings } from "@/lib/db/settings";
+import { getBuckets } from "@/lib/db/savings";
 import { ReviewList } from "@/components/review/review-list";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ import { PencilInButton } from "@/components/review/pencil-in-button";
 import { ImportCsvDialog } from "@/components/review/import-csv-dialog";
 import { CSV_PROVIDER } from "@/lib/db/bank-sync";
 import { isCsvMapping } from "@/lib/csv-import";
+import { formatSyncTime, nextSyncSlot } from "@/lib/sync-schedule";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,7 @@ export default async function ReviewPage({
 }) {
   const { from, to } = await searchParams;
 
-  const [pending, categoryTree, incomeSources, people, bankAccounts, pendingPreview, appSettings] = await Promise.all([
+  const [pending, categoryTree, incomeSources, people, bankAccounts, pendingPreview, appSettings, savingsBuckets] = await Promise.all([
     getPendingTransactions({ dateFrom: from, dateTo: to }),
     getCategoryTree(),
     getIncomeSourceList(),
@@ -40,12 +42,18 @@ export default async function ReviewPage({
     // here (it's resolved from this SAME Promise.all).
     getPendingPreview(),
     getAppSettings(),
+    getBuckets(),
   ]);
 
   const flatCategories = categoryTree.flatMap((c) => [
     { id: c.id, name: c.name },
     ...c.children.map((child) => ({ id: child.id, name: `${c.name} — ${child.name}` })),
   ]);
+
+  // Newest sync across the linked (non-CSV) accounts.
+  const syncTimes = bankAccounts.filter((a) => a.provider !== CSV_PROVIDER && a.lastSyncedAt).map((a) => a.lastSyncedAt!.getTime());
+  const lastSync = syncTimes.length > 0 ? Math.max(...syncTimes) : null;
+  const hasLinked = bankAccounts.some((a) => a.provider !== CSV_PROVIDER);
 
   const accounts = accountLabels(bankAccounts);
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
@@ -79,6 +87,14 @@ export default async function ReviewPage({
           <p className="text-sm text-muted-foreground">
             Imported bank transactions waiting for a category.
           </p>
+          {hasLinked && (
+            <p className="text-xs text-muted-foreground" data-testid="last-sync">
+              {lastSync ? `Last synced ${formatSyncTime(lastSync)}` : "Not synced yet"}
+              {appSettings.bankSyncEnabled
+                ? ` · next ${formatSyncTime(nextSyncSlot(Date.now(), appSettings.bankSyncFrequencyHours))}`
+                : " · automatic sync is off"}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {bankAccounts.length === 0 && (
@@ -156,6 +172,7 @@ export default async function ReviewPage({
         categories={flatCategories}
         incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
         people={people.map((p) => ({ id: p.id, name: p.name }))}
+        buckets={savingsBuckets.map((b) => ({ id: b.id, name: b.name }))}
       />
     </div>
   );

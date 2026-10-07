@@ -12,6 +12,7 @@ export async function updatePreferences(input: {
   carryOverStartMonth?: number;
   bankSyncEnabled?: boolean;
   bankSyncFrequencyHours?: number;
+  autoBackupEnabled?: boolean;
 }) {
   await requireSession();
   await updateAppSettings(input);

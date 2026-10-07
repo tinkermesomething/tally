@@ -17,6 +17,8 @@ export type AppSettings = {
   carryOverStartMonth: number;
   bankSyncEnabled: boolean;
   bankSyncFrequencyHours: number;
+  /** Pause switch for automatic backups (they also need BACKUP_DIR). */
+  autoBackupEnabled: boolean;
 };
 
 const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat };
@@ -41,6 +43,7 @@ export async function getAppSettings(): Promise<AppSettings> {
       carryOverStartMonth: row.carryOverStartMonth ?? thisMonth,
       bankSyncEnabled: row.bankSyncEnabled,
       bankSyncFrequencyHours: row.bankSyncFrequencyHours,
+      autoBackupEnabled: row.autoBackupEnabled,
     };
   }
   const [created] = await db.insert(appSettings).values({}).returning();
@@ -51,6 +54,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     carryOverStartMonth: thisMonth,
     bankSyncEnabled: created.bankSyncEnabled,
     bankSyncFrequencyHours: created.bankSyncFrequencyHours,
+    autoBackupEnabled: created.autoBackupEnabled,
   };
 }
 
@@ -63,6 +67,7 @@ export async function updateAppSettings(input: {
   carryOverStartMonth?: number;
   bankSyncEnabled?: boolean;
   bankSyncFrequencyHours?: number;
+  autoBackupEnabled?: boolean;
 }) {
   if (input.currency !== undefined && !isCurrencyCode(input.currency)) {
     throw new Error(`Unrecognized currency code: "${input.currency}"`);
@@ -87,6 +92,20 @@ export async function updateAppSettings(input: {
       ...(input.carryOverStartMonth !== undefined ? { carryOverStartMonth: input.carryOverStartMonth } : {}),
       ...(input.bankSyncEnabled !== undefined ? { bankSyncEnabled: input.bankSyncEnabled } : {}),
       ...(input.bankSyncFrequencyHours !== undefined ? { bankSyncFrequencyHours: input.bankSyncFrequencyHours } : {}),
+      ...(input.autoBackupEnabled !== undefined ? { autoBackupEnabled: input.autoBackupEnabled } : {}),
     })
     .where(eq(appSettings.id, row!.id));
+}
+
+/** The saved automatic-backup choices, as JSON (see lib/auto-backup-settings.ts). */
+export async function getAutoBackupStored(): Promise<string | null> {
+  await getAppSettings(); // makes sure the row exists
+  const row = await db.query.appSettings.findFirst();
+  return row?.autoBackupConfig ?? null;
+}
+
+export async function setAutoBackupStored(json: string | null) {
+  await getAppSettings();
+  const row = await db.query.appSettings.findFirst();
+  await db.update(appSettings).set({ autoBackupConfig: json }).where(eq(appSettings.id, row!.id));
 }

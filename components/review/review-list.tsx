@@ -32,8 +32,10 @@ export function ReviewList({
   categories,
   incomeSources,
   people,
+  buckets = [],
   accounts = [],
 }: {
+  buckets?: { id: number; name: string }[];
   transactions: ReviewRow[];
   accounts?: { id: number; name: string }[];
   categories: { id: number; name: string }[];
@@ -437,6 +439,7 @@ export function ReviewList({
         categories={categories}
         incomeSources={incomeSources}
         people={people}
+        buckets={buckets}
         accounts={accounts}
       />
     </div>

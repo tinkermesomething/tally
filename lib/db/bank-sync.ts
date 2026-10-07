@@ -3,16 +3,20 @@ import { db, inTransaction } from "./index";
 import { accountDisplayName } from "../accounts";
 import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
 import { addDebtEntry } from "./debt";
+import { addTagsToExpense } from "./retro-tags";
 import { recordAnchorForWage } from "./pay-period";
 import { parseIsoDate } from "../date";
 import {
   bankAccounts,
   categories,
   categoryRules,
+  debtLedgerEntries,
   expenseEntries,
   importedTransactions,
   incomeSources,
   people,
+  savingsBuckets,
+  savingsEntries,
 } from "./schema";
 import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence, payeeFromTransaction } from "../gocardless";
 import {
@@ -309,7 +313,7 @@ export async function getCategoryRules(): Promise<CategoryRule[]> {
 }
 
 export type RuleTarget =
-  | { targetType: "expense"; categoryId: number; debtPersonId?: number }
+  | { targetType: "expense"; categoryId: number; debtPersonId?: number; savingsBucketId?: number }
   | { targetType: "income"; incomeSourceId: number; debtPersonId?: number }
   // Matching rows are ignored instead of categorized - e.g. money moved
   // between your own accounts. Applies to money in AND out, so both halves
@@ -339,6 +343,10 @@ async function assertRuleTargetExists(t: RuleTarget) {
     }
   }
   await assertPersonExists(t.targetType === "ignore" ? undefined : t.debtPersonId);
+  if (t.targetType === "expense" && t.savingsBucketId !== undefined) {
+    const bucket = await db.query.savingsBuckets.findFirst({ where: eq(savingsBuckets.id, t.savingsBucketId) });
+    if (!bucket || bucket.archived) throw new Error("That savings bucket no longer exists.");
+  }
 }
 
 /** Stored conditions are all-must-match. field/operator/value mirror the
@@ -377,6 +385,7 @@ function ruleTargetColumns(t: RuleTarget) {
     categoryId: t.targetType === "expense" ? t.categoryId : null,
     incomeSourceId: t.targetType === "income" ? t.incomeSourceId : null,
     debtPersonId: t.targetType === "ignore" ? null : (t.debtPersonId ?? null),
+    savingsBucketId: t.targetType === "expense" ? (t.savingsBucketId ?? null) : null,
   };
 }
 
@@ -411,7 +420,7 @@ export async function deactivateCategoryRule(id: number) {
 }
 
 export type RuleMatch =
-  | { targetType: "expense"; categoryId: number; debtPersonId: number | null }
+  | { targetType: "expense"; categoryId: number; debtPersonId: number | null; savingsBucketId: number | null }
   | { targetType: "income"; incomeSourceId: number; debtPersonId: number | null }
   | { targetType: "ignore" };
 
@@ -460,7 +469,12 @@ export function matchCategoryRule(
       // the column itself is nullable in the schema (shared with income
       // rules) - the ! is safe given that invariant, not a type escape hatch
       // papering over a real gap.
-      return { targetType: "expense", categoryId: rule.categoryId!, debtPersonId: rule.debtPersonId ?? null };
+      return {
+        targetType: "expense",
+        categoryId: rule.categoryId!,
+        debtPersonId: rule.debtPersonId ?? null,
+        savingsBucketId: rule.savingsBucketId ?? null,
+      };
     }
     return { targetType: "income", incomeSourceId: rule.incomeSourceId!, debtPersonId: rule.debtPersonId ?? null };
   }
@@ -659,6 +673,9 @@ async function autoProcessStagedTransaction(row: typeof importedTransactions.$in
       await categorizeTransaction(id, {
         categoryId: ruleMatch.categoryId,
         debtPersonId: ruleMatch.debtPersonId ?? undefined,
+        // Same as the debt tag: no savings choice on the rule must not
+        // override the category's own linked bucket.
+        bucketId: ruleMatch.savingsBucketId ?? undefined,
       });
     } else {
       await categorizeTransactionAsIncome(id, {
@@ -780,7 +797,7 @@ export async function categorizeTransaction(
   id: number,
   // debtPersonId omitted (not null) falls back to the category's own
   // linkedDebtPersonId, if any - see logExpense.
-  input: { categoryId: number; debtPersonId?: number | null }
+  input: { categoryId: number; debtPersonId?: number | null; bucketId?: number | null }
 ) {
   const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
   if (!row) throw new Error(`Staged transaction ${id} not found.`);
@@ -801,6 +818,7 @@ export async function categorizeTransaction(
       entryDate: row.bookingDate,
       note: entryNoteFor(row),
       debtPersonId: input.debtPersonId,
+      bucketId: input.bucketId,
       importedTransactionId: id,
     });
 
@@ -968,6 +986,30 @@ export type RulePreview = {
   /** How many of the matches an EXISTING rule would already claim on
    * import (first match wins, so the new rule wouldn't fire for those). */
   alreadyCoveredByEarlierRule: number;
+  /** Past (already categorized) expenses this rule's debt / savings tag would
+   * be added to. Null when the rule has no such tag, or isn't an expense rule. */
+  retro: RetroPreview | null;
+};
+
+/** The tags a rule adds, for finding past expenses that are missing them. */
+export type RuleTags = { categoryId: number; debtPersonId?: number; savingsBucketId?: number };
+
+export type RetroRow = {
+  expenseEntryId: number;
+  bookingDate: string;
+  payeeRaw: string;
+  payeeClean: string | null;
+  amountPence: number;
+  /** What would be added to this expense. */
+  adds: { debt: boolean; savings: boolean };
+};
+
+export type RetroPreview = {
+  rows: RetroRow[];
+  /** Real number - rows is capped, this isn't. */
+  total: number;
+  /** Matching expenses sitting in a DIFFERENT category: left alone. */
+  otherCategory: number;
 };
 
 /** Every transaction still waiting in Review that these conditions would
@@ -977,7 +1019,13 @@ export type RulePreview = {
  * by the target: expense rules only see money out, income only money in. */
 export async function previewRuleMatches(
   conditionsInput: RuleCondition[],
-  direction: "expense" | "income" | "ignore"
+  direction: "expense" | "income" | "ignore",
+  /** When editing a rule: only the rules BEFORE it can claim a row first
+   * (its own old version, and later rules, can't), so the "already claimed"
+   * count stays honest. Omit for a new rule, which goes last. */
+  editingRuleId?: number,
+  /** Expense rules: also find past expenses this rule's debt/savings tag would be added to. */
+  tags?: RuleTags
 ): Promise<RulePreview> {
   const conditions = validateConditions(conditionsInput);
   const pending = await db
@@ -1009,7 +1057,11 @@ export async function previewRuleMatches(
     for (const e of entries) provisionalById.set(e.id, e.provisional);
   }
 
-  const existingRules = await getCategoryRules();
+  let existingRules = await getCategoryRules();
+  if (editingRuleId !== undefined) {
+    const at = existingRules.findIndex((r) => r.id === editingRuleId);
+    existingRules = at === -1 ? existingRules : existingRules.slice(0, at);
+  }
   let alreadyCoveredByEarlierRule = 0;
   const rows: RulePreviewRow[] = [];
   for (const t of matches) {
@@ -1026,37 +1078,141 @@ export async function previewRuleMatches(
       blocked: !dupStillExists ? null : provisionalById.get(dupId!) ? "pencilled-match" : "possible-duplicate",
     });
   }
-  return { rows, total: matches.length, alreadyCoveredByEarlierRule };
+  const retro = direction === "expense" && tags ? await findUntaggedExpenses(conditions, tags) : null;
+  return { rows, total: matches.length, alreadyCoveredByEarlierRule, retro };
+}
+
+// ---- Retroactive tags (past, already categorized expenses) ----
+
+type UntaggedExpense = RetroRow & { categoryId: number };
+
+/** Past expenses (bank rows already categorized) that these conditions match
+ * and that are missing the rule's debt and/or savings tag - so a tag forgotten
+ * when the rule was made can be added afterwards. Only expenses in the rule's
+ * own category are offered; matches in another category are counted and left
+ * alone. An expense already tagged (to anyone / any bucket) is never touched,
+ * and pencilled-in drafts are skipped. */
+async function listUntaggedExpenses(conditions: RuleCondition[], tags: RuleTags): Promise<{ eligible: UntaggedExpense[]; otherCategory: number }> {
+  if (tags.debtPersonId === undefined && tags.savingsBucketId === undefined) return { eligible: [], otherCategory: 0 };
+  const past = await db
+    .select({
+      importedId: importedTransactions.id,
+      bankAccountId: importedTransactions.bankAccountId,
+      bookingDate: importedTransactions.bookingDate,
+      payeeRaw: importedTransactions.payeeRaw,
+      payeeClean: importedTransactions.payeeClean,
+      amountPence: importedTransactions.amountPence,
+      expenseEntryId: expenseEntries.id,
+      categoryId: expenseEntries.categoryId,
+      debtPersonId: expenseEntries.debtPersonId,
+    })
+    .from(importedTransactions)
+    .innerJoin(expenseEntries, eq(expenseEntries.importedTransactionId, importedTransactions.id))
+    .where(and(eq(importedTransactions.status, "categorized"), sql`${importedTransactions.amountPence} < 0`, eq(expenseEntries.provisional, false)))
+    .orderBy(sql`${importedTransactions.bookingDate} desc`, sql`${importedTransactions.id} desc`);
+
+  const matched = past.filter((t) => allConditionsMatch(conditions, t));
+  if (matched.length === 0) return { eligible: [], otherCategory: 0 };
+  const ids = matched.map((t) => t.expenseEntryId);
+  const ledgered = new Set(
+    (await db.select({ id: debtLedgerEntries.expenseEntryId }).from(debtLedgerEntries).where(inArray(debtLedgerEntries.expenseEntryId, ids))).map((r) => r.id)
+  );
+  const deposited = new Set(
+    (await db.select({ id: savingsEntries.expenseEntryId }).from(savingsEntries).where(inArray(savingsEntries.expenseEntryId, ids))).map((r) => r.id)
+  );
+
+  const eligible: UntaggedExpense[] = [];
+  let otherCategory = 0;
+  for (const t of matched) {
+    const needsDebt = tags.debtPersonId !== undefined && t.debtPersonId === null && !ledgered.has(t.expenseEntryId);
+    const needsSavings = tags.savingsBucketId !== undefined && !deposited.has(t.expenseEntryId);
+    if (!needsDebt && !needsSavings) continue;
+    if (t.categoryId !== tags.categoryId) {
+      otherCategory++;
+      continue;
+    }
+    eligible.push({
+      expenseEntryId: t.expenseEntryId,
+      categoryId: t.categoryId,
+      bookingDate: t.bookingDate,
+      payeeRaw: t.payeeRaw,
+      payeeClean: t.payeeClean,
+      amountPence: t.amountPence,
+      adds: { debt: needsDebt, savings: needsSavings },
+    });
+  }
+  return { eligible, otherCategory };
+}
+
+async function findUntaggedExpenses(conditions: RuleCondition[], tags: RuleTags): Promise<RetroPreview> {
+  const { eligible, otherCategory } = await listUntaggedExpenses(conditions, tags);
+  return {
+    rows: eligible.slice(0, MAX_PREVIEW_ROWS).map((r) => ({ expenseEntryId: r.expenseEntryId, bookingDate: r.bookingDate, payeeRaw: r.payeeRaw, payeeClean: r.payeeClean, amountPence: r.amountPence, adds: r.adds })),
+    total: eligible.length,
+    otherCategory,
+  };
+}
+
+/** Adds the rule's debt / savings tag to the chosen past expenses. Each id is
+ * re-checked against what the rule would tag RIGHT NOW (still matching, still
+ * untagged), and everything is saved as one unit. */
+async function tagPastExpenses(
+  conditions: RuleCondition[],
+  tags: RuleTags,
+  expenseEntryIds: number[]
+): Promise<{ tagged: number; skipped: { id: number; reason: string }[] }> {
+  const skipped: { id: number; reason: string }[] = [];
+  if (expenseEntryIds.length === 0) return { tagged: 0, skipped };
+  const { eligible } = await listUntaggedExpenses(conditions, tags);
+  const byId = new Map(eligible.map((r) => [r.expenseEntryId, r]));
+  let tagged = 0;
+  await inTransaction(async () => {
+    for (const id of new Set(expenseEntryIds)) {
+      const row = byId.get(id);
+      if (!row) {
+        skipped.push({ id, reason: "no longer matches, was already tagged, or is in another category" });
+        continue;
+      }
+      const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, id) });
+      if (!entry) {
+        skipped.push({ id, reason: "that expense no longer exists" });
+        continue;
+      }
+      await addTagsToExpense(entry, row.adds, tags);
+      tagged++;
+    }
+  });
+  return { tagged, skipped };
 }
 
 export type CreateRuleAndApplyResult = {
   ruleId: number;
   categorized: number;
+  /** Past expenses that had the rule's debt / savings tag added. */
+  tagged: number;
   /** Ids that were asked for but not applied (no longer matching, no
    * longer pending, pencilled-in, or failed) - with why, never silent. */
   skipped: { id: number; reason: string }[];
 };
 
-/** Saves the rule, then (optionally) categorizes the chosen matches with
- * the same target. The ids are only a request: each one is re-checked
- * against what the rule really matches RIGHT NOW, so a stale tab, a row
- * categorized elsewhere in the meantime, or a tampered request can't push
- * a non-matching transaction into the wrong category. */
-export async function createRuleAndCategorize(input: {
-  conditions: RuleCondition[];
-  target: RuleTarget;
-  applyToIds: number[];
-}): Promise<CreateRuleAndApplyResult> {
-  const conditions = validateConditions(input.conditions);
-  const rule = await addCategoryRule({ conditions, ...input.target }); // validates again; cheap and keeps addCategoryRule safe to call alone
-
+/** Categorizes the chosen waiting transactions with a rule's target. The ids
+ * are only a request: each one is re-checked against what the rule really
+ * matches RIGHT NOW, so a stale tab, a row categorized elsewhere in the
+ * meantime, or a tampered request can't push a non-matching transaction into
+ * the wrong category. */
+async function applyTargetToMatching(
+  conditions: RuleCondition[],
+  target: RuleTarget,
+  ids: number[],
+  editingRuleId?: number
+): Promise<{ categorized: number; skipped: { id: number; reason: string }[] }> {
   const skipped: { id: number; reason: string }[] = [];
   let categorized = 0;
-  if (input.applyToIds.length === 0) return { ruleId: rule.id, categorized, skipped };
+  if (ids.length === 0) return { categorized, skipped };
 
-  const preview = await previewRuleMatches(conditions, input.target.targetType);
+  const preview = await previewRuleMatches(conditions, target.targetType, editingRuleId);
   const eligible = new Map(preview.rows.map((r) => [r.id, r]));
-  for (const id of new Set(input.applyToIds)) {
+  for (const id of new Set(ids)) {
     const row = eligible.get(id);
     if (!row) {
       skipped.push({ id, reason: "no longer matches or is no longer waiting in Review" });
@@ -1067,14 +1223,18 @@ export async function createRuleAndCategorize(input: {
       continue;
     }
     try {
-      if (input.target.targetType === "ignore") {
+      if (target.targetType === "ignore") {
         await ignoreTransaction(id);
-      } else if (input.target.targetType === "expense") {
-        await categorizeTransaction(id, { categoryId: input.target.categoryId, debtPersonId: input.target.debtPersonId });
+      } else if (target.targetType === "expense") {
+        await categorizeTransaction(id, {
+          categoryId: target.categoryId,
+          debtPersonId: target.debtPersonId,
+          bucketId: target.savingsBucketId,
+        });
       } else {
         await categorizeTransactionAsIncome(id, {
-          incomeSourceId: input.target.incomeSourceId,
-          debtPersonId: input.target.debtPersonId,
+          incomeSourceId: target.incomeSourceId,
+          debtPersonId: target.debtPersonId,
         });
       }
       categorized++;
@@ -1082,5 +1242,38 @@ export async function createRuleAndCategorize(input: {
       skipped.push({ id, reason: err instanceof Error ? err.message : "failed" });
     }
   }
-  return { ruleId: rule.id, categorized, skipped };
+  return { categorized, skipped };
+}
+
+/** Saves the rule, then (optionally) categorizes the chosen matches with
+ * the same target. */
+export async function createRuleAndCategorize(input: {
+  conditions: RuleCondition[];
+  target: RuleTarget;
+  applyToIds: number[];
+  /** Past expenses (ids from the preview's `retro` rows) to add the tags to. */
+  tagExpenseIds?: number[];
+}): Promise<CreateRuleAndApplyResult> {
+  const conditions = validateConditions(input.conditions);
+  const rule = await addCategoryRule({ conditions, ...input.target }); // validates again; cheap and keeps addCategoryRule safe to call alone
+  return { ruleId: rule.id, ...(await applyEverything(conditions, input.target, input.applyToIds, input.tagExpenseIds ?? [])) };
+}
+
+async function applyEverything(conditions: RuleCondition[], target: RuleTarget, applyToIds: number[], tagExpenseIds: number[], editingRuleId?: number) {
+  const waiting = await applyTargetToMatching(conditions, target, applyToIds, editingRuleId);
+  if (target.targetType !== "expense" || tagExpenseIds.length === 0) return { ...waiting, tagged: 0 };
+  const past = await tagPastExpenses(conditions, { categoryId: target.categoryId, debtPersonId: target.debtPersonId, savingsBucketId: target.savingsBucketId }, tagExpenseIds);
+  return { categorized: waiting.categorized, tagged: past.tagged, skipped: [...waiting.skipped, ...past.skipped] };
+}
+
+/** Edits a rule, then (optionally) applies the NEW version to the waiting
+ * transactions the user picked - so a changed rule isn't stuck only
+ * affecting future imports. Rows already categorized stay as they are. */
+export async function updateRuleAndCategorize(
+  id: number,
+  input: { conditions: RuleCondition[]; target: RuleTarget; applyToIds: number[]; tagExpenseIds?: number[] }
+): Promise<CreateRuleAndApplyResult> {
+  const conditions = validateConditions(input.conditions);
+  await updateCategoryRule(id, { conditions, ...input.target });
+  return { ruleId: id, ...(await applyEverything(conditions, input.target, input.applyToIds, input.tagExpenseIds ?? [], id)) };
 }

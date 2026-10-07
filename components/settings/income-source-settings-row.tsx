@@ -5,7 +5,9 @@ import { Anchor, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner } from "@/components/ui/popover";
 import { SwatchRow, nativePickerActive } from "@/components/swatch-row";
-import { archiveIncomeSource, setIncomeColor, setPayAnchor } from "@/app/grid/actions";
+import { archiveIncomeSource, moveIncomeSourceToIndex, renameIncomeSource, setIncomeColor, setPayAnchor } from "@/app/grid/actions";
+import { InlineEditText } from "@/components/inline-edit-text";
+import { useRowDrag } from "@/components/grid/use-row-drag";
 import { runAction } from "@/lib/action-result";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +30,7 @@ export function IncomeSourceSettingsRow({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const drag = useRowDrag((sourceId, toIndex) => moveIncomeSourceToIndex(sourceId, toIndex, new Date().getFullYear()));
 
   function save(next: string | null) {
     setError(null);
@@ -37,7 +40,11 @@ export function IncomeSourceSettingsRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 row-card rounded-lg bg-card px-3 py-2">
+    <div
+      className="flex items-center justify-between gap-2 row-card rounded-lg bg-card px-3 py-2"
+      data-reorder-group="settings-income"
+      data-reorder-id={id}
+    >
       <span className="flex min-w-0 items-center gap-2 font-medium">
         <button
           ref={anchorRef}
@@ -73,7 +80,18 @@ export function IncomeSourceSettingsRow({
             </PopoverPositioner>
           </PopoverPortal>
         </Popover>
-        {name}
+        <span
+          onPointerDown={(e) => drag.onPointerDown(e, "settings-income", id)}
+          title="Press and hold to drag this income source up or down"
+          className="min-w-0"
+        >
+          <InlineEditText value={name} onCommit={(next) => renameIncomeSource(id, next)} className="font-medium" />
+        </span>
+        {drag.error && (
+          <span role="alert" className="text-xs text-status-critical">
+            {drag.error}
+          </span>
+        )}
       </span>
       <div className="flex items-center gap-1.5">
         <button

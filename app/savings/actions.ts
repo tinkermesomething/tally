@@ -52,6 +52,21 @@ export async function createBucket(form: BucketForm): Promise<ActionResult> {
   });
 }
 
+/** Makes a bucket from just a name (for "+ New savings bucket…" inside a rule)
+ * and hands back its id. */
+export async function createBucketNamed(name: string): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
+  await requireSession();
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed) return { ok: false, error: "Enter a name for the new savings bucket." };
+  try {
+    const created = await addBucket({ name: trimmed });
+    refresh();
+    return { ok: true, id: created.id };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't create that bucket." };
+  }
+}
+
 export async function editBucket(id: number, form: BucketForm): Promise<ActionResult> {
   await requireSession();
   return toResult(async () => {

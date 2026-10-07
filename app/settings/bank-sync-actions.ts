@@ -2,13 +2,9 @@
 
 import { requireSession } from "@/lib/session";
 import { cookies } from "next/headers";
-import type { RuleCondition } from "@/lib/rules";
 import { revalidatePath } from "next/cache";
 import {
   archiveBankAccount,
-  addCategoryRule,
-  type RuleTarget,
-  updateCategoryRule,
   deactivateCategoryRule,
   syncBankAccount,
   setBankAccountAlias,
@@ -105,25 +101,6 @@ export async function startBankConnection(institution: {
   });
 
   return { link: requisition.link };
-}
-
-export async function createCategoryRule(
-  input: { conditions: RuleCondition[] } & RuleTarget
-) {
-  await requireSession();
-  // addCategoryRule validates the conditions itself (and throws a
-  // readable message) - this is just the revalidating wrapper.
-  await addCategoryRule(input);
-  revalidatePath("/settings");
-}
-
-export async function editCategoryRule(
-  id: number,
-  input: { conditions: RuleCondition[] } & RuleTarget
-) {
-  await requireSession();
-  await updateCategoryRule(id, input);
-  revalidatePath("/settings");
 }
 
 export async function removeCategoryRule(id: number) {

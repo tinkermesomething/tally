@@ -20,9 +20,12 @@ const FREQUENCIES = [
 export function BankSyncSchedule({
   enabled,
   frequencyHours,
+  slotLabel,
 }: {
   enabled: boolean;
   frequencyHours: number;
+  /** Plain-words clock times of each frequency, e.g. { 24: "05:00 (Europe/London)" }. */
+  slotLabel: Record<number, string>;
 }) {
   const [localEnabled, setLocalEnabled] = useState(enabled);
   const [localFrequency, setLocalFrequency] = useState(frequencyHours);
@@ -53,6 +56,11 @@ export function BankSyncSchedule({
         </div>
         <Switch checked={localEnabled} onCheckedChange={handleToggle} />
       </div>
+      {localEnabled && (
+        <p className="text-xs text-muted-foreground" data-testid="sync-times">
+          Runs at {slotLabel[localFrequency]}. A sync missed while the app was off runs as soon as it is back.
+        </p>
+      )}
       {localEnabled && (
         <Select value={String(localFrequency)} onValueChange={handleFrequencyChange}>
           <SelectTrigger className="w-44">

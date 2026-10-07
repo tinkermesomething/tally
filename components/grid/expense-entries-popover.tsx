@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { Popover, PopoverPortal, PopoverPositioner, PopoverPopup } from "@/components/ui/popover";
 import type { ExpenseEntryRow } from "@/lib/db/queries";
+import { EntryTagsControl } from "@/components/entries/entry-tags-control";
 
 /** The breakdown behind a grid cell's "Paid £X" total - individually
  * editable/deletable, since that total can be the sum of several logged
@@ -113,6 +114,12 @@ export function ExpenseEntriesPopover({
                         if (e.key === "Enter") e.currentTarget.blur();
                       }}
                       className="w-full rounded border border-transparent bg-transparent px-1 text-xs text-muted-foreground hover:border-input focus:border-input focus:bg-background focus:text-foreground focus:outline-none"
+                    />
+                    <EntryTagsControl
+                      entryId={entry.id}
+                      label={`entry on ${entry.entryDate}`}
+                      tags={entry}
+                      onChanged={(next) => setEntries((es) => es && es.map((e) => (e.id === entry.id ? { ...e, ...next } : e)))}
                     />
                   </div>
                   <button

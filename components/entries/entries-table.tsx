@@ -10,6 +10,7 @@ import { useAppSettings } from "@/components/providers/app-settings-provider";
 import type { ExpenseEntryRow } from "@/lib/db/queries";
 import { amountText, fuzzyScore } from "@/lib/fuzzy";
 import { FIELD_COLOR } from "@/lib/field-colors";
+import { EntryTagsControl } from "@/components/entries/entry-tags-control";
 
 export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
   const { currency, dateFormat } = useAppSettings();
@@ -90,13 +91,14 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
             <th className={`px-3 py-2 font-medium ${FIELD_COLOR.category}`}>Category</th>
             <th className={`px-3 py-2 text-right font-medium ${FIELD_COLOR.amount}`}>Amount</th>
             <th className={`px-3 py-2 font-medium ${FIELD_COLOR.note}`}>Note</th>
+            <th className="px-3 py-2 font-medium">Counts towards</th>
             <th className="w-8 px-2 py-2" />
           </tr>
         </thead>
         <tbody>
           {shown.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+              <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                 No entries match.
               </td>
             </tr>
@@ -141,6 +143,14 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
                   aria-label={`Note for ${entry.categoryName} on ${entry.entryDate}`}
                 />
               </td>
+              <td className="px-3 py-2">
+                <EntryTagsControl
+                  entryId={entry.id}
+                  label={`${entry.categoryName} on ${entry.entryDate}`}
+                  tags={entry}
+                  onChanged={(next) => setRows((rs) => rs.map((r) => (r.id === entry.id ? { ...r, ...next } : r)))}
+                />
+              </td>
               <td className="px-2 py-2 text-right">
                 <button
                   type="button"
@@ -162,7 +172,7 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
             <td className="px-3 py-2 text-right tabular-nums">
               {formatPence(shown.reduce((sum, r) => sum + r.amountPence, 0), currency)}
             </td>
-            <td colSpan={2} />
+            <td colSpan={3} />
           </tr>
         </tfoot>
       </table>

@@ -1,0 +1,1 @@
+ALTER TABLE `category_rules` ADD `savings_bucket_id` integer REFERENCES savings_buckets(id);

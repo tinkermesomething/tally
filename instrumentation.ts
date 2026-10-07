@@ -10,5 +10,8 @@ export async function register() {
 
     const { startScheduledSync } = await import("./lib/scheduled-sync");
     startScheduledSync();
+
+    const { startAutoBackup } = await import("./lib/auto-backup");
+    startAutoBackup();
   }
 }

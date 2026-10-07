@@ -193,6 +193,11 @@ export type ExpenseEntryRow = {
   note: string | null;
   entryDate: string;
   provisional: boolean;
+  /** What this expense counts towards (see lib/db/retro-tags.ts). */
+  debtPersonId: number | null;
+  debtPersonName: string | null;
+  savingsBucketId: number | null;
+  savingsBucketName: string | null;
 };
 
 const expenseRowColumns = {
@@ -205,6 +210,10 @@ const expenseRowColumns = {
   note: expenseEntries.note,
   entryDate: expenseEntries.entryDate,
   provisional: expenseEntries.provisional,
+  debtPersonId: expenseEntries.debtPersonId,
+  debtPersonName: sql<string | null>`(select p.name from people p where p.id = ${expenseEntries.debtPersonId})`,
+  savingsBucketId: sql<number | null>`(select s.bucket_id from savings_entries s where s.expense_entry_id = ${expenseEntries.id} order by s.id limit 1)`,
+  savingsBucketName: sql<string | null>`(select b.name from savings_entries s join savings_buckets b on b.id = s.bucket_id where s.expense_entry_id = ${expenseEntries.id} order by s.id limit 1)`,
 };
 
 /** Individual logged expenses for one category/month - the breakdown behind

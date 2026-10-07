@@ -251,6 +251,13 @@ export const appSettings = sqliteTable("app_settings", {
   // would just be more ways to misconfigure it.
   bankSyncEnabled: integer("bank_sync_enabled", { mode: "boolean" }).notNull().default(false),
   bankSyncFrequencyHours: integer("bank_sync_frequency_hours").notNull().default(24),
+  // On by default: once the stack's .env points BACKUP_DIR at a folder,
+  // backups start. This is the user's pause switch (Settings > Backup).
+  autoBackupEnabled: integer("auto_backup_enabled", { mode: "boolean" }).notNull().default(true),
+  // JSON of the user's automatic-backup choices (folder, how often, time,
+  // how many to keep, password) - see lib/auto-backup-settings.ts. Null =
+  // nothing chosen yet, so the stack's BACKUP_* environment applies.
+  autoBackupConfig: text("auto_backup_config"),
 });
 
 /** A linked bank account (GoCardless for now, provider is a plain string so
@@ -392,6 +399,9 @@ export const categoryRules = sqliteTable("category_rules", {
   categoryId: integer("category_id").references(() => categories.id),
   incomeSourceId: integer("income_source_id").references(() => incomeSources.id),
   debtPersonId: integer("debt_person_id").references(() => people.id),
+  // Expense rules only: also pay this much into that savings bucket, the
+  // same way a category linked to a bucket does. Null = follow the category.
+  savingsBucketId: integer("savings_bucket_id").references(() => savingsBuckets.id),
   sortOrder: integer("sort_order").notNull().default(0),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });

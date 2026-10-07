@@ -1,5 +1,6 @@
 import { getAppSettings } from "./db/settings";
 import { getBankAccounts, syncAllBankAccounts } from "./db/bank-sync";
+import { lastSyncSlot } from "./sync-schedule";
 
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 // Checked shortly after boot too, not just on the first 15-minute tick - a
@@ -27,34 +28,35 @@ export function startScheduledSync() {
   setInterval(checkAndMaybeSync, CHECK_INTERVAL_MS);
 }
 
-/** Due if ANY active account hasn't synced within the configured
- * frequency - a brand-new account with no sync yet counts as immediately
- * due, so it doesn't sit waiting for an arbitrary window just because a
- * sibling account synced recently. syncAllBankAccounts covers every account
- * in one pass regardless, so this only decides WHEN that pass runs, not
- * which accounts it includes. Pure (no DB, no clock of its own) so the
+/** Due if ANY active account hasn't synced since the latest scheduled slot
+ * (see lib/sync-schedule.ts) - a brand-new account with no sync yet counts as
+ * due, so it doesn't wait just because a sibling account synced recently.
+ * syncAllBankAccounts covers every account in one pass regardless, so this
+ * only decides WHEN that pass runs. Pure (no DB, no clock of its own) so the
  * decision itself is testable. */
 export function isSyncDue(
   accounts: { lastSyncedAt: Date | null }[],
   frequencyHours: number,
-  now: number = Date.now()
+  now: number = Date.now(),
+  timeZone?: string
 ): boolean {
-  const thresholdMs = frequencyHours * 60 * 60 * 1000;
-  return accounts.some((a) => !a.lastSyncedAt || now - a.lastSyncedAt.getTime() >= thresholdMs);
+  const slot = lastSyncSlot(now, frequencyHours, timeZone);
+  return accounts.some((a) => !a.lastSyncedAt || a.lastSyncedAt.getTime() < slot);
 }
 
 /** isSyncDue plus a throttle on ATTEMPTS, not just successes: a pass that
- * was tried (even if an account failed) isn't tried again until a full
- * frequency window has gone by. */
+ * was tried in this slot (even if an account failed) isn't tried again until
+ * the next slot, so one account that can never sync can't make every
+ * 15-minute tick re-run the pass. */
 export function shouldSyncNow(
   accounts: { lastSyncedAt: Date | null }[],
   frequencyHours: number,
   lastAttempt: number | null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  timeZone?: string
 ): boolean {
-  const thresholdMs = frequencyHours * 60 * 60 * 1000;
-  if (lastAttempt !== null && now - lastAttempt < thresholdMs) return false;
-  return isSyncDue(accounts, frequencyHours, now);
+  if (lastAttempt !== null && lastAttempt >= lastSyncSlot(now, frequencyHours, timeZone)) return false;
+  return isSyncDue(accounts, frequencyHours, now, timeZone);
 }
 
 async function checkAndMaybeSync() {

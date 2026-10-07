@@ -31,6 +31,8 @@ import {
 } from "@/lib/db/queries";
 import { addDebtEntry } from "@/lib/db/debt";
 import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
+import { renameIncomeSource as renameIncomeSourceQuery, reorderIncomeSourceTo } from "@/lib/db/income-order";
+import { getTagOptions, linkCategoryAndTag, listMissingTags, setExpenseTags, type MissingTagRow } from "@/lib/db/retro-tags";
 import { setIncomeSourceColor } from "@/lib/db/queries";
 import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
@@ -333,6 +335,28 @@ export async function moveCategoryToIndex(categoryId: number, toIndex: number, y
   });
 }
 
+/** Drop an income source at a position among the sources shown for `year` -
+ * what the press-and-hold drag calls (see reorderIncomeSourceTo). */
+export async function moveIncomeSourceToIndex(incomeSourceId: number, toIndex: number, year: number): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    if (!Number.isInteger(year)) throw new Error("Pick a year.");
+    await reorderIncomeSourceTo(incomeSourceId, toIndex, year);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+  });
+}
+
+export async function renameIncomeSource(incomeSourceId: number, name: string): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    await renameIncomeSourceQuery(incomeSourceId, name);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+    revalidatePath("/reports");
+  });
+}
+
 /** One place up or down among its siblings (see moveCategoryOrder). */
 export async function reorderCategory(
   categoryId: number,
@@ -441,4 +465,56 @@ export async function setIncomeColor(incomeSourceId: number, color: string | nul
     revalidatePath("/grid");
     revalidatePath("/settings");
   });
+}
+
+// ---- tags on existing expenses (debt repayment / savings) ----
+
+function refreshTagged() {
+  for (const path of ["/grid", "/settings", "/debt", "/savings", "/entries", "/reports"]) revalidatePath(path);
+}
+
+/** The existing expenses in a category that linking it to this lender / bucket
+ * would add the tag to - shown as a list to tick before anything changes. */
+export async function previewCategoryTags(
+  categoryId: number,
+  tags: { debtPersonId?: number; savingsBucketId?: number }
+): Promise<{ ok: true; rows: MissingTagRow[]; total: number } | { ok: false; error: string }> {
+  await requireSession();
+  try {
+    return { ok: true, ...(await listMissingTags(categoryId, tags)) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't look that up." };
+  }
+}
+
+/** Links a category to a lender or bucket and tags the ticked existing expenses. */
+export async function linkCategoryTagging(
+  categoryId: number,
+  link: { debtPersonId?: number; savingsBucketId?: number },
+  expenseEntryIds: number[]
+): Promise<{ ok: true; tagged: number; skipped: { id: number; reason: string }[] } | { ok: false; error: string }> {
+  await requireSession();
+  try {
+    const ids = Array.isArray(expenseEntryIds) ? expenseEntryIds.filter((n) => Number.isInteger(n)) : [];
+    const result = await linkCategoryAndTag(categoryId, link, ids);
+    refreshTagged();
+    return { ok: true, ...result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't link that." };
+  }
+}
+
+/** Sets (or clears, with null) what ONE expense counts towards. */
+export async function setEntryTags(expenseEntryId: number, changes: { debtPersonId?: number | null; savingsBucketId?: number | null }): Promise<ActionResult> {
+  await requireSession();
+  return toResult(async () => {
+    await setExpenseTags(expenseEntryId, changes);
+    refreshTagged();
+  });
+}
+
+/** The lenders and buckets an entry can be tagged with. */
+export async function getEntryTagOptions() {
+  await requireSession();
+  return getTagOptions();
 }

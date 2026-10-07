@@ -34,6 +34,7 @@ export function CategoryRuleSettingsRow({
   conditions,
   targetName,
   debtPersonName,
+  savingsBucketName = null,
   debtKind = "repayment",
   targetKind = "expense",
   editor,
@@ -48,6 +49,8 @@ export function CategoryRuleSettingsRow({
    * it is, this is already the resolved display name, not an id. */
   targetName: string;
   debtPersonName: string | null;
+  /** The savings bucket this rule also pays into, if any. */
+  savingsBucketName?: string | null;
   /** repayment = money out paying them back; loan = money in borrowed from them. */
   debtKind?: "repayment" | "loan";
 }) {
@@ -71,6 +74,7 @@ export function CategoryRuleSettingsRow({
             ({debtKind === "loan" ? "loan from" : "repayment to"} {debtPersonName})
           </span>
         )}
+        {savingsBucketName && <span className="text-muted-foreground"> (to savings: {savingsBucketName})</span>}
       </p>
       <div className="flex shrink-0 items-center">
         {editor}

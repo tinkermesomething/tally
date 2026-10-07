@@ -5,7 +5,9 @@ import { GridCell } from "@/components/grid/grid-cell";
 import { formatPence } from "@/lib/money";
 import { ScrollFade } from "@/components/scroll-fade";
 import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
-import { updateIncomeAmount, clearIncomeAmount } from "@/app/grid/actions";
+import { updateIncomeAmount, clearIncomeAmount, moveIncomeSourceToIndex, renameIncomeSource, archiveIncomeSource } from "@/app/grid/actions";
+import { InlineEditText } from "@/components/inline-edit-text";
+import { useRowDrag } from "@/components/grid/use-row-drag";
 import type { IncomeSourceRow } from "@/lib/db/queries";
 import { GROUP_PALETTE } from "@/lib/group-colors";
 import { cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
@@ -32,6 +34,7 @@ export function IncomeTable({
   onScroll?: (el: HTMLDivElement) => void;
 }) {
   const { currency } = useAppSettings();
+  const drag = useRowDrag((id, toIndex) => moveIncomeSourceToIndex(id, toIndex, year));
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
   const yearTotal = totalByMonth.reduce((a, b) => a + b, 0);
 
@@ -104,10 +107,26 @@ export function IncomeTable({
               <tr
                 key={source.id}
                 className="tinted-row border-t border-border"
+                data-reorder-group="income"
+                data-reorder-id={source.id}
                 style={{ "--row-color": source.color ?? GROUP_PALETTE[index % GROUP_PALETTE.length] } as React.CSSProperties}
               >
-                <td className="sticky left-0 z-10 bg-card px-3 py-1.5 font-medium">
-                  {source.name}
+                <td
+                  onPointerDown={(e) => drag.onPointerDown(e, "income", source.id)}
+                  className="sticky left-0 z-10 bg-card px-3 py-1.5 font-medium"
+                  title="Press and hold to drag this income source up or down"
+                >
+                  {drag.error && (
+                    <p role="alert" className="mb-1 text-[0.65rem] text-status-critical">
+                      {drag.error}
+                    </p>
+                  )}
+                  <InlineEditText
+                    value={source.name}
+                    onCommit={(next) => renameIncomeSource(source.id, next)}
+                    onDelete={() => archiveIncomeSource(source.id)}
+                    className="font-medium"
+                  />
                 </td>
                 {MONTH_NUMBERS.map((month) => {
                   const cell = source.months[month];

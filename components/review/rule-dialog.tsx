@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -22,15 +21,11 @@ import {
 } from "@/components/ui/select";
 import { RuleConditionsEditor, newEditorCondition, type EditorCondition } from "@/components/rules/rule-conditions-editor";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
-import { useAppSettings } from "@/components/providers/app-settings-provider";
-import { previewRule, saveRule } from "@/app/review/rule-actions";
-import { parseConditionInputs } from "@/lib/rules";
+import { NEW_BUCKET, SavingsTagField, useBucketSelection } from "@/components/rules/savings-tag-field";
+import { saveRule } from "@/app/review/rule-actions";
+import { RulePreviewPanel, useRulePreview } from "@/components/rules/rule-preview-panel";
 import { findLoansSourceId } from "@/lib/loans";
-import { formatPence } from "@/lib/money";
-import { formatDate } from "@/lib/date-format";
-import type { RulePreview, CreateRuleAndApplyResult } from "@/lib/db/bank-sync";
-
-const PREVIEW_DEBOUNCE_MS = 250;
+import type { CreateRuleAndApplyResult } from "@/lib/db/bank-sync";
 
 /** What a row hands over when its "Rule" button is pressed. */
 export type RuleContext = {
@@ -50,6 +45,8 @@ type Lists = {
   categories: { id: number; name: string }[];
   incomeSources: { id: number; name: string }[];
   people: { id: number; name: string }[];
+  /** Savings buckets an expense rule can also pay into. */
+  buckets?: { id: number; name: string }[];
 };
 
 /** ONE Rule window for the whole Review list (not one per row): it must
@@ -95,12 +92,12 @@ function RuleDialogBody({
   categories,
   incomeSources,
   people,
+  buckets = [],
   accounts = [],
   onApplied,
   onDone,
 }: { context: RuleContext; onApplied: () => void; onDone: () => void } & Lists) {
   const { transaction, isIncome } = context;
-  const { currency, dateFormat } = useAppSettings();
   // Starts from THIS transaction, with whatever target the row already had.
   const [conditions, setConditions] = useState<EditorCondition[]>(() => [
     newEditorCondition("payee", "contains", (transaction.payeeClean ?? transaction.payeeRaw).replace(/\s+/g, " ").trim()),
@@ -113,6 +110,8 @@ function RuleDialogBody({
   const [categoryId, setCategoryId] = useState(context.initialCategoryId);
   const [incomeSourceId, setIncomeSourceId] = useState(context.initialIncomeSourceId);
   const [tagDebt, setTagDebt] = useState(context.initialTagDebt);
+  const [toSavings, setToSavings] = useState(false);
+  const { bucketId, setBucketId, newBucketName, setNewBucketName, resolveBucketId } = useBucketSelection();
   const { personId, setPersonId, newPersonName, setNewPersonName, resolvePersonId } = usePersonSelection();
   useEffect(() => {
     if (context.initialTagDebt && context.initialPersonId) setPersonId(context.initialPersonId);
@@ -122,62 +121,35 @@ function RuleDialogBody({
 
   function handleTagDebtChange(next: boolean) {
     setTagDebt(next);
+    // no lenders yet: go straight to naming the first one
+    if (next && people.length === 0 && !personId) setPersonId(NEW_PERSON);
     // A loan suggests the loans income source - only when none is chosen.
     if (next && isIncome && !incomeSourceId) {
       const loansId = findLoansSourceId(incomeSources);
       if (loansId) setIncomeSourceId(loansId);
     }
   }
-  const [preview, setPreview] = useState<RulePreview | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  // Explicit tick/untick choices; anything not in here uses its default
-  // (ticked, except possible-duplicates which start unticked).
-  const [overrides, setOverrides] = useState<Map<number, boolean>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  // The message sits at the bottom of a long dialog: bring it into view so a problem is never silent.
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [error]);
   const [result, setResult] = useState<CreateRuleAndApplyResult | null>(null);
   const [saving, startSaving] = useTransition();
-  const requestId = useRef(0);
-
-  const parsed = parseConditionInputs(conditions);
-  const conditionsKey = JSON.stringify(parsed.ok ? parsed.conditions : null);
-
-  // Live preview - debounced, and a stale response never overwrites a
-  // newer one (typing fast fires several requests).
-  useEffect(() => {
-    if (!parsed.ok) {
-      setPreview(null);
-      setPreviewError(parsed.error);
-      setLoading(false);
-      return;
-    }
-    setPreviewError(null);
-    setLoading(true);
-    const id = ++requestId.current;
-    const timer = setTimeout(async () => {
-      const res = await previewRule({ conditions: parsed.conditions, direction });
-      if (id !== requestId.current) return;
-      setLoading(false);
-      if (res.ok) setPreview(res.preview);
-      else setPreviewError(res.error);
-    }, PREVIEW_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-    // conditionsKey captures every change to the parsed conditions
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conditionsKey, direction]);
-
-  const rows = preview?.rows ?? [];
-  const isTicked = (row: RulePreview["rows"][number]) =>
-    row.blocked === "pencilled-match" ? false : (overrides.get(row.id) ?? row.blocked === null);
-  const tickedIds = rows.filter(isTicked).map((r) => r.id);
-  const selectableRows = rows.filter((r) => r.blocked !== "pencilled-match");
-
-  function toggle(id: number, checked: boolean) {
-    setOverrides((prev) => new Map(prev).set(id, checked));
-  }
-  function setAll(checked: boolean) {
-    setOverrides(new Map(selectableRows.map((r) => [r.id, checked])));
-  }
+  // Also finds PAST expenses in the chosen category that would gain the debt / savings tag.
+  const previewTags =
+    !ignoring && !isIncome && categoryId
+      ? {
+          categoryId: parseInt(categoryId, 10),
+          // a lender / bucket still to be created counts as chosen (-1): the list only needs to know a tag is coming
+          debtPersonId: tagDebt && personId ? (personId === NEW_PERSON ? -1 : parseInt(personId, 10)) : undefined,
+          savingsBucketId: toSavings && bucketId ? (bucketId === NEW_BUCKET ? -1 : parseInt(bucketId, 10)) : undefined,
+        }
+      : undefined;
+  const { parsed, tickedIds, retroTickedIds, ...previewState } = useRulePreview(conditions, direction, undefined, previewTags);
+  const pv = { parsed, tickedIds, retroTickedIds, ...previewState };
+  const applyCount = tickedIds.length + retroTickedIds.length;
 
   const hasTarget = ignoring || (isIncome ? !!incomeSourceId : !!categoryId);
 
@@ -188,6 +160,8 @@ function RuleDialogBody({
       return setError(isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
     }
     if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new lender's name.");
+    if (!ignoring && !isIncome && toSavings && !bucketId) return setError("Pick a savings bucket (or create one), or untick \"Tag as savings\".");
+    if (!ignoring && !isIncome && toSavings && bucketId === NEW_BUCKET && !newBucketName.trim()) return setError("Enter a name for the new savings bucket.");
     setError(null);
     startSaving(async () => {
       try {
@@ -196,8 +170,13 @@ function RuleDialogBody({
           ? ({ targetType: "ignore" } as const)
           : isIncome
             ? ({ targetType: "income", incomeSourceId: parseInt(incomeSourceId, 10), debtPersonId } as const)
-            : ({ targetType: "expense", categoryId: parseInt(categoryId, 10), debtPersonId } as const);
-        const res = await saveRule({ conditions: parsed.conditions, target, applyToIds: apply ? tickedIds : [] });
+            : ({
+                targetType: "expense",
+                categoryId: parseInt(categoryId, 10),
+                debtPersonId,
+                savingsBucketId: toSavings && bucketId ? await resolveBucketId() : undefined,
+              } as const);
+        const res = await saveRule({ conditions: parsed.conditions, target, applyToIds: apply ? tickedIds : [], tagExpenseIds: apply ? retroTickedIds : [] });
         if (res.ok) {
           setResult(res.result);
           onApplied();
@@ -219,6 +198,7 @@ function RuleDialogBody({
             {result.categorized > 0
               ? `${ignoring ? "Ignored" : "Categorized"} ${result.categorized} transaction${result.categorized === 1 ? "" : "s"}. `
               : ""}
+            {result.tagged > 0 ? `Tagged ${result.tagged} past transaction${result.tagged === 1 ? "" : "s"}. ` : ""}
             It will also apply to future imports.
           </DialogDescription>
         </DialogHeader>
@@ -298,11 +278,14 @@ function RuleDialogBody({
           )}
           {!ignoring && (
           <div className="flex items-center gap-2">
-            <Checkbox checked={tagDebt} onCheckedChange={(c) => handleTagDebtChange(c === true)} />
+            <Checkbox aria-label={isIncome ? "Tag as a loan" : "Tag as a debt repayment"} checked={tagDebt} onCheckedChange={(c) => handleTagDebtChange(c === true)} />
             <Label className="font-normal">
-              {isIncome ? "Also record as a loan (add to Debt)" : "Also tag as a debt repayment"}
+              {isIncome ? "Tag as a loan (add to Debt)" : "Tag as a debt repayment"}
             </Label>
           </div>
+          )}
+          {!ignoring && !isIncome && (
+            <SavingsTagField buckets={buckets} checked={toSavings} onCheckedChange={setToSavings} bucketId={bucketId} onBucketIdChange={setBucketId} newBucketName={newBucketName} onNewBucketNameChange={setNewBucketName} />
           )}
           {!ignoring && tagDebt && (
             <PersonPickerField
@@ -318,88 +301,20 @@ function RuleDialogBody({
           )}
         </div>
 
-        <div className="space-y-2" data-testid="rule-preview">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">
-              {previewError
-                ? "Preview"
-                : loading && !preview
-                  ? "Looking for matches…"
-                  : `${preview?.total ?? 0} pending transaction${preview?.total === 1 ? "" : "s"} match`}
-            </p>
-            {selectableRows.length > 0 && (
-              <div className="flex gap-1">
-                <Button type="button" size="xs" variant="ghost" onClick={() => setAll(true)}>
-                  Select all
-                </Button>
-                <Button type="button" size="xs" variant="ghost" onClick={() => setAll(false)}>
-                  Select none
-                </Button>
-              </div>
-            )}
-          </div>
-          {previewError && <p className="text-sm text-muted-foreground">{previewError}</p>}
-          {preview && preview.total > rows.length && (
-            <p className="text-xs text-muted-foreground">
-              Showing the newest {rows.length} of {preview.total}. The rule itself covers all of them on future
-              imports.
-            </p>
-          )}
-          {preview && preview.alreadyCoveredByEarlierRule > 0 && (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <TriangleAlert className="size-3.5 shrink-0" />
-              {preview.alreadyCoveredByEarlierRule} of these would already be claimed by an earlier rule on import
-              (first match wins).
-            </p>
-          )}
-          {rows.length > 0 && (
-            <div className={`max-h-64 overflow-y-auto rounded-lg border border-border ${loading ? "opacity-60" : ""}`}>
-              <table className="w-full text-sm">
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id} className="row-line border-b border-border last:border-0" data-testid="preview-row">
-                      <td className="w-8 px-2 py-1.5">
-                        <Checkbox
-                          checked={isTicked(row)}
-                          disabled={row.blocked === "pencilled-match"}
-                          onCheckedChange={(c) => toggle(row.id, c === true)}
-                          aria-label={`Include ${row.payeeClean ?? row.payeeRaw}`}
-                        />
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-xs text-muted-foreground">
-                        {formatDate(row.bookingDate, dateFormat)}
-                      </td>
-                      <td className="max-w-xs truncate px-2 py-1.5">
-                        {row.payeeClean ?? row.payeeRaw}
-                        {row.blocked === "pencilled-match" && (
-                          <span className="ml-1.5 text-xs text-muted-foreground">
-                            (pencilled-in match - confirm or discard it on its own row)
-                          </span>
-                        )}
-                        {row.blocked === "possible-duplicate" && (
-                          <span className="ml-1.5 text-xs text-status-critical">(might already be logged)</span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
-                        {row.amountPence > 0 ? "+" : "−"}
-                        {formatPence(Math.abs(row.amountPence), currency)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <RulePreviewPanel state={pv} />
 
-        {error && <p className="text-sm text-status-critical">{error}</p>}
+        {error && (
+          <p role="alert" ref={errorRef} className="text-sm text-status-critical">
+            {error}
+          </p>
+        )}
 
         <DialogFooter>
           <Button type="button" variant="outline" disabled={saving || !parsed.ok} onClick={() => submit(false)}>
             Create rule
           </Button>
-          <Button type="button" disabled={saving || !parsed.ok || tickedIds.length === 0} onClick={() => submit(true)}>
-            {saving ? "Saving…" : `Create rule & ${ignoring ? "ignore" : "categorize"} ${tickedIds.length}`}
+          <Button type="button" disabled={saving || !parsed.ok || applyCount === 0} onClick={() => submit(true)}>
+            {saving ? "Saving…" : `Create rule & apply to ${applyCount}`}
           </Button>
         </DialogFooter>
       </div>

@@ -53,13 +53,13 @@ export function FilterableList({
       </div>
       {filtering && (
         <p className="text-xs text-muted-foreground">
-          {shown.length} of {items.length} {label}
+          {shown.length} of {items.length} {label} · clear the search to reorder
         </p>
       )}
       {shown.length === 0 && filtering ? (
         <p className="text-sm text-muted-foreground">No {label} match &ldquo;{query.trim()}&rdquo;.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2" data-reorder-off={filtering ? "" : undefined}>
           {shown.map((i) => (
             <div key={i.key}>{i.node}</div>
           ))}

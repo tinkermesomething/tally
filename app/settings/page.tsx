@@ -1,3 +1,4 @@
+import { formatSyncTime, syncSlotHours, syncTimeZone } from "@/lib/sync-schedule";
 import {
   getCategoryTree,
   getIncomeSourceList,
@@ -20,6 +21,10 @@ import { CategorySettingsRow } from "@/components/settings/category-settings-row
 import { IncomeSourceSettingsRow } from "@/components/settings/income-source-settings-row";
 import { PersonSettingsRow } from "@/components/settings/person-settings-row";
 import { PreferencesSettings } from "@/components/settings/preferences-settings";
+import { BackupSettings } from "@/components/settings/backup-settings";
+import type { AutoBackupView } from "@/components/settings/auto-backup-panel";
+import { describeSchedule } from "@/lib/auto-backup-settings";
+import { autoBackupStatus } from "@/lib/auto-backup";
 import { BankAccountSettingsRow } from "@/components/settings/bank-account-settings-row";
 import { CategoryRuleSettingsRow } from "@/components/settings/category-rule-settings-row";
 import { AddCategoryRuleDialog } from "@/components/settings/add-category-rule-dialog";
@@ -37,7 +42,7 @@ export const dynamic = "force-dynamic";
 
 // Tab order as shown. `?tab=` can open any of them directly (the bank
 // connection callback uses ?tab=bank-sync).
-const SETTINGS_TABS = ["categories", "income", "lenders", "rules", "bank-sync", "preferences"];
+const SETTINGS_TABS = ["categories", "income", "lenders", "rules", "bank-sync", "preferences", "backup"];
 // The tab used to be called "people" - old links and bookmarks still open it.
 const TAB_ALIASES: Record<string, string> = { people: "lenders" };
 
@@ -109,12 +114,13 @@ export default async function SettingsPage({
           <TabsTrigger value="rules">Rules</TabsTrigger>
           <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
+          <TabsTrigger value="backup">Backup</TabsTrigger>
         </TabsList>
 
         <TabsContent value="categories" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Rename, regroup, add subcategories, or archive.
+              Rename, regroup, add subcategories, or archive. Press and hold a name to drag it into place.
             </p>
             <AddCategoryDialog
               topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
@@ -125,7 +131,7 @@ export default async function SettingsPage({
           <FilterableList
             label="categories"
             placeholder="Search categories, subcategories or groups"
-            items={categoryTree.map((category, index) => ({
+            items={categoryTree.map((category) => ({
               key: category.id,
               // A parent row shows its subcategories, so it matches on them too.
               texts: [
@@ -144,8 +150,6 @@ export default async function SettingsPage({
                   category={category}
                   color={groupColors.get(category.groupName ?? UNGROUPED)!}
                   buckets={buckets}
-                  canMoveUp={index > 0}
-                  canMoveDown={index < categoryTree.length - 1}
                   existingGroups={existingGroups}
                   topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
                   people={people.map((p) => ({ id: p.id, name: p.name }))}
@@ -168,7 +172,7 @@ export default async function SettingsPage({
 
         <TabsContent value="income" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Add or archive income sources.</p>
+            <p className="text-sm text-muted-foreground">Add, rename, reorder (press and hold) or archive income sources.</p>
             <AddIncomeSourceDialog />
           </div>
 
@@ -237,6 +241,7 @@ export default async function SettingsPage({
                 incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
                 people={people.map((p) => ({ id: p.id, name: p.name }))}
                 accounts={accounts}
+                buckets={buckets.map((b) => ({ id: b.id, name: b.name }))}
               />
             </div>
             {categoryRules.length === 0 ? (
@@ -256,9 +261,10 @@ export default async function SettingsPage({
                         ? (incomeSourceNameById.get(r.incomeSourceId!) ?? "Unknown income source")
                         : (categoryNameById.get(r.categoryId!) ?? "Unknown category");
                   const debtPersonName = r.debtPersonId ? (personNameById.get(r.debtPersonId) ?? null) : null;
+                  const savingsBucketName = r.savingsBucketId ? (bucketNameById.get(r.savingsBucketId) ?? "a removed bucket") : null;
                   return {
                     key: r.id,
-                    texts: [...conditions.map((c) => c.value), targetName, debtPersonName],
+                    texts: [...conditions.map((c) => c.value), targetName, debtPersonName, savingsBucketName],
                     node: (
                       <CategoryRuleSettingsRow
                         id={r.id}
@@ -268,6 +274,7 @@ export default async function SettingsPage({
                             incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
                             people={people.map((p) => ({ id: p.id, name: p.name }))}
                             accounts={accounts}
+                            buckets={buckets.map((b) => ({ id: b.id, name: b.name }))}
                             rule={{
                               id: r.id,
                               conditions: displayConditions(r),
@@ -275,12 +282,14 @@ export default async function SettingsPage({
                               categoryId: r.categoryId,
                               incomeSourceId: r.incomeSourceId,
                               debtPersonId: r.debtPersonId,
+                              savingsBucketId: r.savingsBucketId,
                             }}
                           />
                         }
                         conditions={conditions}
                         targetName={targetName}
                         debtPersonName={debtPersonName}
+                        savingsBucketName={savingsBucketName}
                         debtKind={r.targetType === "income" ? "loan" : "repayment"}
                     targetKind={r.targetType}
                       />
@@ -308,6 +317,9 @@ export default async function SettingsPage({
           <BankSyncSchedule
             enabled={appSettings.bankSyncEnabled}
             frequencyHours={appSettings.bankSyncFrequencyHours}
+            slotLabel={Object.fromEntries(
+              [6, 12, 24].map((h) => [h, `${syncSlotHours(h).map((x) => `${String(x).padStart(2, "0")}:00`).join(", ")} (${syncTimeZone()})`])
+            )}
           />
 
           <div className="space-y-2">
@@ -345,7 +357,34 @@ export default async function SettingsPage({
             carryOverStartMonth={appSettings.carryOverStartMonth}
           />
         </TabsContent>
+
+        <TabsContent value="backup" className="space-y-4 pt-4">
+          <BackupSettings auto={await autoBackupView()} />
+        </TabsContent>
       </Tabs>
     </div>
   );
+}
+
+/** What the Backup tab shows about the automatic backups, already formatted
+ * (times in the app's time zone, so the browser's own zone can't disagree). */
+async function autoBackupView(): Promise<AutoBackupView> {
+  const s = await autoBackupStatus();
+  const common = { paused: s.paused, form: s.form, envDir: s.envDir, hasSaved: s.hasSaved };
+  if (!s.enabled) {
+    return { ...common, enabled: false, dir: null, protected: false, when: null, next: null, total: 0, writable: true, problem: null, lastError: null, files: [] };
+  }
+  return {
+    ...common,
+    enabled: true,
+    dir: s.dir,
+    protected: s.protected,
+    when: describeSchedule(s, s.timeZone),
+    next: s.due ? null : formatSyncTime(s.nextAt),
+    total: s.total,
+    writable: s.writable,
+    problem: s.problem,
+    lastError: s.lastError,
+    files: s.files.map((f) => ({ name: f.name, size: f.size, at: formatSyncTime(f.modifiedAt) })),
+  };
 }

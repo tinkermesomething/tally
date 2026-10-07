@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { UserRound } from "lucide-react";
 import {
   Select,
@@ -10,7 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { updateCategoryDebtLink } from "@/app/grid/actions";
+import { linkCategoryTagging, previewCategoryTags, updateCategoryDebtLink } from "@/app/grid/actions";
+import { LinkTaggingDialog, type LinkTarget } from "@/components/settings/link-tagging-dialog";
 
 const NONE = "none";
 
@@ -19,22 +20,44 @@ const NONE = "none";
  * needed. For categories that only ever mean "pay this one person back". */
 export function EditableDebtLink({
   categoryId,
+  categoryName = "this category",
   linkedDebtPersonId,
   people,
 }: {
   categoryId: number;
+  categoryName?: string;
   linkedDebtPersonId: number | null;
   people: { id: number; name: string }[];
 }) {
   const [, startTransition] = useTransition();
+  const [target, setTarget] = useState<LinkTarget | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function handleChange(value: string | null) {
     const next = !value || value === NONE ? null : parseInt(value, 10);
     if (next === linkedDebtPersonId) return;
-    startTransition(() => updateCategoryDebtLink(categoryId, next));
+    setError(null);
+    if (next === null) {
+      startTransition(() => updateCategoryDebtLink(categoryId, null));
+      return;
+    }
+    // Existing expenses in the category that this link would also count?
+    // Offer them as a list; with none, just link.
+    startTransition(async () => {
+      const link = { debtPersonId: next };
+      const preview = await previewCategoryTags(categoryId, link);
+      if (!preview.ok) return setError(preview.error);
+      if (preview.total === 0) {
+        const res = await linkCategoryTagging(categoryId, link, []);
+        if (!res.ok) setError(res.error);
+        return;
+      }
+      setTarget({ link, name: people.find((p) => p.id === next)?.name ?? "this lender", kind: "debt", rows: preview.rows, total: preview.total });
+    });
   }
 
   return (
+    <>
     <Select value={linkedDebtPersonId !== null ? String(linkedDebtPersonId) : NONE} onValueChange={handleChange}>
       <SelectTrigger
         size="sm"
@@ -67,5 +90,12 @@ export function EditableDebtLink({
         ))}
       </SelectContent>
     </Select>
+    {error && (
+      <span role="alert" className="text-[0.65rem] text-status-critical">
+        {error}
+      </span>
+    )}
+    <LinkTaggingDialog categoryId={categoryId} categoryName={categoryName} target={target} onClose={() => setTarget(null)} />
+    </>
   );
 }

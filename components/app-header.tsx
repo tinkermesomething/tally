@@ -8,11 +8,11 @@ import { getPendingTransactions, getBankAccounts } from "@/lib/db/bank-sync";
 
 const NAV_ITEMS = [
   { href: "/grid", label: "Budget" },
-  { href: "/entries", label: "Entries" },
-  { href: "/review", label: "Review" },
   { href: "/debt", label: "Debt" },
   { href: "/savings", label: "Savings" },
   { href: "/reports", label: "Reports" },
+  { href: "/review", label: "Review" },
+  { href: "/entries", label: "Entries" },
   { href: "/settings", label: "Settings" },
 ] as const;
 
