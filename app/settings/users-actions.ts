@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/session";
 import { toResult, type ActionResult } from "@/lib/action-result";
 import { inviteUser, listUsers, setUserDisabled, relinkUserSub, deleteUser, type UserRow } from "@/lib/db/users";
 import { canDisable, checkInviteEmail } from "@/lib/accounts-rules";
+import { migrateLegacyDataForCurrentUser, type MigrateLegacyRow } from "@/lib/db/migrate-legacy";
 
 /** Every action here re-checks isAdmin itself, even though the Users tab
  * is only ever rendered for an admin (app/settings/page.tsx) - that's SSR
@@ -57,6 +58,33 @@ export async function deleteUserAction(id: number): Promise<ActionResult> {
       revalidatePath("/settings");
     })
   );
+}
+
+export type MigrateLegacyActionResult =
+  | { ok: true; migrated: true; report: MigrateLegacyRow[] }
+  | { ok: true; migrated: false; reason: string }
+  | { ok: false; error: string };
+
+/** One-time button for the account that was using Tally before the
+ * multi-user/encryption rework - moves the original shared, unencrypted
+ * database into THEIR OWN new encrypted file. See
+ * lib/db/migrate-legacy.ts for what this does and refuses (a non-empty
+ * account, a missing or damaged legacy file). Safe to click more than
+ * once - after the first real migration there's nothing left to copy, so
+ * it just reports "nothing to migrate" rather than erroring. */
+export async function migrateLegacyDataAction(): Promise<MigrateLegacyActionResult> {
+  return requireSession(async (user) => {
+    try {
+      assertAdmin(user);
+      const result = await migrateLegacyDataForCurrentUser();
+      // Every page's data (Grid, Reports, Debt, everything) just changed
+      // underneath whatever was cached - bust the whole tree, not one path.
+      revalidatePath("/", "layout");
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "The migration failed." };
+    }
+  });
 }
 
 /** Re-points an existing account at a different OIDC `sub` - for someone

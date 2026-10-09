@@ -43,6 +43,7 @@ import { withCurrentUser } from "@/lib/db/current-user";
 import { ManualBackup } from "@/components/settings/manual-backup";
 import { AvatarPicker } from "@/components/settings/avatar-picker";
 import { UsersPanel, type PublicUser } from "@/components/settings/users-panel";
+import { MigrateLegacyButton } from "@/components/settings/migrate-legacy-button";
 import { listUsers } from "@/lib/db/users";
 import { canDisable } from "@/lib/accounts-rules";
 
@@ -420,6 +421,9 @@ export default async function SettingsPage({
             <div className="space-y-4 border-t border-border pt-4">
               <h2 className="text-sm font-medium">Backup</h2>
               <BackupSettings auto={await autoBackupView()} />
+            </div>
+            <div className="border-t border-border pt-4">
+              <MigrateLegacyButton />
             </div>
           </TabsContent>
         )}
