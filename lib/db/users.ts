@@ -92,16 +92,33 @@ export async function resolveAndApplySignIn(
   return { resolution, user: created };
 }
 
+// `avatarImage` can be up to 10MB - excluded from every one of these,
+// since getUserBySub alone runs on EVERY signed-in request (resolveCurrentUser)
+// and would otherwise pull that blob into memory just to find out who's
+// signed in. avatarImageType/avatarImageUpdatedAt stay (cheap scalars,
+// needed to build a cache-busted <img> url) - only the bytes are excluded,
+// so the cast back to UserRow below is the one field callers never read
+// off these three functions' results.
+const WITHOUT_AVATAR_BYTES = { avatarImage: false } as const;
+
 export async function getUserBySub(sub: string): Promise<UserRow | undefined> {
-  return sysDb().query.users.findFirst({ where: eq(users.oidcSub, sub) });
+  return sysDb().query.users.findFirst({ where: eq(users.oidcSub, sub), columns: WITHOUT_AVATAR_BYTES }) as Promise<UserRow | undefined>;
 }
 
 export async function getUserById(id: number): Promise<UserRow | undefined> {
-  return sysDb().query.users.findFirst({ where: eq(users.id, id) });
+  return sysDb().query.users.findFirst({ where: eq(users.id, id), columns: WITHOUT_AVATAR_BYTES }) as Promise<UserRow | undefined>;
 }
 
 export async function listUsers(): Promise<UserRow[]> {
-  return sysDb().query.users.findMany({ orderBy: (u, { asc }) => [asc(u.createdAt)] });
+  // A single `as` isn't enough here (tsc: "neither type sufficiently
+  // overlaps") - unlike the two findFirst casts above, which do, the
+  // array/Promise.then overload comparison is stricter. Going through
+  // `unknown` is the same omit-one-key cast, just spelled the way tsc
+  // requires for this shape.
+  return sysDb().query.users.findMany({
+    orderBy: (u, { asc }) => [asc(u.createdAt)],
+    columns: WITHOUT_AVATAR_BYTES,
+  }) as unknown as Promise<UserRow[]>;
 }
 
 /** Invites someone by email - an empty row they complete on their first
@@ -137,15 +154,22 @@ export async function relinkUserSub(id: number, newSub: string): Promise<{ ok: t
 
 /** Permanently removes an account AND its encrypted data file - unlike
  * setUserDisabled, there is no undo. Refuses the bootstrap admin (same
- * rule as disabling - see canDelete) and refuses deleting yourself
- * (callerId), so an admin can never lock themselves out this way. Closes
- * any open pool connection first - deleting the file out from under a
- * live better-sqlite3 handle is undefined behaviour, not just risky. */
+ * rule as disabling - see canDelete). An ADMIN can't delete their own
+ * account (same reasoning as disabling - this would risk leaving zero
+ * admins able to fix anything), but an ordinary user deleting themselves
+ * is allowed with no admin involvement at all (app/settings/actions.ts's
+ * deleteOwnAccountAction is the only caller that ever has `id ===
+ * callerId`) - the same `id === callerId` check here also catches an
+ * admin clicking Delete on their own row from the admin users list
+ * (users-actions.ts's deleteUserAction), which that UI doesn't otherwise
+ * prevent. */
 export async function deleteUser(id: number, callerId: number, allowedEmail: string | undefined): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (id === callerId) return { ok: false, error: "You can't delete your own account." };
   const db = sysDb();
   const target = await db.query.users.findFirst({ where: eq(users.id, id) });
   if (!target) return { ok: false, error: "That account no longer exists." };
+  if (id === callerId && target.isAdmin) {
+    return { ok: false, error: "Admins can't delete their own account - this could leave nobody able to manage the instance." };
+  }
   if (!canDelete({ email: target.email, isAdmin: target.isAdmin }, allowedEmail)) {
     return { ok: false, error: "That account can't be deleted." };
   }
@@ -160,4 +184,28 @@ export async function deleteUser(id: number, callerId: number, allowedEmail: str
 
 export async function setAvatarColor(id: number, color: string | null) {
   await sysDb().update(users).set({ avatarColor: color }).where(eq(users.id, id));
+}
+
+/** Sets (or, with `null`, clears back to the generated avatar) this
+ * account's uploaded profile picture. The 10MB cap and mime-type check
+ * happen at the call site (app/settings/avatar-actions.ts) - this just
+ * writes whatever it's given. */
+export async function setAvatarImage(id: number, image: Buffer | null, mimeType: string | null) {
+  await sysDb()
+    .update(users)
+    .set({ avatarImage: image, avatarImageType: mimeType, avatarImageUpdatedAt: image ? new Date() : null })
+    .where(eq(users.id, id));
+}
+
+/** The raw bytes for app/settings/avatar/[userId]/route.ts to stream back -
+ * never fetched as part of a normal user lookup (getUserBySub/listUsers),
+ * so an ordinary page render never pulls a potentially-10MB blob into
+ * memory just to read someone's name off the same row. */
+export async function getAvatarImage(id: number): Promise<{ data: Buffer; mimeType: string; updatedAt: Date } | null> {
+  const row = await sysDb().query.users.findFirst({
+    where: eq(users.id, id),
+    columns: { avatarImage: true, avatarImageType: true, avatarImageUpdatedAt: true },
+  });
+  if (!row?.avatarImage || !row.avatarImageType || !row.avatarImageUpdatedAt) return null;
+  return { data: row.avatarImage, mimeType: row.avatarImageType, updatedAt: row.avatarImageUpdatedAt };
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Check, Palette } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Palette, Sun, Moon } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner } from "@/components/ui/popover";
 import { SwatchRow, nativePickerActive } from "@/components/swatch-row";
@@ -17,14 +18,23 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "special", label: "Special" },
 ];
 
-/** Choose the app's accent: one of the presets or any colour, two colours
- * blended, an animated RGB, or a pride flag. Applies instantly. */
+/** Choose the app's accent AND light/dark theme - one header button, not
+ * two, by request (the palette icon was kept as the trigger over the
+ * sun/moon one). The theme row lives inside the same popover rather than
+ * its own button. */
 export function AccentPicker() {
   const { accent, setAccent } = useAccent();
   const spec = parseAccent(accent);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>(spec?.kind === "duo" ? "duo" : spec?.kind === "rgb" || spec?.kind === "pride" ? "special" : "colours");
   const anchorRef = useRef<HTMLButtonElement>(null);
+
+  // Same mounted-guard next-themes always needs: resolvedTheme is
+  // undefined during SSR/first paint, so rendering off it before mount
+  // would flash the wrong icon or mismatch hydration.
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const duo = spec?.kind === "duo" ? spec.colors : (["#2a78d6", "#eb6834"] as [string, string]);
   const solid = spec?.kind === "solid" ? spec.color : "#2a78d6";
@@ -42,6 +52,30 @@ export function AccentPicker() {
                 itself (that made everything spill out of the frame). */}
             <PopoverPopup className="max-w-[calc(100vw-1rem)]">
               <div className="min-w-0 space-y-3" data-testid="accent-panel">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Theme</span>
+                  <div role="group" aria-label="Light or dark theme" className="inline-flex rounded-lg border border-input bg-muted/40 p-0.5">
+                    <button
+                      type="button"
+                      aria-label="Light theme"
+                      aria-pressed={mounted && resolvedTheme === "light"}
+                      onClick={() => setTheme("light")}
+                      className={cn("rounded-md border border-transparent p-1", mounted && resolvedTheme === "light" ? "accent-outline" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      <Sun className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Dark theme"
+                      aria-pressed={mounted && resolvedTheme === "dark"}
+                      onClick={() => setTheme("dark")}
+                      className={cn("rounded-md border border-transparent p-1", mounted && resolvedTheme === "dark" ? "accent-outline" : "text-muted-foreground hover:text-foreground")}
+                    >
+                      <Moon className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+
                 <div role="group" aria-label="Accent style" className="inline-flex rounded-lg border border-input bg-muted/40 p-0.5">
                   {TABS.map((t) => (
                     <button

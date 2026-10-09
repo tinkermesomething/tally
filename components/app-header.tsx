@@ -1,12 +1,18 @@
 import Link from "next/link";
-import { LogOut } from "lucide-react";
 import { auth, signOut } from "@/auth";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { AccentPicker } from "@/components/accent-picker";
-import { Button } from "@/components/ui/button";
+import { UserMenu } from "@/components/user-menu";
 import { getPendingTransactions, getBankAccounts } from "@/lib/db/bank-sync";
 import { withCurrentUser } from "@/lib/db/current-user";
+import type { UserRow } from "@/lib/db/users";
 
+async function signOutAction() {
+  "use server";
+  await signOut({ redirectTo: "/signin" });
+}
+
+// Settings isn't in this list - it's reached from the user menu instead
+// (components/user-menu.tsx), not the main nav.
 const NAV_ITEMS = [
   { href: "/grid", label: "Budget" },
   { href: "/debt", label: "Debt" },
@@ -14,7 +20,6 @@ const NAV_ITEMS = [
   { href: "/reports", label: "Reports" },
   { href: "/review", label: "Review" },
   { href: "/entries", label: "Entries" },
-  { href: "/settings", label: "Settings" },
 ] as const;
 
 // Same threshold bank-account-settings-row.tsx uses for its own "Expires in
@@ -40,22 +45,32 @@ export async function AppHeader() {
   // same as being signed out.
   let pendingCount = 0;
   let expiringBankAccounts = 0;
+  // Returned from the closure rather than assigned to an outer `let` from
+  // inside it - TypeScript's narrowing doesn't track a reassignment made
+  // inside a nested callback, so `currentUser` read after this block would
+  // otherwise still type as `null` at every later usage (confirmed by
+  // tsc, not a style preference).
+  let currentUser: UserRow | null = null;
   if (session) {
     try {
-      await withCurrentUser(async () => {
+      const result = await withCurrentUser(async (user) => {
         // Cheap enough at this app's scale to run on every request, same
         // as the auth() check above it - no separate count-only query
         // needed yet.
-        pendingCount = (await getPendingTransactions()).length;
+        const pending = (await getPendingTransactions()).length;
         // Nothing else in the app proactively surfaces an expiring/expired
         // bank connection - without this, sync just silently stops
         // producing new transactions and nobody notices until they go
         // looking. Settings is where reconnecting actually happens, so the
         // badge lives there.
-        expiringBankAccounts = (await getBankAccounts()).filter(
+        const expiring = (await getBankAccounts()).filter(
           (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
         ).length;
+        return { user, pending, expiring };
       });
+      currentUser = result.user;
+      pendingCount = result.pending;
+      expiringBankAccounts = result.expiring;
     } catch (err) {
       console.error("[app-header] session doesn't resolve to a real account:", err);
     }
@@ -82,29 +97,21 @@ export async function AppHeader() {
                       {pendingCount}
                     </span>
                   )}
-                  {item.href === "/settings" && expiringBankAccounts > 0 && (
-                    <span
-                      title="Bank connection expiring or expired - reconnect in Bank sync"
-                      className="flex min-w-[1.25rem] items-center justify-center rounded-full bg-status-critical px-1 text-[0.65rem] font-semibold text-white"
-                    >
-                      {expiringBankAccounts}
-                    </span>
-                  )}
                 </Link>
               ))}
             </nav>
             <AccentPicker />
-            <ThemeToggle />
-            <form
-              action={async () => {
-                "use server";
-                await signOut({ redirectTo: "/signin" });
-              }}
-            >
-              <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
-                <LogOut className="size-4" />
-              </Button>
-            </form>
+            {currentUser && (
+              <UserMenu
+                userId={currentUser.id}
+                name={currentUser.name}
+                email={currentUser.email}
+                color={currentUser.avatarColor}
+                imageVersion={currentUser.avatarImageUpdatedAt ? currentUser.avatarImageUpdatedAt.getTime() : null}
+                expiringBankAccounts={expiringBankAccounts}
+                onSignOut={signOutAction}
+              />
+            )}
           </>
         )}
       </div>

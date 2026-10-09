@@ -144,10 +144,21 @@ describe("deleteUser", () => {
     expect(await getUserBySub("admin-sub")).toBeDefined();
   });
 
-  it("refuses to delete yourself", async () => {
+  it("a non-admin can delete their own account", async () => {
     await resolveAndApplySignIn(ADMIN, "admin-sub", "Admin", ADMIN);
     await inviteUser("sam@example.com");
     const { user: sam } = await resolveAndApplySignIn("sam@example.com", "sam-sub", "Sam", ADMIN, undefined);
+    const result = await deleteUser(sam!.id, sam!.id, ADMIN);
+    expect(result).toMatchObject({ ok: true });
+    expect(await getUserBySub("sam-sub")).toBeUndefined();
+  });
+
+  it("an admin refuses to delete their own account", async () => {
+    await inviteUser("sam@example.com");
+    // An admin via the group claim, not the bootstrap email - this is
+    // specifically testing the id===callerId-and-isAdmin rule, not the
+    // separate bootstrap-email rule covered above.
+    const { user: sam } = await resolveAndApplySignIn("sam@example.com", "sam-sub", "Sam", ADMIN, ["admin"]);
     const result = await deleteUser(sam!.id, sam!.id, ADMIN);
     expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/own account/) });
     expect(await getUserBySub("sam-sub")).toBeDefined();

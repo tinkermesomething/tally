@@ -3,6 +3,7 @@ import {
   sqliteTable,
   integer,
   text,
+  blob,
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
@@ -299,9 +300,21 @@ export const users = sqliteTable("users", {
   // exists, its encrypted file) is untouched and can be re-enabled.
   disabledAt: integer("disabled_at", { mode: "timestamp" }),
   dekSealed: text("dek_sealed"),
-  // A generated (initials + this color) avatar, not an uploaded image - no
-  // file storage needed. Null = a default color until the user picks one.
+  // A generated (initials + this color) avatar - the fallback whenever no
+  // uploaded image is set below. Null = a default color until the user
+  // picks one.
   avatarColor: text("avatar_color"),
+  // An uploaded (or link-fetched) profile picture, capped at 10MB by the
+  // upload action (lib/db/users.ts's setAvatarImage), stored raw with its
+  // own mime type - no resizing/thumbnailing. Lives in the shared keystore
+  // alongside avatarColor, same reasoning: a profile picture isn't
+  // sensitive financial data, and every signed-in user needs to be able to
+  // see everyone else's (nav, the admin user list), so there's nothing to
+  // gain from per-user encryption here. Null = no image, fall back to the
+  // generated avatar above.
+  avatarImage: blob("avatar_image", { mode: "buffer" }),
+  avatarImageType: text("avatar_image_type"),
+  avatarImageUpdatedAt: integer("avatar_image_updated_at", { mode: "timestamp" }),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),

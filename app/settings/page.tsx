@@ -44,6 +44,7 @@ import { ManualBackup } from "@/components/settings/manual-backup";
 import { AvatarPicker } from "@/components/settings/avatar-picker";
 import { UsersPanel, type PublicUser } from "@/components/settings/users-panel";
 import { MigrateLegacyButton } from "@/components/settings/migrate-legacy-button";
+import { DeleteAccountButton } from "@/components/settings/delete-account-button";
 import { listUsers } from "@/lib/db/users";
 import { canDisable } from "@/lib/accounts-rules";
 
@@ -383,7 +384,13 @@ export default async function SettingsPage({
         <TabsContent value="account" className="space-y-6 pt-4">
           <section className="space-y-3">
             <h2 className="text-sm font-medium">Personal details</h2>
-            <AvatarPicker name={me.name} email={me.email} color={me.avatarColor} />
+            <AvatarPicker
+              userId={me.id}
+              name={me.name}
+              email={me.email}
+              color={me.avatarColor}
+              imageVersion={me.avatarImageUpdatedAt ? me.avatarImageUpdatedAt.getTime() : null}
+            />
             <p className="text-sm text-muted-foreground">
               {me.name ? `${me.name} · ` : ""}
               {me.email}
@@ -409,6 +416,13 @@ export default async function SettingsPage({
           <div className="border-t border-border pt-4">
             <MigrateLegacyButton />
           </div>
+
+          {!me.isAdmin && (
+            <div className="space-y-2 border-t border-border pt-4">
+              <h2 className="text-sm font-medium text-status-critical">Danger zone</h2>
+              <DeleteAccountButton />
+            </div>
+          )}
         </TabsContent>
 
         {me.isAdmin && (
