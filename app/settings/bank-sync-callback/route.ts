@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getRequisition, getAccountMeta, PENDING_CONNECTION_COOKIE, type PendingConnection } from "@/lib/gocardless";
 import { linkOrRenewBankAccount } from "@/lib/db/bank-sync";
+import { resolveCurrentUser } from "@/lib/db/current-user";
+import { runWithUserDb } from "@/lib/db/context";
 
 // Where GoCardless (or the end-user's bank) redirects back to after the
 // consent step. No query params from that redirect are trusted - see
@@ -39,32 +41,53 @@ export async function GET() {
   }
 
   try {
-    const requisition = await getRequisition(pending.requisitionId);
-
-    if (requisition.status !== "LN") {
-      settingsUrl.searchParams.set("bankSyncError", `not_linked_${requisition.status}`);
+    // This route is gated by middleware.ts (session cookie), not an auth()
+    // check of its own - still resolves which account's encrypted file
+    // linkOrRenewBankAccount below should write into.
+    const { user, conn } = await resolveCurrentUser();
+    if (user.id !== pending.userId) {
+      // Someone else's pending connection, on a browser/session that isn't
+      // theirs anymore (shared device, a second sign-in before the first
+      // completed) - never apply bank data under the wrong account. Same
+      // fixed code as a missing/corrupt cookie; the real reason goes to
+      // the server log only, not the URL.
+      console.error(`[bank-sync-callback] pending connection belongs to user ${pending.userId}, signed in as ${user.id}`);
+      settingsUrl.searchParams.set("bankSyncError", "missing_state");
       return NextResponse.redirect(settingsUrl);
     }
+    return await runWithUserDb(conn, async () => {
+      const requisition = await getRequisition(pending.requisitionId);
 
-    const consentExpiresAt = new Date(Date.now() + pending.accessValidForDays * 24 * 60 * 60 * 1000);
+      if (requisition.status !== "LN") {
+        settingsUrl.searchParams.set("bankSyncError", `not_linked_${requisition.status}`);
+        return NextResponse.redirect(settingsUrl);
+      }
 
-    for (const accountId of requisition.accounts) {
-      const meta = await getAccountMeta(accountId);
-      const accountLabel = meta.name?.trim() || meta.iban || accountId;
-      await linkOrRenewBankAccount({
-        provider: "gocardless",
-        institutionId: pending.institutionId,
-        requisitionId: pending.requisitionId,
-        externalAccountId: accountId,
-        displayName: `${pending.institutionName} - ${accountLabel}`,
-        consentExpiresAt,
-      });
-    }
+      const consentExpiresAt = new Date(Date.now() + pending.accessValidForDays * 24 * 60 * 60 * 1000);
 
-    settingsUrl.searchParams.set("connected", String(requisition.accounts.length));
-    return NextResponse.redirect(settingsUrl);
+      for (const accountId of requisition.accounts) {
+        const meta = await getAccountMeta(accountId);
+        const accountLabel = meta.name?.trim() || meta.iban || accountId;
+        await linkOrRenewBankAccount({
+          provider: "gocardless",
+          institutionId: pending.institutionId,
+          requisitionId: pending.requisitionId,
+          externalAccountId: accountId,
+          displayName: `${pending.institutionName} - ${accountLabel}`,
+          consentExpiresAt,
+        });
+      }
+
+      settingsUrl.searchParams.set("connected", String(requisition.accounts.length));
+      return NextResponse.redirect(settingsUrl);
+    });
   } catch (err) {
-    settingsUrl.searchParams.set("bankSyncError", err instanceof Error ? err.message : "unknown");
+    // The underlying error can be GoCardless's own response body (see
+    // gcFetch) - never put that in a URL the browser then carries around
+    // (history, Referer headers, server logs). Full detail goes to this
+    // process's own log; the user gets a fixed, safe code.
+    console.error("[bank-sync-callback] linking failed:", err);
+    settingsUrl.searchParams.set("bankSyncError", "link_failed");
     return NextResponse.redirect(settingsUrl);
   }
 }

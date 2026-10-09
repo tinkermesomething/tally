@@ -7,11 +7,13 @@ import { AddBucketButton } from "@/components/savings/bucket-dialog";
 import { BucketCard } from "@/components/savings/bucket-card";
 import { ArchivedList } from "@/components/settings/archived-list";
 import { restoreBucket } from "@/app/savings/actions";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 // Always live - never statically prerendered.
 export const dynamic = "force-dynamic";
 
 export default async function SavingsPage() {
+  return withCurrentUser(async () => {
   const [buckets, archived, { currency, dateFormat }] = await Promise.all([getBuckets(), getArchivedBuckets(), getAppSettings()]);
   const total = buckets.reduce((sum, b) => sum + b.balancePence, 0);
   const today = new Date().toISOString().slice(0, 10);
@@ -46,4 +48,5 @@ export default async function SavingsPage() {
       )}
     </div>
   );
+  });
 }

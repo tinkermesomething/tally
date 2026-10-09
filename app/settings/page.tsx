@@ -30,6 +30,8 @@ import { CategoryRuleSettingsRow } from "@/components/settings/category-rule-set
 import { AddCategoryRuleDialog } from "@/components/settings/add-category-rule-dialog";
 import { ConnectBankAccountDialog } from "@/components/settings/connect-bank-account-dialog";
 import { BankSyncSchedule } from "@/components/settings/bank-sync-schedule";
+import { GocardlessCredentialsForm } from "@/components/settings/gocardless-credentials-form";
+import { hasGocardlessCredentials } from "@/lib/db/gocardless-credentials";
 import { ArchivedList } from "@/components/settings/archived-list";
 import { FilterableList } from "@/components/settings/filterable-list";
 import {
@@ -37,14 +39,24 @@ import {
   unarchiveIncomeSource,
 } from "@/app/grid/actions";
 import { restorePerson } from "@/app/debt/actions";
+import { withCurrentUser } from "@/lib/db/current-user";
+import { ManualBackup } from "@/components/settings/manual-backup";
+import { AvatarPicker } from "@/components/settings/avatar-picker";
+import { UsersPanel, type PublicUser } from "@/components/settings/users-panel";
+import { listUsers } from "@/lib/db/users";
+import { canDisable } from "@/lib/accounts-rules";
 
 export const dynamic = "force-dynamic";
 
 // Tab order as shown. `?tab=` can open any of them directly (the bank
-// connection callback uses ?tab=bank-sync).
-const SETTINGS_TABS = ["categories", "income", "lenders", "rules", "bank-sync", "preferences", "backup"];
-// The tab used to be called "people" - old links and bookmarks still open it.
-const TAB_ALIASES: Record<string, string> = { people: "lenders" };
+// connection callback uses ?tab=bank-sync). "admin" is admin-only -
+// filtered out of what's actually shown in the page body below, but still
+// listed here so an old admin-only link still resolves (via TAB_ALIASES)
+// instead of silently falling back to "account".
+const SETTINGS_TABS = ["account", "bank-sync", "categories", "income", "lenders", "rules", "admin"];
+// "people" is this tab's old name; "preferences" and "backup"/"users" used
+// to be their own tabs, now folded into "account" and "admin".
+const TAB_ALIASES: Record<string, string> = { people: "lenders", preferences: "account", backup: "admin", users: "admin" };
 
 // Amounts are stored as pence; forms and the list show pounds.
 const displayConditions = (r: Parameters<typeof ruleConditionsOf>[0]) =>
@@ -59,6 +71,7 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ tab?: string; connected?: string; bankSyncError?: string }>;
 }) {
+  return withCurrentUser(async (me) => {
   const { tab, connected, bankSyncError } = await searchParams;
   const [
     categoryTree,
@@ -71,6 +84,7 @@ export default async function SettingsPage({
     bankAccounts,
     categoryRules,
     savingsBuckets,
+    gocardlessConfigured,
   ] = await Promise.all([
     getCategoryTree(),
     getIncomeSourceList(),
@@ -82,6 +96,7 @@ export default async function SettingsPage({
     getBankAccounts(),
     getCategoryRules(),
     getBuckets(),
+    hasGocardlessCredentials(),
   ]);
   const recentByAccount = await getRecentTransactions(bankAccounts.map((a) => a.id), 5);
   const buckets = savingsBuckets.map((b) => ({ id: b.id, name: b.name, color: bucketColor(b) }));
@@ -102,19 +117,33 @@ export default async function SettingsPage({
   const accountNameById = new Map(accounts.map((a) => [String(a.id), a.name]));
   const incomeSourceNameById = new Map(incomeSources.map((s) => [s.id, s.name]));
 
+  const allowedEmail = process.env.ALLOWED_EMAIL;
+  const publicUsers: PublicUser[] = me.isAdmin
+    ? (await listUsers()).map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        isAdmin: u.isAdmin,
+        disabledAt: u.disabledAt ? u.disabledAt.toISOString() : null,
+        linked: u.oidcSub !== null,
+        createdAt: u.createdAt,
+        canDisable: canDisable({ email: u.email, isAdmin: u.isAdmin }, allowedEmail),
+      }))
+    : [];
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
       <Tabs defaultValue={SETTINGS_TABS.includes(TAB_ALIASES[tab ?? ""] ?? tab ?? "") ? (TAB_ALIASES[tab ?? ""] ?? tab!) : "categories"}>
         <TabsList>
+          <TabsTrigger value="account">Account settings</TabsTrigger>
+          <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="income">Income</TabsTrigger>
           <TabsTrigger value="lenders">Lenders</TabsTrigger>
           <TabsTrigger value="rules">Rules</TabsTrigger>
-          <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>
-          <TabsTrigger value="preferences">Preferences</TabsTrigger>
-          <TabsTrigger value="backup">Backup</TabsTrigger>
+          {me.isAdmin && <TabsTrigger value="admin">Admin</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="categories" className="space-y-4 pt-4">
@@ -309,10 +338,17 @@ export default async function SettingsPage({
           )}
           {bankSyncError && (
             <p className="rounded-lg border border-status-critical/30 bg-status-critical/10 px-3 py-2 text-sm text-status-critical">
-              Connection failed: {bankSyncError}. Try again, or check the bank wasn&apos;t
-              closed partway through.
+              {/* bankSyncError is one of a few fixed codes the callback route sets - never raw provider text (see its own comment on why). */}
+              Connection failed
+              {bankSyncError === "missing_state" ? " (the link had expired)" : bankSyncError.startsWith("not_linked_") ? " (the bank didn't finish linking)" : ""}
+              . Try again, or check the bank wasn&apos;t closed partway through.
             </p>
           )}
+
+          <div className="space-y-2">
+            <h2 className="text-sm font-medium">GoCardless API credentials</h2>
+            <GocardlessCredentialsForm configured={gocardlessConfigured} />
+          </div>
 
           <BankSyncSchedule
             enabled={appSettings.bankSyncEnabled}
@@ -348,22 +384,49 @@ export default async function SettingsPage({
           </div>
         </TabsContent>
 
-        <TabsContent value="preferences" className="space-y-4 pt-4">
-          <p className="text-sm text-muted-foreground">Display preferences for the whole app.</p>
-          <PreferencesSettings
-            currency={appSettings.currency}
-            dateFormat={appSettings.dateFormat}
-            carryOverStartYear={appSettings.carryOverStartYear}
-            carryOverStartMonth={appSettings.carryOverStartMonth}
-          />
+        <TabsContent value="account" className="space-y-6 pt-4">
+          <section className="space-y-3">
+            <h2 className="text-sm font-medium">Personal details</h2>
+            <AvatarPicker name={me.name} email={me.email} color={me.avatarColor} />
+            <p className="text-sm text-muted-foreground">
+              {me.name ? `${me.name} · ` : ""}
+              {me.email}
+            </p>
+            <p className="text-xs text-muted-foreground">Account created {me.createdAt}</p>
+          </section>
+
+          <div className="space-y-4 border-t border-border pt-4">
+            <h2 className="text-sm font-medium">Preferences</h2>
+            <p className="text-xs text-muted-foreground">Display preferences for the whole app.</p>
+            <PreferencesSettings
+              currency={appSettings.currency}
+              dateFormat={appSettings.dateFormat}
+              carryOverStartYear={appSettings.carryOverStartYear}
+              carryOverStartMonth={appSettings.carryOverStartMonth}
+            />
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <ManualBackup />
+          </div>
         </TabsContent>
 
-        <TabsContent value="backup" className="space-y-4 pt-4">
-          <BackupSettings auto={await autoBackupView()} />
-        </TabsContent>
+        {me.isAdmin && (
+          <TabsContent value="admin" className="space-y-6 pt-4">
+            <div className="space-y-4">
+              <h2 className="text-sm font-medium">Users</h2>
+              <UsersPanel users={publicUsers} />
+            </div>
+            <div className="space-y-4 border-t border-border pt-4">
+              <h2 className="text-sm font-medium">Backup</h2>
+              <BackupSettings auto={await autoBackupView()} />
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
+  });
 }
 
 /** What the Backup tab shows about the automatic backups, already formatted

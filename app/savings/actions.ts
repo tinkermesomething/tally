@@ -45,46 +45,51 @@ function refresh(bucketId?: number) {
 }
 
 export async function createBucket(form: BucketForm): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    await addBucket(toBucketInput(form));
-    refresh();
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      await addBucket(toBucketInput(form));
+      refresh();
+    })
+  );
 }
 
 /** Makes a bucket from just a name (for "+ New savings bucket…" inside a rule)
  * and hands back its id. */
 export async function createBucketNamed(name: string): Promise<{ ok: true; id: number } | { ok: false; error: string }> {
-  await requireSession();
-  const trimmed = typeof name === "string" ? name.trim() : "";
-  if (!trimmed) return { ok: false, error: "Enter a name for the new savings bucket." };
-  try {
-    const created = await addBucket({ name: trimmed });
-    refresh();
-    return { ok: true, id: created.id };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Couldn't create that bucket." };
-  }
+  return requireSession(async () => {
+    const trimmed = typeof name === "string" ? name.trim() : "";
+    if (!trimmed) return { ok: false, error: "Enter a name for the new savings bucket." };
+    try {
+      const created = await addBucket({ name: trimmed });
+      refresh();
+      return { ok: true, id: created.id };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't create that bucket." };
+    }
+  });
 }
 
 export async function editBucket(id: number, form: BucketForm): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    await updateBucket(id, toBucketInput(form));
+  return requireSession(() =>
+    toResult(async () => {
+      await updateBucket(id, toBucketInput(form));
+      refresh(id);
+    })
+  );
+}
+
+export async function removeBucket(id: number) {
+  return requireSession(async () => {
+    await archiveBucket(id);
     refresh(id);
   });
 }
 
-export async function removeBucket(id: number) {
-  await requireSession();
-  await archiveBucket(id);
-  refresh(id);
-}
-
 export async function restoreBucket(id: number) {
-  await requireSession();
-  await unarchiveBucket(id);
-  refresh(id);
+  return requireSession(async () => {
+    await unarchiveBucket(id);
+    refresh(id);
+  });
 }
 
 export async function addEntry(input: {
@@ -94,18 +99,19 @@ export async function addEntry(input: {
   direction: "deposit" | "withdrawal";
   note?: string;
 }): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    assertPositivePounds(input.pounds);
-    await addSavingsEntry({
-      bucketId: input.bucketId,
-      entryDate: input.entryDate,
-      amountPence: poundsToPence(input.pounds),
-      direction: input.direction,
-      note: input.note,
-    });
-    refresh(input.bucketId);
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      assertPositivePounds(input.pounds);
+      await addSavingsEntry({
+        bucketId: input.bucketId,
+        entryDate: input.entryDate,
+        amountPence: poundsToPence(input.pounds),
+        direction: input.direction,
+        note: input.note,
+      });
+      refresh(input.bucketId);
+    })
+  );
 }
 
 export async function editEntry(
@@ -113,23 +119,25 @@ export async function editEntry(
   id: number,
   input: { pounds?: number; direction?: "deposit" | "withdrawal"; entryDate?: string; note?: string }
 ): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    if (input.pounds !== undefined) assertPositivePounds(input.pounds);
-    await updateSavingsEntry(id, {
-      amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
-      direction: input.direction,
-      entryDate: input.entryDate,
-      note: input.note,
-    });
-    refresh(bucketId);
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      if (input.pounds !== undefined) assertPositivePounds(input.pounds);
+      await updateSavingsEntry(id, {
+        amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
+        direction: input.direction,
+        entryDate: input.entryDate,
+        note: input.note,
+      });
+      refresh(bucketId);
+    })
+  );
 }
 
 export async function removeEntry(bucketId: number, id: number) {
-  await requireSession();
-  await deleteSavingsEntry(id);
-  refresh(bucketId);
+  return requireSession(async () => {
+    await deleteSavingsEntry(id);
+    refresh(bucketId);
+  });
 }
 
 /** Links (or unlinks, with null) a category to a bucket. Resolves with how
@@ -139,11 +147,12 @@ export async function linkCategory(
   bucketId: number | null,
   backfillFrom?: string
 ): Promise<ActionResult & { added?: number }> {
-  await requireSession();
-  let added = 0;
-  const result = await toResult(async () => {
-    added = await linkCategoryToBucket(categoryId, bucketId, { backfillFrom: backfillFrom || undefined });
-    refresh();
+  return requireSession(async () => {
+    let added = 0;
+    const result = await toResult(async () => {
+      added = await linkCategoryToBucket(categoryId, bucketId, { backfillFrom: backfillFrom || undefined });
+      refresh();
+    });
+    return result.ok ? { ok: true, added } : result;
   });
-  return result.ok ? { ok: true, added } : result;
 }

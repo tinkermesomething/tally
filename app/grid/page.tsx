@@ -18,12 +18,14 @@ import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
 import { MobileSummaryBar } from "@/components/grid/mobile-summary-bar";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
 import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 export default async function GridPage({
   searchParams,
 }: {
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
+  return withCurrentUser(async () => {
   const { year: yearParam, month: monthParam } = await searchParams;
   // "Now" is whatever budget period today's date resolves to through the
   // pay anchor (see lib/db/pay-period.ts) - not just the raw calendar
@@ -183,4 +185,5 @@ export default async function GridPage({
       </div>
     </div>
   );
+  });
 }

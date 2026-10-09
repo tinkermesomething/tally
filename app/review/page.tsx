@@ -21,6 +21,7 @@ import { ImportCsvDialog } from "@/components/review/import-csv-dialog";
 import { CSV_PROVIDER } from "@/lib/db/bank-sync";
 import { isCsvMapping } from "@/lib/csv-import";
 import { formatSyncTime, nextSyncSlot } from "@/lib/sync-schedule";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function ReviewPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
+  return withCurrentUser(async () => {
   const { from, to } = await searchParams;
 
   const [pending, categoryTree, incomeSources, people, bankAccounts, pendingPreview, appSettings, savingsBuckets] = await Promise.all([
@@ -157,7 +159,7 @@ export default async function ReviewPage({
                   </span>
                   {t.pencilled && <span className="text-xs">Pencilled in</span>}
                   {t.amountPence < 0 && !t.pencilled && (
-                    <PencilInButton amountPence={t.amountPence} date={t.date} payeeRaw={t.payeeRaw} categories={flatCategories} />
+                    <PencilInButton amountPence={t.amountPence} date={t.date} payeeRaw={t.payeeRaw} categories={flatCategories} ruleMatch={t.ruleMatch} />
                   )}
                 </div>
               </div>
@@ -176,4 +178,5 @@ export default async function ReviewPage({
       />
     </div>
   );
+  });
 }

@@ -45,6 +45,11 @@ USER node
 ENV DATABASE_PATH=/app/config/tally.db
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# Explicit, not relying on Next's own default: makes the runtime mode
+# unambiguous from the image alone, and turns off Next's anonymous usage
+# telemetry (no reason to phone home from a private financial app).
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 EXPOSE 3000
 
 # Healthy = the server answers AND can read its database (see app/api/health).

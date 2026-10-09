@@ -25,17 +25,22 @@ export function BucketCard({
   return (
     <div
       data-testid="bucket-card"
-      className="flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm"
+      className="relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-colors hover:bg-accent/40"
       style={{ borderColor: `color-mix(in srgb, ${paint.accent} 55%, var(--border))` }}
     >
+      {/* Stretched link: makes the whole card clickable (consistent with the
+          debt card), while the real buttons below - Edit, Archive, the two
+          entry dialogs - sit later in the DOM and paint on top of this, so
+          they stay independently clickable rather than triggering navigation. */}
+      <Link href={`/savings/${bucket.id}`} className="absolute inset-0 z-0" aria-label={`Open ${bucket.name}`} />
       <div className={cn("h-1.5", paint.animated && "bucket-rgb")} style={paint.fill} data-testid="bucket-stripe" aria-hidden />
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-center justify-between gap-2">
-          <Link href={`/savings/${bucket.id}`} className="flex min-w-0 items-center gap-2 font-medium hover:underline">
+          <span className="flex min-w-0 items-center gap-2 font-medium">
             <span className={cn("size-2.5 shrink-0 rounded-full", paint.animated && "bucket-rgb")} style={paint.fill} aria-hidden />
             <span className="truncate">{bucket.name}</span>
-          </Link>
-          <div className="flex shrink-0 items-center">
+          </span>
+          <div className="relative z-10 flex shrink-0 items-center">
             <BucketDialog
               bucket={bucket}
               trigger={
@@ -58,7 +63,7 @@ export function BucketCard({
             : "No category linked. Link one in Settings → Categories to pay in automatically."}
         </p>
 
-        <div className="mt-auto flex flex-wrap gap-2 pt-1">
+        <div className="relative z-10 mt-auto flex flex-wrap gap-2 pt-1">
           <EntryDialog bucketId={bucket.id} bucketName={bucket.name} direction="deposit" />
           <EntryDialog bucketId={bucket.id} bucketName={bucket.name} direction="withdrawal" />
         </div>

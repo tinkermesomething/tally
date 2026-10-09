@@ -168,7 +168,7 @@ export async function syncBankAccount(bankAccountId: number): Promise<{ staged: 
   // fetched separately by the Review page - see the schema comment on
   // pendingPreviewJson for why a second live call per page view isn't
   // safe against this endpoint's own rate limit.
-  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName" | "pencilled">[] = pending.map((t) => ({
+  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName" | "pencilled" | "ruleMatch">[] = pending.map((t) => ({
     amountPence: gcAmountToPence(t.transactionAmount.amount),
     date: t.bookingDate ?? t.valueDate ?? null,
     payeeRaw: payeeFromTransaction(t),
@@ -237,6 +237,11 @@ export type PendingPreviewTransaction = {
    * amount and payee exists) - the preview comes from the bank's cache, so
    * without this a refresh offered the pencil again. */
   pencilled: boolean;
+  /** An existing rule's conditions already match this row (money-out, so
+   * only ever an expense target) - lets Review default the Pencil-in picker
+   * to it instead of asking the user to categorize every single one by
+   * hand again. Still just a default: the picker can be changed. */
+  ruleMatch: { categoryId: number; categoryName: string; debtPersonId?: number; savingsBucketId?: number } | null;
 };
 
 /** Read-only preview of GoCardless's own "pending" transactions (not yet
@@ -257,6 +262,8 @@ export type PendingPreviewTransaction = {
 export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> {
   const accounts = await getBankAccounts();
   const results: PendingPreviewTransaction[] = [];
+  const rules = await getCategoryRules();
+  const categoryNameById = new Map((await db.select({ id: categories.id, name: categories.name }).from(categories)).map((c) => [c.id, c.name]));
   // pencilInExpense stores the preview's payee as the note and its amount as
   // a positive figure. Each provisional entry covers ONE preview row, so two
   // identical pending rows with one pencilled show one pencil.
@@ -288,6 +295,10 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
           ? claimed.find((e) => !e.used && e.amountPence === Math.abs(t.amountPence) && e.note === t.payeeRaw)
           : undefined;
       if (match) match.used = true;
+      // Same matcher sync uses - direction-filtered the same way (an
+      // expense rule only ever matches money-out), so what this suggests
+      // is exactly what the rule would do once the real row settles.
+      const ruleMatch = t.amountPence < 0 ? matchCategoryRule({ payeeRaw: t.payeeRaw, payeeClean: null, amountPence: t.amountPence, bankAccountId: account.id }, rules) : null;
       results.push({
         bankAccountId: account.id,
         bankAccountName: accountDisplayName(account),
@@ -295,6 +306,15 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
         date: typeof t.date === "string" ? t.date : null,
         payeeRaw: t.payeeRaw,
         pencilled: !!match,
+        ruleMatch:
+          ruleMatch && ruleMatch.targetType === "expense"
+            ? {
+                categoryId: ruleMatch.categoryId,
+                categoryName: categoryNameById.get(ruleMatch.categoryId) ?? "Unknown category",
+                debtPersonId: ruleMatch.debtPersonId ?? undefined,
+                savingsBucketId: ruleMatch.savingsBucketId ?? undefined,
+              }
+            : null,
       });
     }
   }

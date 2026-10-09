@@ -2,9 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { writeBackup } from "@/lib/db/backup";
 import { checkBackupPassword, encryptBackup } from "@/lib/backup-crypto";
+import { resolveCurrentUser } from "@/lib/db/current-user";
+import { runWithUserDb } from "@/lib/db/context";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,6 @@ export const dynamic = "force-dynamic";
  * itself too, because a route handler is a public HTTP endpoint like any
  * server action. */
 export async function POST(request: Request) {
-  if (!(await auth())) return NextResponse.json({ ok: false, error: "Not signed in." }, { status: 401 });
-
   let form: FormData;
   try {
     form = await request.formData();
@@ -36,24 +35,33 @@ export async function POST(request: Request) {
     }
   }
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-backup-"));
-  const file = path.join(dir, "backup.db");
+  let conn;
   try {
-    await writeBackup(file);
-    const plain = fs.readFileSync(file);
-    const body = unprotected ? plain : encryptBackup(plain, password);
-    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
-    return new NextResponse(new Uint8Array(body), {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="tally-backup-${stamp}.${unprotected ? "db" : "tallybak"}"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    ({ conn } = await resolveCurrentUser());
   } catch (err) {
-    console.error("[backup] failed:", err);
-    return NextResponse.json({ ok: false, error: "The backup failed. Try again." }, { status: 500 });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Not signed in." }, { status: 401 });
   }
+
+  return runWithUserDb(conn, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-backup-"));
+    const file = path.join(dir, "backup.db");
+    try {
+      await writeBackup(file);
+      const plain = fs.readFileSync(file);
+      const body = unprotected ? plain : encryptBackup(plain, password);
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+      return new NextResponse(new Uint8Array(body), {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="tally-backup-${stamp}.${unprotected ? "db" : "tallybak"}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    } catch (err) {
+      console.error("[backup] failed:", err);
+      return NextResponse.json({ ok: false, error: "The backup failed. Try again." }, { status: 500 });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 }

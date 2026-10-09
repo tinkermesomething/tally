@@ -21,7 +21,7 @@ export type AppSettings = {
   autoBackupEnabled: boolean;
 };
 
-const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat };
+export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat };
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();

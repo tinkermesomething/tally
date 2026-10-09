@@ -12,10 +12,12 @@ import { SavingsLedgerTable } from "@/components/savings/ledger-table";
 import { bucketPaint } from "@/lib/savings-math";
 import { cn } from "@/lib/utils";
 import { formatPence } from "@/lib/money";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 export const dynamic = "force-dynamic";
 
 export default async function BucketPage({ params }: { params: Promise<{ bucketId: string }> }) {
+  return withCurrentUser(async () => {
   const { bucketId } = await params;
   const id = parseInt(bucketId, 10);
   if (!Number.isInteger(id)) notFound();
@@ -75,4 +77,5 @@ export default async function BucketPage({ params }: { params: Promise<{ bucketI
       <SavingsLedgerTable bucketId={bucket.id} openingPence={ledger.openingPence} entries={ledger.entries} />
     </div>
   );
+  });
 }

@@ -1,6 +1,10 @@
 import { getAppSettings } from "./db/settings";
 import { getBankAccounts, syncAllBankAccounts } from "./db/bank-sync";
 import { lastSyncSlot } from "./sync-schedule";
+import { runWithUserDb } from "./db/context";
+import { listUsers } from "./db/users";
+import { getOrOpenUserDb } from "./db/pool";
+import { openDek, dekToHex } from "./user-dek";
 
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 // Checked shortly after boot too, not just on the first 15-minute tick - a
@@ -13,8 +17,12 @@ let running = false;
 // process. Without it, one account that can never sync (expired consent)
 // never gets a fresh lastSyncedAt, so it would look overdue on EVERY tick
 // and the whole pass - healthy accounts included - would re-run every 15
-// minutes, burning through GoCardless's per-account daily limit.
-let lastAttemptAt: number | null = null;
+// minutes, burning through GoCardless's per-account daily limit. Keyed by
+// user id - each account on this instance has its own bank accounts, own
+// GoCardless credentials (lib/db/gocardless-credentials.ts) and own
+// frequency setting, so one user's failed attempt must never throttle
+// anyone else's.
+const lastAttemptAt = new Map<number, number>();
 
 /** Starts the in-process scheduled-sync loop - safe to call more than once
  * (e.g. if instrumentation.ts's register() ever runs again), it only ever
@@ -59,23 +67,25 @@ export function shouldSyncNow(
   return isSyncDue(accounts, frequencyHours, now, timeZone);
 }
 
+/** Each timer firing checks EVERY eligible account in turn, each in its own
+ * connection - one user's bank accounts, GoCardless credentials and sync
+ * frequency are all theirs alone now (moved off the single shared legacy
+ * connection this job used to assume), so this can no longer do one check
+ * against one fixed connection the way it did before that move. One
+ * user's failure (bad credentials, an expired consent) is caught and
+ * logged per-user, never aborting the rest of the pass. */
 async function checkAndMaybeSync() {
   if (running) return;
   running = true;
   try {
-    const settings = await getAppSettings();
-    if (!settings.bankSyncEnabled) return;
-
-    const accounts = await getBankAccounts();
-    if (accounts.length === 0) return;
-
-    if (!shouldSyncNow(accounts, settings.bankSyncFrequencyHours, lastAttemptAt)) return;
-
-    lastAttemptAt = Date.now();
-    const results = await syncAllBankAccounts();
-    const failed = results.filter((r) => !r.ok);
-    if (failed.length > 0) {
-      console.error("[scheduled-sync] one or more accounts failed:", failed);
+    const users = await listUsers();
+    for (const user of users) {
+      if (user.disabledAt || !user.oidcSub || !user.dekSealed) continue;
+      try {
+        await syncOneUser(user.id, user.oidcSub, user.dekSealed);
+      } catch (err) {
+        console.error(`[scheduled-sync] user ${user.id} failed:`, err);
+      }
     }
   } catch (err) {
     // Never let a scheduling check crash the interval loop itself -
@@ -84,4 +94,25 @@ async function checkAndMaybeSync() {
   } finally {
     running = false;
   }
+}
+
+async function syncOneUser(userId: number, oidcSub: string, dekSealed: string) {
+  const dek = openDek(dekSealed, oidcSub);
+  const conn = getOrOpenUserDb(userId, dekToHex(dek));
+  await runWithUserDb(conn, async () => {
+    const settings = await getAppSettings();
+    if (!settings.bankSyncEnabled) return;
+
+    const accounts = await getBankAccounts();
+    if (accounts.length === 0) return;
+
+    if (!shouldSyncNow(accounts, settings.bankSyncFrequencyHours, lastAttemptAt.get(userId) ?? null)) return;
+
+    lastAttemptAt.set(userId, Date.now());
+    const results = await syncAllBankAccounts();
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length > 0) {
+      console.error(`[scheduled-sync] user ${userId}: one or more accounts failed:`, failed);
+    }
+  });
 }

@@ -13,12 +13,14 @@ import { ReportPanelCard, ReportBody } from "@/components/reports/report-panel-c
 import { TrendReport } from "@/components/reports/trend-report";
 import { buildTrendTree } from "@/lib/trend";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 export default async function ReportsPage({
   searchParams,
 }: {
   searchParams: Promise<{ year?: string; month?: string; view?: string }>;
 }) {
+  return withCurrentUser(async () => {
   const { year: yearParam, month: monthParam, view: viewParam } = await searchParams;
   const view = parseReportView(viewParam);
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
@@ -208,8 +210,10 @@ export default async function ReportsPage({
           spent={spent.resolvePanelSlices(panel)}
           existingGroups={existingGroups}
           categories={flatCategories}
+          periodLabel={periodLabel}
         />
       ))}
     </div>
   );
+  });
 }

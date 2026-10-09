@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import * as schema from "./schema";
 import { DATABASE_PATH, inTransaction, sqlite } from "./index";
 
 /** Backup and restore of the whole database file. */
@@ -16,20 +19,52 @@ export function backupDir() {
   return configured ? path.resolve(configured) : path.join(path.dirname(path.resolve(DATABASE_PATH)), "backups");
 }
 
-/** A consistent copy of the live database (safe while it is being written
- * to, WAL included) - SQLite's own online backup, not a raw file copy. */
-export async function writeBackup(dest: string) {
-  await sqlite.backup(dest);
-}
-
-export type RestoreResult = { tables: number; rows: number; safetyBackup: string };
-
 type Pragmas = { name: string }[];
 const quote = (id: string) => `"${id.replace(/"/g, '""')}"`;
 const userTables = (conn: Database.Database) =>
   (conn.prepare("select name from sqlite_master where type = 'table' and name not like 'sqlite_%' and name not like '__drizzle%'").all() as Pragmas).map((t) => t.name);
 const columnsOf = (conn: Database.Database, table: string, schema = "main") =>
   (conn.prepare(`select name from pragma_table_info(?, ?)`).all(table, schema) as Pragmas).map((c) => c.name);
+
+/** A consistent copy of the live database, always written out as a PLAIN
+ * file - regardless of whether the live connection (`sqlite`) is itself a
+ * real per-user ENCRYPTED one. NOT `sqlite.backup(dest)`: SQLite's own
+ * online backup API copies pages as-is, so an encrypted source makes an
+ * equally-encrypted copy (confirmed directly - it even throws outright,
+ * "backup is not supported with incompatible source and target databases",
+ * rather than silently producing a file this app's OWN later password
+ * layer (lib/backup-crypto.ts) could still open) - this feature's whole
+ * contract is a plain file underneath, optionally wrapped in that app-level
+ * password, never double-encrypted or cipher-locked to this account's own
+ * key. Builds the destination's schema first (its own fresh migration,
+ * nothing to do with the live connection), then copies every table's rows
+ * over by attaching that plain file to the live connection with `KEY ''`
+ * - confirmed directly that this direction (an encrypted main connection
+ * writing into an attached plain one) produces a genuinely plain output. */
+export async function writeBackup(dest: string) {
+  const plain = new Database(dest);
+  try {
+    migrate(drizzle(plain, { schema }), { migrationsFolder: path.join(process.cwd(), "drizzle") });
+  } finally {
+    plain.close();
+  }
+
+  sqlite.pragma("foreign_keys = OFF");
+  sqlite.prepare("ATTACH DATABASE ? AS backup_dest KEY ''").run(dest);
+  try {
+    for (const table of userTables(sqlite)) {
+      const cols = columnsOf(sqlite, table).map(quote).join(", ");
+      sqlite.exec(`insert into backup_dest.${quote(table)} (${cols}) select ${cols} from main.${quote(table)}`);
+    }
+    const hasSeq = sqlite.prepare("select 1 from main.sqlite_master where name = 'sqlite_sequence'").get();
+    if (hasSeq) sqlite.exec("insert into backup_dest.sqlite_sequence select * from main.sqlite_sequence");
+  } finally {
+    sqlite.exec("DETACH DATABASE backup_dest");
+    sqlite.pragma("foreign_keys = ON");
+  }
+}
+
+export type RestoreResult = { tables: number; rows: number; safetyBackup: string };
 
 /** Checks that `file` is a healthy Tally database this version can take.
  * Throws a plain-words reason if not. Opens it read-only on its own
@@ -77,14 +112,19 @@ export async function restoreFromFile(file: string): Promise<RestoreResult> {
   fs.mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const safetyBackup = path.join(dir, `pre-restore-${stamp}.db`);
-  await sqlite.backup(safetyBackup);
+  await writeBackup(safetyBackup);
   const old = fs.readdirSync(dir).filter((f) => f.startsWith("pre-restore-")).sort();
   for (const f of old.slice(0, Math.max(0, old.length - KEEP_SAFETY_COPIES))) fs.rmSync(path.join(dir, f), { force: true });
 
   // Foreign keys can only be switched off outside a transaction; the whole
   // swap is checked with foreign_key_check before it commits instead.
   sqlite.pragma("foreign_keys = OFF");
-  sqlite.prepare("ATTACH DATABASE ? AS restore_src").run(file);
+  // KEY '' - `file` is always a plain database (see assertRestorable/
+  // writeBackup); the live connection attaching it may itself be a real
+  // per-user ENCRYPTED one, and an attached database needs its own key
+  // clause stated explicitly in that case (confirmed directly, same as
+  // writeBackup's own attach above).
+  sqlite.prepare("ATTACH DATABASE ? AS restore_src KEY ''").run(file);
   try {
     let tables = 0;
     let rows = 0;

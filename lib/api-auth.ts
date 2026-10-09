@@ -1,5 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { audit } from "./audit";
+import { checkRateLimit, clientIp } from "./rate-limit";
+import { enterUserDb } from "./db/context";
+import { getLegacyConn } from "./db/legacy-connection";
 
 /**
  * API routes sit outside Auth.js's middleware (its matcher explicitly
@@ -8,7 +12,21 @@ import { NextResponse } from "next/server";
  * token - a standard "service account" pattern, orthogonal to the human
  * session cookie.
  */
+
+// Generous enough that a real client retrying a flaky connection never
+// trips it, tight enough that guessing the token by brute force is not a
+// realistic path - at this rate, trying even a 6-character token space
+// would take centuries.
+const MAX_FAILURES_PER_WINDOW = 20;
+const WINDOW_MS = 60_000;
+
 export function requireApiToken(request: Request): NextResponse | null {
+  // Established before anything below, including the failure path - a
+  // rejected token still writes to the audit log (see the call near the
+  // bottom), so the database has to be reachable even on an unauthorized
+  // request. See lib/db/legacy-connection.ts for what connection this is.
+  enterUserDb(getLegacyConn());
+
   const expected = process.env.TALLY_API_TOKEN;
   if (!expected) {
     return NextResponse.json(
@@ -17,10 +35,17 @@ export function requireApiToken(request: Request): NextResponse | null {
     );
   }
 
+  const ip = clientIp(request);
+  const limit = checkRateLimit(`api-token:${ip}`, MAX_FAILURES_PER_WINDOW, WINDOW_MS);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many attempts. Try again shortly." }, { status: 429 });
+  }
+
   const header = request.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
   if (!token || !safeEqual(token, expected)) {
+    void audit("api_token_rejected", new URL(request.url).pathname, ip);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

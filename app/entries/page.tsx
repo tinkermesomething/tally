@@ -3,12 +3,14 @@ import { resolvePeriodForDate } from "@/lib/db/pay-period";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthSelect } from "@/components/reports/month-select";
 import { EntriesTable } from "@/components/entries/entries-table";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 export default async function EntriesPage({
   searchParams,
 }: {
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
+  return withCurrentUser(async () => {
   const { year: yearParam, month: monthParam } = await searchParams;
   const now = new Date();
   // Unlike Reports (defaults to "all"), this defaults to the current month -
@@ -42,4 +44,5 @@ export default async function EntriesPage({
       <EntriesTable key={`${year}-${month}`} entries={entries} />
     </div>
   );
+  });
 }

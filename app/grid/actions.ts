@@ -45,21 +45,23 @@ export async function updateAmount(input: {
   month: number;
   pounds: number;
 }) {
-  await requireSession();
-  assertNonNegativePounds(input.pounds);
-  await upsertCategoryEntry({
-    categoryId: input.categoryId,
-    year: input.year,
-    month: input.month,
-    amountPence: poundsToPence(input.pounds),
+  return requireSession(async () => {
+    assertNonNegativePounds(input.pounds);
+    await upsertCategoryEntry({
+      categoryId: input.categoryId,
+      year: input.year,
+      month: input.month,
+      amountPence: poundsToPence(input.pounds),
+    });
+    revalidatePath("/grid");
   });
-  revalidatePath("/grid");
 }
 
 export async function clearAmount(input: { categoryId: number; year: number; month: number }) {
-  await requireSession();
-  await deleteCategoryEntry(input);
-  revalidatePath("/grid");
+  return requireSession(async () => {
+    await deleteCategoryEntry(input);
+    revalidatePath("/grid");
+  });
 }
 
 export async function clearIncomeAmount(input: {
@@ -67,47 +69,49 @@ export async function clearIncomeAmount(input: {
   year: number;
   month: number;
 }) {
-  await requireSession();
-  await deleteIncomeEntry(input);
-  revalidatePath("/grid");
+  return requireSession(async () => {
+    await deleteIncomeEntry(input);
+    revalidatePath("/grid");
+  });
 }
 
 /** Bulk version of the per-cell "use last month's value" hint - only fills
  * genuinely blank cells (categories and income sources both), never
  * overwrites an existing entry, same as the per-cell hint it's built from. */
 export async function copyPreviousMonthValues(input: { year: number; month: number }) {
-  await requireSession();
-  const data = await getGridData(input.year);
+  return requireSession(async () => {
+    const data = await getGridData(input.year);
 
-  await inTransaction(async () => {
-    const allCategories = data.categories.flatMap((c) => [c, ...c.children]);
-    for (const category of allCategories) {
-      const cell = category.months[input.month];
-      if (cell?.computed) continue;
-      if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
-        await upsertCategoryEntry({
-          categoryId: category.id,
-          year: input.year,
-          month: input.month,
-          amountPence: cell.previousAmountPence,
-        });
+    await inTransaction(async () => {
+      const allCategories = data.categories.flatMap((c) => [c, ...c.children]);
+      for (const category of allCategories) {
+        const cell = category.months[input.month];
+        if (cell?.computed) continue;
+        if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
+          await upsertCategoryEntry({
+            categoryId: category.id,
+            year: input.year,
+            month: input.month,
+            amountPence: cell.previousAmountPence,
+          });
+        }
       }
-    }
 
-    for (const source of data.incomeSources) {
-      const cell = source.months[input.month];
-      if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
-        await upsertIncomeEntry({
-          incomeSourceId: source.id,
-          year: input.year,
-          month: input.month,
-          amountPence: cell.previousAmountPence,
-        });
+      for (const source of data.incomeSources) {
+        const cell = source.months[input.month];
+        if (cell?.amountPence === undefined && cell?.previousAmountPence !== undefined) {
+          await upsertIncomeEntry({
+            incomeSourceId: source.id,
+            year: input.year,
+            month: input.month,
+            amountPence: cell.previousAmountPence,
+          });
+        }
       }
-    }
+    });
+
+    revalidatePath("/grid");
   });
-
-  revalidatePath("/grid");
 }
 
 export async function togglePaid(input: {
@@ -116,9 +120,10 @@ export async function togglePaid(input: {
   month: number;
   paid: boolean;
 }) {
-  await requireSession();
-  await setCategoryEntryPaid(input);
-  revalidatePath("/grid");
+  return requireSession(async () => {
+    await setCategoryEntryPaid(input);
+    revalidatePath("/grid");
+  });
 }
 
 /** Ticking "paid" is also the moment the actual amount is known, which may
@@ -139,23 +144,24 @@ export async function confirmPayment(input: {
    * under today's month instead. */
   entryDate: string;
 }) {
-  await requireSession();
-  assertPositivePounds(input.pounds);
-  const { entryDate } = input;
-  await inTransaction(async () => {
-    await setCategoryEntryPaid({
-      categoryId: input.categoryId,
-      year: input.year,
-      month: input.month,
-      paid: true,
+  return requireSession(async () => {
+    assertPositivePounds(input.pounds);
+    const { entryDate } = input;
+    await inTransaction(async () => {
+      await setCategoryEntryPaid({
+        categoryId: input.categoryId,
+        year: input.year,
+        month: input.month,
+        paid: true,
+      });
+      await logExpenseQuery({
+        categoryId: input.categoryId,
+        amountPence: poundsToPence(input.pounds),
+        entryDate,
+      });
     });
-    await logExpenseQuery({
-      categoryId: input.categoryId,
-      amountPence: poundsToPence(input.pounds),
-      entryDate,
-    });
+    revalidatePath("/grid");
   });
-  revalidatePath("/grid");
 }
 
 export async function logExpense(input: {
@@ -169,48 +175,50 @@ export async function logExpense(input: {
    * duplicate that here. */
   debtPersonId?: number;
 }) {
-  await requireSession();
-  return toResult(async () => {
-    assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
-    const amountPence = poundsToPence(input.pounds);
-    await logExpenseQuery({
-      categoryId: input.categoryId,
-      amountPence,
-      entryDate: input.entryDate,
-      note: input.note,
-      debtPersonId: input.debtPersonId,
-    });
-    revalidatePath("/grid");
-    revalidatePath("/debt");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
+      const amountPence = poundsToPence(input.pounds);
+      await logExpenseQuery({
+        categoryId: input.categoryId,
+        amountPence,
+        entryDate: input.entryDate,
+        note: input.note,
+        debtPersonId: input.debtPersonId,
+      });
+      revalidatePath("/grid");
+      revalidatePath("/debt");
+    })
+  );
 }
 
 export async function listExpenseEntries(categoryId: number, year: number, month: number) {
-  await requireSession();
-  return getExpenseEntriesForCell(categoryId, year, month);
+  return requireSession(() => getExpenseEntriesForCell(categoryId, year, month));
 }
 
 export async function editExpenseEntry(
   id: number,
   input: { pounds?: number; note?: string; entryDate?: string }
 ) {
-  await requireSession();
-  if (input.pounds !== undefined) assertPositivePounds(input.pounds);
-  await updateExpenseEntryQuery(id, {
-    amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
-    note: input.note !== undefined ? input.note || null : undefined,
-    entryDate: input.entryDate,
+  return requireSession(async () => {
+    if (input.pounds !== undefined) assertPositivePounds(input.pounds);
+    await updateExpenseEntryQuery(id, {
+      amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
+      note: input.note !== undefined ? input.note || null : undefined,
+      entryDate: input.entryDate,
+    });
+    revalidatePath("/grid");
+    revalidatePath("/entries");
   });
-  revalidatePath("/grid");
-  revalidatePath("/entries");
 }
 
 export async function removeExpenseEntry(id: number) {
-  await requireSession();
-  await deleteExpenseEntryQuery(id);
-  revalidatePath("/grid");
-  revalidatePath("/entries");
-  revalidatePath("/debt");
+  return requireSession(async () => {
+    await deleteExpenseEntryQuery(id);
+    revalidatePath("/grid");
+    revalidatePath("/entries");
+    revalidatePath("/debt");
+  });
 }
 
 /** Logs an actual income transaction (additive - matches how logExpense
@@ -232,49 +240,50 @@ export async function logIncome(input: {
   periodMonth?: number;
   debtPersonId?: number;
 }) {
-  await requireSession();
-  return toResult(async () => {
-    assertPositivePounds(input.pounds);
-    const amountPence = poundsToPence(input.pounds);
-    await inTransaction(async () => {
-      const source = await getIncomeSource(input.incomeSourceId);
-      if (!source) {
-        throw new Error("Income source not found.");
-      }
-
-      let year: number;
-      let month: number;
-      if (source.isPayAnchor) {
-        if (input.periodYear === undefined || input.periodMonth === undefined) {
-          throw new Error("Pick which budget month this pay anchor entry counts toward.");
+  return requireSession(() =>
+    toResult(async () => {
+      assertPositivePounds(input.pounds);
+      const amountPence = poundsToPence(input.pounds);
+      await inTransaction(async () => {
+        const source = await getIncomeSource(input.incomeSourceId);
+        if (!source) {
+          throw new Error("Income source not found.");
         }
-        year = input.periodYear;
-        month = input.periodMonth;
-        await recordPayPeriodAnchor({
-          incomeSourceId: input.incomeSourceId,
-          receivedDate: input.entryDate,
-          year,
-          month,
-        });
-        await refileExpensesFromAnchor(input.entryDate);
-      } else {
-        ({ year, month } = parseIsoDate(input.entryDate));
-      }
 
-      await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
-      if (input.debtPersonId) {
-        await addDebtEntry({
-          personId: input.debtPersonId,
-          entryDate: input.entryDate,
-          amountPence,
-          direction: "loan",
-        });
-      }
-    });
-    revalidatePath("/entries");
-    revalidatePath("/grid");
-    revalidatePath("/debt");
-  });
+        let year: number;
+        let month: number;
+        if (source.isPayAnchor) {
+          if (input.periodYear === undefined || input.periodMonth === undefined) {
+            throw new Error("Pick which budget month this pay anchor entry counts toward.");
+          }
+          year = input.periodYear;
+          month = input.periodMonth;
+          await recordPayPeriodAnchor({
+            incomeSourceId: input.incomeSourceId,
+            receivedDate: input.entryDate,
+            year,
+            month,
+          });
+          await refileExpensesFromAnchor(input.entryDate);
+        } else {
+          ({ year, month } = parseIsoDate(input.entryDate));
+        }
+
+        await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+        if (input.debtPersonId) {
+          await addDebtEntry({
+            personId: input.debtPersonId,
+            entryDate: input.entryDate,
+            amountPence,
+            direction: "loan",
+          });
+        }
+      });
+      revalidatePath("/entries");
+      revalidatePath("/grid");
+      revalidatePath("/debt");
+    })
+  );
 }
 
 export async function updateIncomeAmount(input: {
@@ -283,25 +292,27 @@ export async function updateIncomeAmount(input: {
   month: number;
   pounds: number;
 }) {
-  await requireSession();
-  assertNonNegativePounds(input.pounds);
-  await upsertIncomeEntry({
-    incomeSourceId: input.incomeSourceId,
-    year: input.year,
-    month: input.month,
-    amountPence: poundsToPence(input.pounds),
+  return requireSession(async () => {
+    assertNonNegativePounds(input.pounds);
+    await upsertIncomeEntry({
+      incomeSourceId: input.incomeSourceId,
+      year: input.year,
+      month: input.month,
+      amountPence: poundsToPence(input.pounds),
+    });
+    revalidatePath("/grid");
   });
-  revalidatePath("/grid");
 }
 
 export async function createIncomeSource(name: string) {
-  await requireSession();
-  return toResult(async () => {
-    const trimmed = name.trim();
-    if (!trimmed) throw new Error("Name can't be empty.");
-    await addIncomeSourceQuery(trimmed);
-    revalidatePath("/grid");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      const trimmed = name.trim();
+      if (!trimmed) throw new Error("Name can't be empty.");
+      await addIncomeSourceQuery(trimmed);
+      revalidatePath("/grid");
+    })
+  );
 }
 
 export async function createCategory(input: {
@@ -311,50 +322,54 @@ export async function createCategory(input: {
   isAnnual: boolean;
   annualMonth: number | null;
 }) {
-  await requireSession();
-  return toResult(async () => {
-    const trimmed = input.name.trim();
-    if (!trimmed) throw new Error("Name can't be empty.");
-    await addCategoryQuery({ ...input, name: trimmed });
-    revalidatePath("/grid");
-    revalidatePath("/reports");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      const trimmed = input.name.trim();
+      if (!trimmed) throw new Error("Name can't be empty.");
+      await addCategoryQuery({ ...input, name: trimmed });
+      revalidatePath("/grid");
+      revalidatePath("/reports");
+    })
+  );
 }
 
 /** Drop a category at a position among its siblings (see reorderCategoryTo) -
  * what the press-and-hold drag calls. */
 export async function moveCategoryToIndex(categoryId: number, toIndex: number, year: number): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    if (!Number.isInteger(year)) throw new Error("Pick a year.");
-    await reorderCategoryTo(categoryId, toIndex, year);
-    revalidatePath("/grid");
-    revalidatePath("/settings");
-    revalidatePath("/reports");
-    revalidatePath("/entries");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      if (!Number.isInteger(year)) throw new Error("Pick a year.");
+      await reorderCategoryTo(categoryId, toIndex, year);
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+      revalidatePath("/reports");
+      revalidatePath("/entries");
+    })
+  );
 }
 
 /** Drop an income source at a position among the sources shown for `year` -
  * what the press-and-hold drag calls (see reorderIncomeSourceTo). */
 export async function moveIncomeSourceToIndex(incomeSourceId: number, toIndex: number, year: number): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    if (!Number.isInteger(year)) throw new Error("Pick a year.");
-    await reorderIncomeSourceTo(incomeSourceId, toIndex, year);
-    revalidatePath("/grid");
-    revalidatePath("/settings");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      if (!Number.isInteger(year)) throw new Error("Pick a year.");
+      await reorderIncomeSourceTo(incomeSourceId, toIndex, year);
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+    })
+  );
 }
 
 export async function renameIncomeSource(incomeSourceId: number, name: string): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    await renameIncomeSourceQuery(incomeSourceId, name);
-    revalidatePath("/grid");
-    revalidatePath("/settings");
-    revalidatePath("/reports");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      await renameIncomeSourceQuery(incomeSourceId, name);
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+      revalidatePath("/reports");
+    })
+  );
 }
 
 /** One place up or down among its siblings (see moveCategoryOrder). */
@@ -363,108 +378,120 @@ export async function reorderCategory(
   direction: "up" | "down",
   year: number
 ): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    if (direction !== "up" && direction !== "down") throw new Error("Pick up or down.");
-    if (!Number.isInteger(year)) throw new Error("Pick a year.");
-    await moveCategoryOrder(categoryId, direction, year);
-    revalidatePath("/grid");
-    revalidatePath("/settings");
-    revalidatePath("/reports");
-    revalidatePath("/entries");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      if (direction !== "up" && direction !== "down") throw new Error("Pick up or down.");
+      if (!Number.isInteger(year)) throw new Error("Pick a year.");
+      await moveCategoryOrder(categoryId, direction, year);
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+      revalidatePath("/reports");
+      revalidatePath("/entries");
+    })
+  );
 }
 
 export async function renameCategory(categoryId: number, name: string) {
-  await requireSession();
-  const trimmed = name.trim();
-  if (!trimmed) return;
-  await renameCategoryQuery(categoryId, trimmed);
-  revalidatePath("/grid");
+  return requireSession(async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    await renameCategoryQuery(categoryId, trimmed);
+    revalidatePath("/grid");
+  });
 }
 
 export async function updateCategoryGroup(categoryId: number, groupName: string) {
-  await requireSession();
-  await updateCategoryGroupQuery(categoryId, groupName.trim() || null);
-  revalidatePath("/grid");
-  revalidatePath("/reports");
+  return requireSession(async () => {
+    await updateCategoryGroupQuery(categoryId, groupName.trim() || null);
+    revalidatePath("/grid");
+    revalidatePath("/reports");
+  });
 }
 
 export async function updateCategoryDueDay(categoryId: number, dueDay: number | null) {
-  await requireSession();
-  if (dueDay !== null && (dueDay < 1 || dueDay > 31)) {
-    throw new Error("Due day must be between 1 and 31.");
-  }
-  await updateCategoryDueDayQuery(categoryId, dueDay);
-  revalidatePath("/grid");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    if (dueDay !== null && (dueDay < 1 || dueDay > 31)) {
+      throw new Error("Due day must be between 1 and 31.");
+    }
+    await updateCategoryDueDayQuery(categoryId, dueDay);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+  });
 }
 
 export async function updateCategoryDebtLink(categoryId: number, linkedDebtPersonId: number | null) {
-  await requireSession();
-  await updateCategoryDebtLinkQuery(categoryId, linkedDebtPersonId);
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await updateCategoryDebtLinkQuery(categoryId, linkedDebtPersonId);
+    revalidatePath("/settings");
+  });
 }
 
 export async function archiveCategory(categoryId: number) {
-  await requireSession();
-  await archiveCategoryQuery(categoryId);
-  revalidatePath("/grid");
-  revalidatePath("/reports");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await archiveCategoryQuery(categoryId);
+    revalidatePath("/grid");
+    revalidatePath("/reports");
+    revalidatePath("/settings");
+  });
 }
 
 /** Moves a category to a new parent (or null for top-level) starting this
  * calendar year - see moveCategoryParent for the year-scoping and leaf-only
  * validation this wraps. */
 export async function moveCategory(categoryId: number, newParentId: number | null) {
-  await requireSession();
-  await moveCategoryParentQuery(categoryId, newParentId);
-  revalidatePath("/grid");
-  revalidatePath("/reports");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await moveCategoryParentQuery(categoryId, newParentId);
+    revalidatePath("/grid");
+    revalidatePath("/reports");
+    revalidatePath("/settings");
+  });
 }
 
 /** Marks one income source as the pay anchor (or clears it, with null) -
  * see setPayAnchorSource for why only one source can hold this at a time. */
 export async function setPayAnchor(incomeSourceId: number | null) {
-  await requireSession();
-  await setPayAnchorSource(incomeSourceId);
-  revalidatePath("/grid");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await setPayAnchorSource(incomeSourceId);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+  });
 }
 
 export async function archiveIncomeSource(id: number) {
-  await requireSession();
-  await archiveIncomeSourceQuery(id);
-  revalidatePath("/grid");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await archiveIncomeSourceQuery(id);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+  });
 }
 
 export async function unarchiveCategory(categoryId: number) {
-  await requireSession();
-  await unarchiveCategoryQuery(categoryId);
-  revalidatePath("/grid");
-  revalidatePath("/reports");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await unarchiveCategoryQuery(categoryId);
+    revalidatePath("/grid");
+    revalidatePath("/reports");
+    revalidatePath("/settings");
+  });
 }
 
 export async function unarchiveIncomeSource(id: number) {
-  await requireSession();
-  await unarchiveIncomeSourceQuery(id);
-  revalidatePath("/grid");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await unarchiveIncomeSourceQuery(id);
+    revalidatePath("/grid");
+    revalidatePath("/settings");
+  });
 }
 
 
 /** The colour of an income source's row in the Grid (null = automatic). */
 export async function setIncomeColor(incomeSourceId: number, color: string | null): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    await setIncomeSourceColor(incomeSourceId, color);
-    revalidatePath("/grid");
-    revalidatePath("/settings");
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      await setIncomeSourceColor(incomeSourceId, color);
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+    })
+  );
 }
 
 // ---- tags on existing expenses (debt repayment / savings) ----
@@ -479,12 +506,13 @@ export async function previewCategoryTags(
   categoryId: number,
   tags: { debtPersonId?: number; savingsBucketId?: number }
 ): Promise<{ ok: true; rows: MissingTagRow[]; total: number } | { ok: false; error: string }> {
-  await requireSession();
-  try {
-    return { ok: true, ...(await listMissingTags(categoryId, tags)) };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Couldn't look that up." };
-  }
+  return requireSession(async () => {
+    try {
+      return { ok: true, ...(await listMissingTags(categoryId, tags)) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't look that up." };
+    }
+  });
 }
 
 /** Links a category to a lender or bucket and tags the ticked existing expenses. */
@@ -493,28 +521,29 @@ export async function linkCategoryTagging(
   link: { debtPersonId?: number; savingsBucketId?: number },
   expenseEntryIds: number[]
 ): Promise<{ ok: true; tagged: number; skipped: { id: number; reason: string }[] } | { ok: false; error: string }> {
-  await requireSession();
-  try {
-    const ids = Array.isArray(expenseEntryIds) ? expenseEntryIds.filter((n) => Number.isInteger(n)) : [];
-    const result = await linkCategoryAndTag(categoryId, link, ids);
-    refreshTagged();
-    return { ok: true, ...result };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Couldn't link that." };
-  }
+  return requireSession(async () => {
+    try {
+      const ids = Array.isArray(expenseEntryIds) ? expenseEntryIds.filter((n) => Number.isInteger(n)) : [];
+      const result = await linkCategoryAndTag(categoryId, link, ids);
+      refreshTagged();
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't link that." };
+    }
+  });
 }
 
 /** Sets (or clears, with null) what ONE expense counts towards. */
 export async function setEntryTags(expenseEntryId: number, changes: { debtPersonId?: number | null; savingsBucketId?: number | null }): Promise<ActionResult> {
-  await requireSession();
-  return toResult(async () => {
-    await setExpenseTags(expenseEntryId, changes);
-    refreshTagged();
-  });
+  return requireSession(() =>
+    toResult(async () => {
+      await setExpenseTags(expenseEntryId, changes);
+      refreshTagged();
+    })
+  );
 }
 
 /** The lenders and buckets an entry can be tagged with. */
 export async function getEntryTagOptions() {
-  await requireSession();
-  return getTagOptions();
+  return requireSession(() => getTagOptions());
 }

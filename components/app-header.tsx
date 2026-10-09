@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { AccentPicker } from "@/components/accent-picker";
 import { Button } from "@/components/ui/button";
 import { getPendingTransactions, getBankAccounts } from "@/lib/db/bank-sync";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 const NAV_ITEMS = [
   { href: "/grid", label: "Budget" },
@@ -23,19 +24,42 @@ const NAV_ITEMS = [
 const EXPIRY_WARNING_DAYS = 14;
 
 export async function AppHeader() {
+  // Rendered as its own component inside the root layout's JSX, not called
+  // directly from layout's own function body - gets its own connection
+  // rather than assume the layout's already-established one reaches here
+  // (unverified whether it would; explicit is cheap and always correct).
+  // No session yet (e.g. /signin) means no account to resolve one for -
+  // nothing below reads the database in that case anyway (see the `session
+  // ? ... : 0` guards).
   const session = await auth();
-  // Cheap enough at this app's scale to run on every request, same as the
-  // auth() check above it - no separate count-only query needed yet.
-  const pendingCount = session ? (await getPendingTransactions()).length : 0;
-  // Nothing else in the app proactively surfaces an expiring/expired bank
-  // connection - without this, sync just silently stops producing new
-  // transactions and nobody notices until they go looking. Settings is
-  // where reconnecting actually happens, so the badge lives there.
-  const expiringBankAccounts = session
-    ? (await getBankAccounts()).filter(
-        (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
-      ).length
-    : 0;
+  // A session that decrypts fine but names an account that no longer
+  // resolves (disabled, deleted, or - once, moving off the old single-user
+  // login - never linked at all) must not take the Sign out button down
+  // with it; that button is the only way out of a broken session short of
+  // clearing cookies by hand. Nav/badges just show nothing in that case,
+  // same as being signed out.
+  let pendingCount = 0;
+  let expiringBankAccounts = 0;
+  if (session) {
+    try {
+      await withCurrentUser(async () => {
+        // Cheap enough at this app's scale to run on every request, same
+        // as the auth() check above it - no separate count-only query
+        // needed yet.
+        pendingCount = (await getPendingTransactions()).length;
+        // Nothing else in the app proactively surfaces an expiring/expired
+        // bank connection - without this, sync just silently stops
+        // producing new transactions and nobody notices until they go
+        // looking. Settings is where reconnecting actually happens, so the
+        // badge lives there.
+        expiringBankAccounts = (await getBankAccounts()).filter(
+          (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
+        ).length;
+      });
+    } catch (err) {
+      console.error("[app-header] session doesn't resolve to a real account:", err);
+    }
+  }
 
   return (
     <header className="sticky top-0 z-30 bg-background/95 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/60 print:hidden">

@@ -309,6 +309,8 @@ export async function pencilInExpense(input: {
   amountPence: number;
   entryDate: string;
   note?: string;
+  debtPersonId?: number;
+  bucketId?: number;
 }) {
   return logExpense({ ...input, provisional: true });
 }

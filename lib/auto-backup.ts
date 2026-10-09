@@ -6,6 +6,8 @@ import { writeBackup } from "./db/backup";
 import { getAppSettings, getAutoBackupStored } from "./db/settings";
 import { parseStored, scheduleState, type StoredBackupConfig } from "./auto-backup-settings";
 import { syncTimeZone } from "./sync-schedule";
+import { enterUserDb } from "./db/context";
+import { getLegacyConn } from "./db/legacy-connection";
 
 /** Automatic backups into a folder on the server.
  *
@@ -165,6 +167,10 @@ async function checkAndMaybeBackup() {
   if (running) return;
   running = true;
   try {
+    // Each timer firing is its own fresh call - establishes its own
+    // connection rather than assume one carried over from whatever
+    // scheduled the timer (see lib/db/legacy-connection.ts).
+    enterUserDb(getLegacyConn());
     await maybeRunAutoBackup();
     lastError = null;
   } catch (err) {

@@ -17,26 +17,29 @@ import { poundsToPence } from "@/lib/money";
 import { inTransaction } from "@/lib/db";
 
 export async function createPerson(name: string) {
-  await requireSession();
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("Name can't be empty.");
-  const person = await addPersonQuery(trimmed);
-  revalidatePath("/debt");
-  return person;
+  return requireSession(async () => {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("Name can't be empty.");
+    const person = await addPersonQuery(trimmed);
+    revalidatePath("/debt");
+    return person;
+  });
 }
 
 export async function removePerson(personId: number) {
-  await requireSession();
-  await archivePersonQuery(personId);
-  revalidatePath("/debt");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await archivePersonQuery(personId);
+    revalidatePath("/debt");
+    revalidatePath("/settings");
+  });
 }
 
 export async function restorePerson(personId: number) {
-  await requireSession();
-  await unarchivePersonQuery(personId);
-  revalidatePath("/debt");
-  revalidatePath("/settings");
+  return requireSession(async () => {
+    await unarchivePersonQuery(personId);
+    revalidatePath("/debt");
+    revalidatePath("/settings");
+  });
 }
 
 export async function addLedgerEntry(input: {
@@ -52,43 +55,44 @@ export async function addLedgerEntry(input: {
    * category, e.g. paying a loan back out of the Misc budget. */
   categoryId?: number;
 }) {
-  await requireSession();
-  assertPositivePounds(input.pounds);
-  const amountPence = poundsToPence(input.pounds);
+  return requireSession(async () => {
+    assertPositivePounds(input.pounds);
+    const amountPence = poundsToPence(input.pounds);
 
-  await inTransaction(async () => {
-    await addDebtEntry({
-      personId: input.personId,
-      entryDate: input.entryDate,
-      amountPence,
-      direction: input.direction,
-      note: input.note,
+    await inTransaction(async () => {
+      await addDebtEntry({
+        personId: input.personId,
+        entryDate: input.entryDate,
+        amountPence,
+        direction: input.direction,
+        note: input.note,
+      });
+
+      if (input.direction === "loan" && input.incomeSourceId) {
+        // Respects an existing pay-period boundary (if any) the same as every
+        // other logged entry - but doesn't create a new one; only the primary
+        // Add Income flow can do that, since it's the only place with a
+        // "counts toward" picker for the anchor source itself.
+        const { year, month } = await resolvePeriodForDate(input.entryDate);
+        await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+      }
+
+      if (input.direction === "repayment" && input.categoryId) {
+        await logExpenseQuery({
+          categoryId: input.categoryId,
+          amountPence,
+          entryDate: input.entryDate,
+          note: input.note,
+          debtPersonId: input.personId,
+        });
+      }
     });
 
-    if (input.direction === "loan" && input.incomeSourceId) {
-      // Respects an existing pay-period boundary (if any) the same as every
-      // other logged entry - but doesn't create a new one; only the primary
-      // Add Income flow can do that, since it's the only place with a
-      // "counts toward" picker for the anchor source itself.
-      const { year, month } = await resolvePeriodForDate(input.entryDate);
-      await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
-    }
-
-    if (input.direction === "repayment" && input.categoryId) {
-      await logExpenseQuery({
-        categoryId: input.categoryId,
-        amountPence,
-        entryDate: input.entryDate,
-        note: input.note,
-        debtPersonId: input.personId,
-      });
-    }
+    revalidatePath(`/debt/${input.personId}`);
+    revalidatePath("/debt");
+    revalidatePath("/grid");
+    revalidatePath("/reports");
   });
-
-  revalidatePath(`/debt/${input.personId}`);
-  revalidatePath("/debt");
-  revalidatePath("/grid");
-  revalidatePath("/reports");
 }
 
 export async function editLedgerEntry(
@@ -96,21 +100,23 @@ export async function editLedgerEntry(
   id: number,
   input: { pounds?: number; direction?: "loan" | "repayment"; entryDate?: string; note?: string }
 ) {
-  await requireSession();
-  if (input.pounds !== undefined) assertPositivePounds(input.pounds);
-  await updateDebtEntry(id, {
-    amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
-    direction: input.direction,
-    entryDate: input.entryDate,
-    note: input.note !== undefined ? input.note || null : undefined,
+  return requireSession(async () => {
+    if (input.pounds !== undefined) assertPositivePounds(input.pounds);
+    await updateDebtEntry(id, {
+      amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
+      direction: input.direction,
+      entryDate: input.entryDate,
+      note: input.note !== undefined ? input.note || null : undefined,
+    });
+    revalidatePath(`/debt/${personId}`);
+    revalidatePath("/debt");
   });
-  revalidatePath(`/debt/${personId}`);
-  revalidatePath("/debt");
 }
 
 export async function removeLedgerEntry(personId: number, id: number) {
-  await requireSession();
-  await deleteDebtEntry(id);
-  revalidatePath(`/debt/${personId}`);
-  revalidatePath("/debt");
+  return requireSession(async () => {
+    await deleteDebtEntry(id);
+    revalidatePath(`/debt/${personId}`);
+    revalidatePath("/debt");
+  });
 }

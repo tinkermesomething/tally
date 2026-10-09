@@ -41,6 +41,7 @@ import {
   ignoreTransaction,
   restoreTransaction,
   createRuleAndCategorize,
+  getPendingPreview,
   previewRuleMatches,
   stageImportedTransactions,
   syncBankAccount,
@@ -426,6 +427,54 @@ describe("adding a forgotten debt / savings tag to past expenses", () => {
     expect(res.tagged).toBe(1);
     expect((await db.select().from(savingsEntries))[0]).toMatchObject({ bucketId: bucket.id, amountPence: 800, expenseEntryId: old.id });
     expect(waiting.status).toBe("pending_review");
+  });
+});
+
+describe("a rule suggests a category for pending-at-the-bank rows", () => {
+  it("getPendingPreview offers an existing rule's match, not just raw text", async () => {
+    const acct = await seedAccount();
+    const [cat] = await db.insert(categories).values({ name: "Food" }).returning();
+    await addCategoryRule({ conditions: [{ field: "payee", operator: "contains", value: "tesco" }], targetType: "expense", categoryId: cat.id });
+    await db
+      .update(bankAccounts)
+      .set({
+        pendingPreviewJson: JSON.stringify([
+          { amountPence: -500, date: "2026-09-20", payeeRaw: "TESCO STORES 123" },
+          { amountPence: -700, date: "2026-09-20", payeeRaw: "SOMEWHERE ELSE" },
+          { amountPence: 200, date: "2026-09-20", payeeRaw: "TESCO REFUND" }, // money IN never matches an expense rule
+        ]),
+      })
+      .where(eq(bankAccounts.id, acct.id));
+    const preview = await getPendingPreview();
+    expect(preview.find((p) => p.payeeRaw === "TESCO STORES 123")!.ruleMatch).toMatchObject({ categoryId: cat.id, categoryName: "Food" });
+    expect(preview.find((p) => p.payeeRaw === "SOMEWHERE ELSE")!.ruleMatch).toBeNull();
+    expect(preview.find((p) => p.payeeRaw === "TESCO REFUND")!.ruleMatch).toBeNull();
+  });
+
+  it("carries the rule's debt / savings tag along with the category", async () => {
+    const acct = await seedAccount();
+    const [cat] = await db.insert(categories).values({ name: "Food" }).returning();
+    const [sam] = await db.insert(people).values({ name: "Sam" }).returning();
+    const [bucket] = await db.insert(savingsBuckets).values({ name: "Holiday" }).returning();
+    await addCategoryRule({ conditions: [{ field: "payee", operator: "contains", value: "tesco" }], targetType: "expense", categoryId: cat.id, debtPersonId: sam.id, savingsBucketId: bucket.id });
+    await db
+      .update(bankAccounts)
+      .set({ pendingPreviewJson: JSON.stringify([{ amountPence: -500, date: "2026-09-20", payeeRaw: "TESCO STORES 123" }]) })
+      .where(eq(bankAccounts.id, acct.id));
+    const preview = await getPendingPreview();
+    expect(preview[0].ruleMatch).toMatchObject({ categoryId: cat.id, debtPersonId: sam.id, savingsBucketId: bucket.id });
+  });
+
+  it("an ignore-type or income-type rule is never offered for a pending expense", async () => {
+    const acct = await seedAccount();
+    const [src] = await db.insert(incomeSources).values({ name: "Wages" }).returning();
+    await addCategoryRule({ conditions: [{ field: "payee", operator: "contains", value: "tesco" }], targetType: "ignore" });
+    await db
+      .update(bankAccounts)
+      .set({ pendingPreviewJson: JSON.stringify([{ amountPence: -500, date: "2026-09-20", payeeRaw: "TESCO STORES 123" }]) })
+      .where(eq(bankAccounts.id, acct.id));
+    expect((await getPendingPreview())[0].ruleMatch).toBeNull();
+    void src;
   });
 });
 

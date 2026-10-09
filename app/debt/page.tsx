@@ -6,12 +6,14 @@ import { formatPence } from "@/lib/money";
 import { AddPersonDialog } from "@/components/debt/add-person-dialog";
 import { StatCard } from "@/components/grid/stat-card";
 import { cn } from "@/lib/utils";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 // Always reflects live data - never statically prerendered (which would also
 // query the database at build time, before any real data/schema exists).
 export const dynamic = "force-dynamic";
 
 export default async function DebtPage() {
+  return withCurrentUser(async () => {
   const [people, { currency }] = await Promise.all([getPeopleWithBalances(), getAppSettings()]);
   const netBalancePence = people.reduce((sum, p) => sum + p.balancePence, 0);
 
@@ -68,4 +70,5 @@ export default async function DebtPage() {
       )}
     </div>
   );
+  });
 }

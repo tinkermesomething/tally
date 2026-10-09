@@ -8,12 +8,14 @@ import { formatPence } from "@/lib/money";
 import { AddEntryDialog } from "@/components/debt/add-entry-dialog";
 import { LedgerTable } from "@/components/debt/ledger-table";
 import { cn } from "@/lib/utils";
+import { withCurrentUser } from "@/lib/db/current-user";
 
 export default async function PersonLedgerPage({
   params,
 }: {
   params: Promise<{ personId: string }>;
 }) {
+  return withCurrentUser(async () => {
   const { personId } = await params;
   const id = parseInt(personId, 10);
   const [{ person, entries, balancePence }, incomeSources, categoryTree, { currency }] = await Promise.all([
@@ -69,4 +71,5 @@ export default async function PersonLedgerPage({
       <LedgerTable personId={person.id} entries={entries} />
     </div>
   );
+  });
 }

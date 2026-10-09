@@ -436,6 +436,53 @@
     box-shadow: none !important;
     margin-bottom: 8mm;
   }
+  /* Exporting ONE panel (report-panel-card.tsx's own export icon): every
+     OTHER panel is hidden rather than just the one marked, so this still
+     works regardless of where the target panel sits among its siblings. */
+  body.print-single-panel .report-panel {
+    display: none !important;
+  }
+  body.print-single-panel .report-panel[data-print-target="true"] {
+    display: block !important;
+  }
+
+  /* Pie charts (recharts, via components/ui/chart.tsx's ResponsiveContainer)
+     were coming out truncated - confirmed in a real exported PDF, not
+     guessed: ResponsiveContainer sizes the chart by measuring its container
+     with a ResizeObserver and writes that measurement as an explicit pixel
+     width/height on the wrapper div AND the inner <svg> (recharts-surface).
+     That measurement happens for the ON-SCREEN layout; nothing reliably
+     re-measures it for print's own layout pass (no guaranteed resize event),
+     so the chart keeps its screen-sized pixels while the column around it
+     reflows narrower for the printed page - the surplus just gets clipped by
+     the card's own overflow-hidden. Forcing both elements to 100%/100% here
+     makes the browser rescale the ALREADY-DRAWN svg to fit, using its own
+     viewBox (recharts always sets one) - a pure CSS/rendering fix, nothing
+     depends on React re-measuring or re-rendering for the print pass. */
+  .recharts-responsive-container,
+  .recharts-wrapper,
+  .recharts-surface {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* Trend report's month table was coming out truncated too (also confirmed
+     in a real exported PDF) - a different cause: on screen it scrolls
+     horizontally (overflow-x-auto) past its min-width when the card is
+     narrow; print has no scrollbar, so the browser simply clipped the
+     months past whatever width the container ended up with instead of
+     reflowing to the page's full landscape width. table-layout: fixed
+     forces every column to share whatever width IS available instead of
+     the table claiming its on-screen min-width - every month stays
+     visible, even if the text inside gets tighter. */
+  [data-testid="trend-table"] {
+    overflow: visible !important;
+  }
+  [data-testid="trend-table"] table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: fixed;
+  }
 }
 
 /*

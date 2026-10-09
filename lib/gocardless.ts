@@ -19,35 +19,51 @@ const BASE_URL = "https://bankaccountdata.gocardless.com/api/v2";
 export const PENDING_CONNECTION_COOKIE = "gc_pending_connection";
 
 export type PendingConnection = {
+  /** Whoever started this connection - the callback checks the SIGNED-IN
+   * user still matches this before applying it (see bank-sync-callback's
+   * own comment). */
+  userId: number;
   requisitionId: string;
   institutionId: string;
   institutionName: string;
   accessValidForDays: number;
 };
 
-let cachedAccess: { token: string; expiresAt: number } | null = null;
+// Keyed by secretId, not a single value - credentials are per-user now
+// (lib/db/gocardless-credentials.ts), so the process can hold a live token
+// for more than one person's GoCardless app registration at once. Still
+// just an in-memory cache, same lifetime/reasoning as before.
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 async function getAccessToken(): Promise<string> {
-  if (cachedAccess && cachedAccess.expiresAt > Date.now()) {
-    return cachedAccess.token;
+  // Dynamic import: this module has no other reason to touch the database,
+  // and every real caller already has a per-user connection active by the
+  // time it gets here (actions/routes via requireSession or
+  // resolveCurrentUser) - a plain top-level import would work too, this
+  // just keeps the dependency obvious at the call site.
+  const { getGocardlessCredentials } = await import("./db/gocardless-credentials");
+  const creds = await getGocardlessCredentials();
+  if (!creds) {
+    throw new Error("GoCardless isn't set up for this account yet - add your API credentials in Settings > Bank sync.");
   }
-  const secretId = process.env.GOCARDLESS_SECRET_ID;
-  const secretKey = process.env.GOCARDLESS_SECRET_KEY;
-  if (!secretId || !secretKey) {
-    throw new Error("GOCARDLESS_SECRET_ID / GOCARDLESS_SECRET_KEY are not configured.");
+
+  const cached = tokenCache.get(creds.secretId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.token;
   }
   const res = await fetch(`${BASE_URL}/token/new/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ secret_id: secretId, secret_key: secretKey }),
+    body: JSON.stringify({ secret_id: creds.secretId, secret_key: creds.secretKey }),
   });
   if (!res.ok) {
     throw new Error(`GoCardless token request failed: ${res.status} ${await res.text()}`);
   }
   const data = await res.json();
   // access_expires is in seconds; shave 60s off as a safety margin.
-  cachedAccess = { token: data.access, expiresAt: Date.now() + (data.access_expires - 60) * 1000 };
-  return cachedAccess.token;
+  const entry = { token: data.access, expiresAt: Date.now() + (data.access_expires - 60) * 1000 };
+  tokenCache.set(creds.secretId, entry);
+  return entry.token;
 }
 
 async function gcFetch(path: string, init?: RequestInit) {

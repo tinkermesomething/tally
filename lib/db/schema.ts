@@ -260,6 +260,69 @@ export const appSettings = sqliteTable("app_settings", {
   autoBackupConfig: text("auto_backup_config"),
 });
 
+/** A append-only record of security-relevant events - sign-ins, failed API
+ * token attempts, backup restores, automatic-backup setting changes. Not a
+ * full activity log of every edit (this app has one user today); it exists
+ * so an incident ("did someone else get in, what did they touch") has an
+ * answer. Pruned to the last 180 days at startup (see lib/audit.ts). */
+export const auditLog = sqliteTable("audit_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  at: text("at").notNull().default(sql`(current_timestamp)`),
+  action: text("action").notNull(),
+  detail: text("detail"),
+  ip: text("ip"),
+});
+
+/** One Tally account per OIDC identity (pocket-id `sub`) - see
+ * lib/accounts-admin.ts for the admin/invite/disable/re-link logic that
+ * writes this table. `sub` is the real anchor (stable even if the email
+ * changes at the IdP); email is kept for display and as the FIRST signal
+ * used to find/create the bootstrap admin before any row exists yet.
+ *
+ * `dekSealed` is this user's Data Encryption Key, sealed (not plaintext) -
+ * see lib/backup-crypto.ts's sealSecret/openSecret, the same mechanism the
+ * automatic-backup password already uses. Null until the user's own
+ * encrypted database file is created (the storage-format migration is a
+ * later, separate step - see the plan). */
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  // Null until their first real login: an admin can invite someone by email
+  // before that person has ever signed in, so there's no `sub` to record
+  // yet. SQLite's own UNIQUE index already treats multiple NULLs as
+  // distinct (never a conflict), so several un-logged-in invites coexist
+  // fine; once set, a `sub` is still unique per account.
+  oidcSub: text("oidc_sub").unique(),
+  email: text("email").notNull(),
+  name: text("name"),
+  isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
+  // Blocks login without deleting anything - the account (and, once it
+  // exists, its encrypted file) is untouched and can be re-enabled.
+  disabledAt: integer("disabled_at", { mode: "timestamp" }),
+  dekSealed: text("dek_sealed"),
+  // A generated (initials + this color) avatar, not an uploaded image - no
+  // file storage needed. Null = a default color until the user picks one.
+  avatarColor: text("avatar_color"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(current_timestamp)`),
+});
+
+/** This user's OWN GoCardless API credentials - moved here (per-user
+ * encrypted file) from a shared instance-wide env var, so the secret
+ * itself is encrypted at rest alongside the rest of their data rather than
+ * sitting in a plaintext .env file, and so two different people on one
+ * instance can each use their own GoCardless app registration instead of
+ * sharing one. A singleton, same convention as app_settings - one row,
+ * created/replaced wholesale, never multiple. */
+export const gocardlessCredentials = sqliteTable("gocardless_credentials", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  secretId: text("secret_id").notNull(),
+  secretKey: text("secret_key").notNull(),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(current_timestamp)`),
+});
+
 /** A linked bank account (GoCardless for now, provider is a plain string so
  * a second provider never needs a schema change). One row per real account
  * - the user has 2, and nothing here assumes just one. consentExpiresAt
