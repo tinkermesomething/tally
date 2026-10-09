@@ -67,15 +67,17 @@ export type MigrateLegacyActionResult =
 
 /** One-time button for the account that was using Tally before the
  * multi-user/encryption rework - moves the original shared, unencrypted
- * database into THEIR OWN new encrypted file. See
- * lib/db/migrate-legacy.ts for what this does and refuses (a non-empty
- * account, a missing or damaged legacy file). Safe to click more than
- * once - after the first real migration there's nothing left to copy, so
- * it just reports "nothing to migrate" rather than erroring. */
+ * database into THEIR OWN new encrypted file. Not admin-gated: this is a
+ * per-user action (your own legacy data into your own account), and
+ * lib/db/migrate-legacy.ts already refuses a non-empty destination, so
+ * there's nothing for a second, unrelated user to clobber. See that file
+ * for what else this refuses (a missing or damaged legacy file). Safe to
+ * click more than once - after the first real migration there's nothing
+ * left to copy, so it just reports "nothing to migrate" rather than
+ * erroring. */
 export async function migrateLegacyDataAction(): Promise<MigrateLegacyActionResult> {
-  return requireSession(async (user) => {
+  return requireSession(async () => {
     try {
-      assertAdmin(user);
       const result = await migrateLegacyDataForCurrentUser();
       // Every page's data (Grid, Reports, Debt, everything) just changed
       // underneath whatever was cached - bust the whole tree, not one path.

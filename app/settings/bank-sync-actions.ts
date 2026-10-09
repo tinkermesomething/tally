@@ -114,14 +114,16 @@ export async function startBankConnection(institution: {
   });
 }
 
-/** Saves this account's OWN GoCardless API credentials - encrypted at
- * rest alongside the rest of their data (their own per-user file), not a
- * shared instance-wide secret. Both fields are required together: a
- * partial update (e.g. rotating only the key) isn't offered - simplest
- * correct behaviour, and GoCardless issues them as a pair anyway. */
+/** Saves the GoCardless API credentials for the whole instance - one
+ * developer/sandbox registration shared by every user's bank connections,
+ * not a per-account secret, so this is admin-only (Settings > Admin).
+ * Both fields are required together: a partial update (e.g. rotating only
+ * the key) isn't offered - simplest correct behaviour, and GoCardless
+ * issues them as a pair anyway. */
 export async function saveGocardlessCredentialsAction(secretId: string, secretKey: string): Promise<ActionResult> {
-  return requireSession(() =>
+  return requireSession((user) =>
     toResult(async () => {
+      if (!user.isAdmin) throw new Error("Admins only.");
       const trimmedId = secretId.trim();
       const trimmedKey = secretKey.trim();
       if (!trimmedId || !trimmedKey) throw new Error("Enter both the secret id and the secret key.");
@@ -132,8 +134,9 @@ export async function saveGocardlessCredentialsAction(secretId: string, secretKe
 }
 
 export async function clearGocardlessCredentialsAction(): Promise<ActionResult> {
-  return requireSession(() =>
+  return requireSession((user) =>
     toResult(async () => {
+      if (!user.isAdmin) throw new Error("Admins only.");
       await clearGocardlessCredentials();
       revalidatePath("/settings");
     })

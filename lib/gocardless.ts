@@ -29,11 +29,10 @@ export type PendingConnection = {
   accessValidForDays: number;
 };
 
-// Keyed by secretId, not a single value - credentials are per-user now
-// (lib/db/gocardless-credentials.ts), so the process can hold a live token
-// for more than one person's GoCardless app registration at once. Still
-// just an in-memory cache, same lifetime/reasoning as before.
-const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+// One credential pair for the whole instance (lib/db/gocardless-credentials.ts),
+// so one cached token is enough - invalidated below whenever the secretId
+// it was fetched for no longer matches (an admin replaced the credentials).
+let tokenCache: { secretId: string; token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(): Promise<string> {
   // Dynamic import: this module has no other reason to touch the database,
@@ -44,12 +43,11 @@ async function getAccessToken(): Promise<string> {
   const { getGocardlessCredentials } = await import("./db/gocardless-credentials");
   const creds = await getGocardlessCredentials();
   if (!creds) {
-    throw new Error("GoCardless isn't set up for this account yet - add your API credentials in Settings > Bank sync.");
+    throw new Error("GoCardless isn't set up yet - an admin needs to add the API credentials in Settings > Admin.");
   }
 
-  const cached = tokenCache.get(creds.secretId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.token;
+  if (tokenCache && tokenCache.secretId === creds.secretId && tokenCache.expiresAt > Date.now()) {
+    return tokenCache.token;
   }
   const res = await fetch(`${BASE_URL}/token/new/`, {
     method: "POST",
@@ -61,9 +59,8 @@ async function getAccessToken(): Promise<string> {
   }
   const data = await res.json();
   // access_expires is in seconds; shave 60s off as a safety margin.
-  const entry = { token: data.access, expiresAt: Date.now() + (data.access_expires - 60) * 1000 };
-  tokenCache.set(creds.secretId, entry);
-  return entry.token;
+  tokenCache = { secretId: creds.secretId, token: data.access, expiresAt: Date.now() + (data.access_expires - 60) * 1000 };
+  return tokenCache.token;
 }
 
 async function gcFetch(path: string, init?: RequestInit) {

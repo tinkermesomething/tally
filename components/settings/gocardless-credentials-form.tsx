@@ -9,10 +9,10 @@ import { Label } from "@/components/ui/label";
 import { runAction } from "@/lib/action-result";
 import { saveGocardlessCredentialsAction, clearGocardlessCredentialsAction } from "@/app/settings/bank-sync-actions";
 
-/** Your OWN GoCardless API credentials (Settings > Bank sync) - stored in
- * your own encrypted account file, never a shared instance-wide secret.
- * The secret key is write-only here: once saved, this form never shows it
- * back, same convention as a password field. */
+/** The instance's GoCardless API credentials (Settings > Admin) - one pair,
+ * shared by every user's bank connections, stored in the shared keystore
+ * (never a per-user file). The secret key is write-only here: once saved,
+ * this form never shows it back, same convention as a password field. */
 export function GocardlessCredentialsForm({ configured }: { configured: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState(!configured);
@@ -66,8 +66,8 @@ export function GocardlessCredentialsForm({ configured }: { configured: boolean 
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        From your own GoCardless Bank Account Data app registration (bankaccountdata.gocardless.com) - not shared with anyone else on
-        this instance.
+        From your GoCardless Bank Account Data app registration (bankaccountdata.gocardless.com) - shared by every user&apos;s bank
+        connections on this instance.
       </p>
       <div className="grid max-w-sm gap-2">
         <div className="space-y-1">

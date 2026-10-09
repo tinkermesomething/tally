@@ -346,11 +346,6 @@ export default async function SettingsPage({
             </p>
           )}
 
-          <div className="space-y-2">
-            <h2 className="text-sm font-medium">GoCardless API credentials</h2>
-            <GocardlessCredentialsForm configured={gocardlessConfigured} />
-          </div>
-
           <BankSyncSchedule
             enabled={appSettings.bankSyncEnabled}
             frequencyHours={appSettings.bankSyncFrequencyHours}
@@ -410,6 +405,10 @@ export default async function SettingsPage({
           <div className="border-t border-border pt-4">
             <ManualBackup />
           </div>
+
+          <div className="border-t border-border pt-4">
+            <MigrateLegacyButton />
+          </div>
         </TabsContent>
 
         {me.isAdmin && (
@@ -418,12 +417,16 @@ export default async function SettingsPage({
               <h2 className="text-sm font-medium">Users</h2>
               <UsersPanel users={publicUsers} />
             </div>
+            <div className="space-y-2 border-t border-border pt-4">
+              <h2 className="text-sm font-medium">GoCardless API credentials</h2>
+              <p className="text-xs text-muted-foreground">
+                One set, shared by every user&apos;s bank connections on this instance.
+              </p>
+              <GocardlessCredentialsForm configured={gocardlessConfigured} />
+            </div>
             <div className="space-y-4 border-t border-border pt-4">
               <h2 className="text-sm font-medium">Backup</h2>
               <BackupSettings auto={await autoBackupView()} />
-            </div>
-            <div className="border-t border-border pt-4">
-              <MigrateLegacyButton />
             </div>
           </TabsContent>
         )}

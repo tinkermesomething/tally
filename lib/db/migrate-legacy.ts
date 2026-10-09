@@ -3,16 +3,19 @@ import Database from "better-sqlite3";
 import { sqlite } from "./index";
 
 /**
- * One-time move of the original single-admin app's data (the shared,
- * unencrypted DATABASE_PATH file) into the CURRENTLY SIGNED-IN admin's own
+ * One-time move of the original single-user app's data (the shared,
+ * unencrypted DATABASE_PATH file) into the CURRENTLY SIGNED-IN user's own
  * encrypted per-user file - the in-app sibling of scripts/migrate-to-per-
  * user.ts, built because production runs Next's minimal `standalone`
  * output (no tsx, no source files, nothing to `docker exec` into - see
  * that script's own comment, written when `docker exec` still seemed
- * viable). Triggered from Settings > Admin, which already means the caller
- * is signed in and `sqlite`/`db` (lib/db/index.ts) already resolve to
- * THEIR OWN connection - no DEK handling needed here at all, unlike the
+ * viable). Triggered from Settings > Account, which already means the
+ * caller is signed in and `sqlite`/`db` (lib/db/index.ts) already resolve
+ * to THEIR OWN connection - no DEK handling needed here at all, unlike the
  * standalone script, which has to open that connection itself from cold.
+ * Not admin-gated: it only ever moves YOUR OWN legacy data into YOUR OWN
+ * account, and the empty-destination check below already refuses to touch
+ * an account that isn't a fresh one.
  *
  * Copies every budget-domain table; deliberately never touches `users` or
  * `audit_log` (keystore-only, never part of a per-user file's real data).

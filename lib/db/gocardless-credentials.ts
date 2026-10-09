@@ -1,16 +1,20 @@
 import { eq } from "drizzle-orm";
-import { db } from "./index";
+import { getSystemConn } from "./system-connection";
 import { gocardlessCredentials } from "./schema";
 
-/** This user's own GoCardless API credentials - see the schema's own
- * comment for why these moved out of a shared env var. Uses the ambient
- * per-request `db` like the rest of this app's query layer (lib/db/*.ts),
- * never a passed-in connection - whichever user's context is active when
- * this is called is the only account it can ever read or write. */
+/** One GoCardless API credential pair for the whole instance - it's a
+ * single developer/sandbox registration with GoCardless, not something
+ * that varies per account, so it lives in the shared keystore connection
+ * (lib/db/system-connection.ts, same place as `users`), never the ambient
+ * per-request `db` - an invited user's own empty encrypted file would
+ * otherwise have no credentials to find at all. Admin-gated at the action
+ * layer (app/settings/bank-sync-actions.ts), not here. */
+const sysDb = () => getSystemConn().db;
+
 export type GocardlessCredentials = { secretId: string; secretKey: string };
 
 export async function getGocardlessCredentials(): Promise<GocardlessCredentials | null> {
-  const row = await db.query.gocardlessCredentials.findFirst();
+  const row = await sysDb().query.gocardlessCredentials.findFirst();
   return row ? { secretId: row.secretId, secretKey: row.secretKey } : null;
 }
 
@@ -18,18 +22,18 @@ export async function getGocardlessCredentials(): Promise<GocardlessCredentials 
  * what the settings UI shows ("configured" vs a form to add them), never
  * the real value once saved. */
 export async function hasGocardlessCredentials(): Promise<boolean> {
-  return (await db.query.gocardlessCredentials.findFirst()) !== undefined;
+  return (await sysDb().query.gocardlessCredentials.findFirst()) !== undefined;
 }
 
 export async function setGocardlessCredentials(secretId: string, secretKey: string) {
-  const existing = await db.query.gocardlessCredentials.findFirst();
+  const existing = await sysDb().query.gocardlessCredentials.findFirst();
   if (existing) {
-    await db.update(gocardlessCredentials).set({ secretId, secretKey }).where(eq(gocardlessCredentials.id, existing.id));
+    await sysDb().update(gocardlessCredentials).set({ secretId, secretKey }).where(eq(gocardlessCredentials.id, existing.id));
   } else {
-    await db.insert(gocardlessCredentials).values({ secretId, secretKey });
+    await sysDb().insert(gocardlessCredentials).values({ secretId, secretKey });
   }
 }
 
 export async function clearGocardlessCredentials() {
-  await db.delete(gocardlessCredentials);
+  await sysDb().delete(gocardlessCredentials);
 }

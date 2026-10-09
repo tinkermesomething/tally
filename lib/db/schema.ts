@@ -307,13 +307,13 @@ export const users = sqliteTable("users", {
     .default(sql`(current_timestamp)`),
 });
 
-/** This user's OWN GoCardless API credentials - moved here (per-user
- * encrypted file) from a shared instance-wide env var, so the secret
- * itself is encrypted at rest alongside the rest of their data rather than
- * sitting in a plaintext .env file, and so two different people on one
- * instance can each use their own GoCardless app registration instead of
- * sharing one. A singleton, same convention as app_settings - one row,
- * created/replaced wholesale, never multiple. */
+/** The instance's GoCardless API credentials - one shared registration,
+ * admin-managed (Settings > Admin), stored in the shared keystore
+ * connection (lib/db/system-connection.ts), not a per-user file - every
+ * user's bank connections go through the same GoCardless app. Moved here
+ * from a plaintext env var so it's admin-editable without a redeploy. A
+ * singleton, same convention as app_settings - one row, created/replaced
+ * wholesale, never multiple. */
 export const gocardlessCredentials = sqliteTable("gocardless_credentials", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   secretId: text("secret_id").notNull(),
