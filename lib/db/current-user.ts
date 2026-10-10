@@ -4,6 +4,9 @@ import { getOrOpenUserDb } from "./pool";
 import { getUserBySub, type UserRow } from "./users";
 import { openDek, dekToHex } from "../user-dek";
 import type { UserConn } from "./connection";
+import { SESSION_BROKEN_MESSAGES } from "../session-messages";
+
+const [NOT_SIGNED_IN, ACCOUNT_GONE, ACCOUNT_DISABLED, NO_DEK] = SESSION_BROKEN_MESSAGES;
 
 /** The real per-user swap this whole design has been building toward: reads
  * the signed-in session's OIDC `sub` (see auth.config.ts's jwt/session
@@ -17,12 +20,12 @@ import type { UserConn } from "./connection";
 export async function resolveCurrentUser(): Promise<{ user: UserRow; conn: UserConn }> {
   const session = await auth();
   const sub = session?.user?.sub;
-  if (!sub) throw new Error("Not signed in.");
+  if (!sub) throw new Error(NOT_SIGNED_IN);
 
   const user = await getUserBySub(sub);
-  if (!user) throw new Error("This account no longer exists.");
-  if (user.disabledAt) throw new Error("This account has been disabled.");
-  if (!user.dekSealed) throw new Error("This account has no encryption key yet. Sign out and back in.");
+  if (!user) throw new Error(ACCOUNT_GONE);
+  if (user.disabledAt) throw new Error(ACCOUNT_DISABLED);
+  if (!user.dekSealed) throw new Error(NO_DEK);
 
   const dek = openDek(user.dekSealed, sub);
   const conn = getOrOpenUserDb(user.id, dekToHex(dek));
