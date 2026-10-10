@@ -1,0 +1,11 @@
+services:
+  tally:
+    image: ghcr.io/tinkermesomething/tally:latest
+    container_name: tally
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/config
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
