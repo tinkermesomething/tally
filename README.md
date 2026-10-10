@@ -1,6 +1,9 @@
 <div align="center">
 
-# Tally
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/logo-dark.svg">
+  <img src="docs/brand/logo-light.svg" alt="Tally" width="160">
+</picture>
 
 **A personal budget app that replaces a spreadsheet, not a bank.**
 
