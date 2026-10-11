@@ -97,11 +97,11 @@ export function AddIncomeDialog({
       return;
     }
     if (isLoan && !personId) {
-      setError("Pick who it's from, or add a new lender.");
+      setError("Pick who it's from, or add someone new.");
       return;
     }
     if (isLoan && personId === NEW_PERSON && !newPersonName.trim()) {
-      setError("Enter the new lender's name.");
+      setError("Enter their name.");
       return;
     }
     setError(null);

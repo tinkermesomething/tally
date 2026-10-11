@@ -121,7 +121,7 @@ function RuleDialogBody({
 
   function handleTagDebtChange(next: boolean) {
     setTagDebt(next);
-    // no lenders yet: go straight to naming the first one
+    // no people yet: go straight to naming the first one
     if (next && people.length === 0 && !personId) setPersonId(NEW_PERSON);
     // A loan suggests the loans income source - only when none is chosen.
     if (next && isIncome && !incomeSourceId) {
@@ -142,7 +142,7 @@ function RuleDialogBody({
     !ignoring && !isIncome && categoryId
       ? {
           categoryId: parseInt(categoryId, 10),
-          // a lender / bucket still to be created counts as chosen (-1): the list only needs to know a tag is coming
+          // a person / bucket still to be created counts as chosen (-1): the list only needs to know a tag is coming
           debtPersonId: tagDebt && personId ? (personId === NEW_PERSON ? -1 : parseInt(personId, 10)) : undefined,
           savingsBucketId: toSavings && bucketId ? (bucketId === NEW_BUCKET ? -1 : parseInt(bucketId, 10)) : undefined,
         }
@@ -159,7 +159,7 @@ function RuleDialogBody({
     if (!ignoring && tagDebt && !personId) {
       return setError(isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
     }
-    if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter the new lender's name.");
+    if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter their name.");
     if (!ignoring && !isIncome && toSavings && !bucketId) return setError("Pick a savings bucket (or create one), or untick \"Tag as savings\".");
     if (!ignoring && !isIncome && toSavings && bucketId === NEW_BUCKET && !newBucketName.trim()) return setError("Enter a name for the new savings bucket.");
     setError(null);

@@ -28,7 +28,7 @@ const pill = (set: boolean) =>
     set ? "text-muted-foreground hover:bg-accent" : "border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground"
   );
 
-/** What ONE expense counts towards: a lender (it is a repayment in the Debt
+/** What ONE expense counts towards: a person (it is a repayment in the Debt
  * ledger) and/or a savings bucket (it is a deposit). Choosing adds it - even
  * to an old expense - changing moves it, and "None" takes it off again (the
  * ledger row / deposit it made goes with it). */
@@ -82,7 +82,7 @@ export function EntryTagsControl({
               ) : (
                 <span className="inline-flex items-center gap-1">
                   <UserRound className="size-3" />
-                  {tags.debtPersonName ?? options?.people.find((p) => String(p.id) === v)?.name ?? "Lender"}
+                  {tags.debtPersonName ?? options?.people.find((p) => String(p.id) === v)?.name ?? "Unknown"}
                 </span>
               )
             }

@@ -52,7 +52,7 @@ export function EditableDebtLink({
         if (!res.ok) setError(res.error);
         return;
       }
-      setTarget({ link, name: people.find((p) => p.id === next)?.name ?? "this lender", kind: "debt", rows: preview.rows, total: preview.total });
+      setTarget({ link, name: people.find((p) => p.id === next)?.name ?? "this one", kind: "debt", rows: preview.rows, total: preview.total });
     });
   }
 
@@ -71,7 +71,7 @@ export function EditableDebtLink({
         <SelectValue>
           {(value: string) =>
             value === NONE ? (
-              "+ link to a lender"
+              "+ link to someone"
             ) : (
               <span className="inline-flex items-center gap-1">
                 <UserRound className="size-3" />
@@ -82,7 +82,7 @@ export function EditableDebtLink({
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NONE}>Not linked to a lender</SelectItem>
+        <SelectItem value={NONE}>Not linked</SelectItem>
         {people.map((p) => (
           <SelectItem key={p.id} value={String(p.id)}>
             {p.name}

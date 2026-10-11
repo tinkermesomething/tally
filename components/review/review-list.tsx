@@ -234,7 +234,7 @@ export function ReviewList({
       return;
     }
     if (bulkTagDebt && bulkPerson.personId === NEW_PERSON && !bulkPerson.newPersonName.trim()) {
-      setBulkError("Enter the new lender's name.");
+      setBulkError("Enter their name.");
       return;
     }
     setBulkError(null);

@@ -27,7 +27,7 @@ export default async function DebtPage() {
     .map((p, i) => ({
       group: p.name,
       amountPence: Math.abs(p.balancePence),
-      color: GROUP_PALETTE[i % GROUP_PALETTE.length],
+      color: p.color ?? GROUP_PALETTE[i % GROUP_PALETTE.length],
       categories: [],
     }));
 
@@ -58,7 +58,7 @@ export default async function DebtPage() {
       {people.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
           <Users className="size-6" />
-          <p>No lenders tracked yet. Add one to start a ledger.</p>
+          <p>Nobody tracked yet. Add one to start a ledger.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

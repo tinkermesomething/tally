@@ -20,7 +20,7 @@ export type LinkTarget = {
   total: number;
 };
 
-/** Shown when linking a category to a lender or a savings bucket and it
+/** Shown when linking a category to a person or a savings bucket and it
  * already has expenses that would count towards it: the list is ticked, so the
  * old expenses can be tagged at the same time (or left out). Nothing changes
  * until a button is pressed. */

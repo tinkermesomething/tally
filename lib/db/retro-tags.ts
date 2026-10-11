@@ -5,7 +5,7 @@ import { addSavingsEntry, linkCategoryToBucket } from "./savings";
 import { categories, debtLedgerEntries, expenseEntries, people, savingsBuckets, savingsEntries } from "./schema";
 
 /** Adding (or changing) the debt-repayment and savings tags on expenses that
- * already exist: for a whole category (linking it to a lender or a bucket), a
+ * already exist: for a whole category (linking it to a person or a bucket), a
  * rule, or one entry. An expense is only ever tagged once per kind - one that
  * already counts towards a person or a bucket is never double counted. */
 
@@ -118,7 +118,7 @@ export async function tagCategoryExpenses(
 
 export type EntryTags = { debtPersonId: number | null; savingsBucketId: number | null };
 
-/** Sets what ONE expense counts towards: a lender (as a repayment), a savings
+/** Sets what ONE expense counts towards: a person (as a repayment), a savings
  * bucket (as a deposit), either, both or neither. `undefined` leaves that kind
  * alone, a number sets it (changing it if it was set to something else), and
  * `null` clears it - clearing removes the ledger row / deposit this expense
@@ -131,7 +131,7 @@ export function setExpenseTags(expenseEntryId: number, changes: { debtPersonId?:
     if (changes.debtPersonId !== undefined) {
       if (changes.debtPersonId !== null) {
         const person = await db.query.people.findFirst({ where: eq(people.id, changes.debtPersonId) });
-        if (!person || person.archived) throw new Error("That lender isn't available.");
+        if (!person || person.archived) throw new Error("They're not available.");
       }
       const ledger = await db.select().from(debtLedgerEntries).where(eq(debtLedgerEntries.expenseEntryId, expenseEntryId));
       const unchanged = changes.debtPersonId !== null && entry.debtPersonId === changes.debtPersonId && ledger.length > 0;
@@ -174,7 +174,7 @@ export async function getEntryTags(ids: number[]): Promise<Map<number, EntryTags
   return map;
 }
 
-/** The lenders and buckets that can be chosen. */
+/** The people and buckets that can be chosen. */
 export async function getTagOptions(): Promise<{ people: { id: number; name: string }[]; buckets: { id: number; name: string }[] }> {
   const [ppl, bks] = await Promise.all([
     db.select({ id: people.id, name: people.name }).from(people).where(eq(people.archived, false)).orderBy(asc(people.name)),
@@ -183,7 +183,7 @@ export async function getTagOptions(): Promise<{ people: { id: number; name: str
   return { people: ppl, buckets: bks };
 }
 
-/** Links a category to a lender or a bucket (so every future expense in it
+/** Links a category to a person or a bucket (so every future expense in it
  * counts) AND tags the chosen existing expenses, as one unit. With no ids it
  * is just the link. */
 export function linkCategoryAndTag(
@@ -196,7 +196,7 @@ export function linkCategoryAndTag(
     if (!category) throw new Error("That category no longer exists.");
     if (link.debtPersonId !== undefined) {
       const person = await db.query.people.findFirst({ where: eq(people.id, link.debtPersonId) });
-      if (!person || person.archived) throw new Error("That lender isn't available.");
+      if (!person || person.archived) throw new Error("They're not available.");
       await db.update(categories).set({ linkedDebtPersonId: link.debtPersonId }).where(eq(categories.id, categoryId));
     }
     if (link.savingsBucketId !== undefined) await linkCategoryToBucket(categoryId, link.savingsBucketId);

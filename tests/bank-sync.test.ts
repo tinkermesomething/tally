@@ -194,7 +194,7 @@ describe("rules", () => {
     await expect(addCategoryRule({ conditions: cond, targetType: "expense", categoryId: 999 })).rejects.toThrow("category");
     await expect(addCategoryRule({ conditions: cond, targetType: "income", incomeSourceId: 999 })).rejects.toThrow("income source");
     const [cat] = await db.insert(categories).values({ name: "Food" }).returning();
-    await expect(addCategoryRule({ conditions: cond, targetType: "expense", categoryId: cat.id, debtPersonId: 999 })).rejects.toThrow("person");
+    await expect(addCategoryRule({ conditions: cond, targetType: "expense", categoryId: cat.id, debtPersonId: 999 })).rejects.toThrow("no longer exist");
     await expect(addCategoryRule({ conditions: [{ field: "account", operator: "is", value: "999" }], targetType: "ignore" })).rejects.toThrow("bank account");
   });
 });
@@ -329,7 +329,7 @@ describe("adding a forgotten debt / savings tag to past expenses", () => {
     expect(pv.retro!.total).toBe(2);
   });
 
-  it("a lender or bucket still to be created (id -1 in the preview) lists the same past expenses", async () => {
+  it("a person or bucket still to be created (id -1 in the preview) lists the same past expenses", async () => {
     const { pot } = await pastExpenses();
     const pv = await previewRuleMatches(cond, "expense", undefined, { categoryId: pot.id, savingsBucketId: -1, debtPersonId: -1 });
     expect(pv.retro!.rows).toHaveLength(2);

@@ -86,12 +86,20 @@ export async function AppHeader() {
         </Link>
         {session && (
           <>
-            <nav className="flex flex-1 items-center gap-1 text-sm">
+            {/* min-w-0 is load-bearing: a flex-1 child won't actually
+                shrink below its content's natural width (and so won't
+                scroll) without it - the classic flexbox overflow gotcha.
+                Without this, 6 full-width nav labels on a phone pushed
+                AccentPicker/UserMenu off the right edge of the header
+                entirely (not hidden - genuinely unreachable, no way to
+                get to Settings or sign out from mobile). Scrollbar hidden
+                for a tab-bar look; the row still scrolls by touch/drag. */}
+            <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {NAV_ITEMS.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
                   {item.label}
                   {item.href === "/review" && pendingCount > 0 && (
@@ -102,29 +110,31 @@ export async function AppHeader() {
                 </Link>
               ))}
             </nav>
-            <AccentPicker />
-            {currentUser ? (
-              <UserMenu
-                userId={currentUser.id}
-                name={currentUser.name}
-                email={currentUser.email}
-                color={currentUser.avatarColor}
-                imageVersion={currentUser.avatarImageUpdatedAt ? currentUser.avatarImageUpdatedAt.getTime() : null}
-                expiringBankAccounts={expiringBankAccounts}
-                onSignOut={signOutAction}
-              />
-            ) : (
-              // currentUser failed to resolve (see the catch above) but the
-              // session cookie itself is still present - sign-out is the
-              // only way out of that short of clearing cookies by hand, so
-              // it has to survive independently of session resolution
-              // succeeding, not live only inside UserMenu.
-              <form action={signOutAction}>
-                <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
-                  <LogOut className="size-4" />
-                </Button>
-              </form>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              <AccentPicker />
+              {currentUser ? (
+                <UserMenu
+                  userId={currentUser.id}
+                  name={currentUser.name}
+                  email={currentUser.email}
+                  color={currentUser.avatarColor}
+                  imageVersion={currentUser.avatarImageUpdatedAt ? currentUser.avatarImageUpdatedAt.getTime() : null}
+                  expiringBankAccounts={expiringBankAccounts}
+                  onSignOut={signOutAction}
+                />
+              ) : (
+                // currentUser failed to resolve (see the catch above) but the
+                // session cookie itself is still present - sign-out is the
+                // only way out of that short of clearing cookies by hand, so
+                // it has to survive independently of session resolution
+                // succeeding, not live only inside UserMenu.
+                <form action={signOutAction}>
+                  <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
+                    <LogOut className="size-4" />
+                  </Button>
+                </form>
+              )}
+            </div>
           </>
         )}
       </div>

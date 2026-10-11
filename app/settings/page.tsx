@@ -55,10 +55,16 @@ export const dynamic = "force-dynamic";
 // filtered out of what's actually shown in the page body below, but still
 // listed here so an old admin-only link still resolves (via TAB_ALIASES)
 // instead of silently falling back to "account".
-const SETTINGS_TABS = ["account", "bank-sync", "categories", "income", "lenders", "rules", "admin"];
-// "people" is this tab's old name; "preferences" and "backup"/"users" used
-// to be their own tabs, now folded into "account" and "admin".
-const TAB_ALIASES: Record<string, string> = { people: "lenders", preferences: "account", backup: "admin", users: "admin" };
+const SETTINGS_TABS = ["account", "bank-sync", "categories", "income", "debt", "rules", "admin"];
+// Went "lenders" -> "people" -> "debt". "Lenders" only described half of
+// what it tracks (someone who owes YOU isn't a lender); "people" was wrong
+// the other way (the list is just as often a company - Creation, Lendable
+// - not a person). "debt" sidesteps naming the entity type at all, and
+// matches the nav item (/debt) for the same feature. Both earlier names
+// kept as aliases so neither old link breaks. "preferences" and
+// "backup"/"users" used to be their own tabs, now folded into "account" and
+// "admin".
+const TAB_ALIASES: Record<string, string> = { lenders: "debt", people: "debt", preferences: "account", backup: "admin", users: "admin" };
 
 // Amounts are stored as pence; forms and the list show pounds.
 const displayConditions = (r: Parameters<typeof ruleConditionsOf>[0]) =>
@@ -143,7 +149,7 @@ export default async function SettingsPage({
           <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="income">Income</TabsTrigger>
-          <TabsTrigger value="lenders">Lenders</TabsTrigger>
+          <TabsTrigger value="debt">Debt</TabsTrigger>
           <TabsTrigger value="rules">Rules</TabsTrigger>
           {me.isAdmin && <TabsTrigger value="admin">Admin</TabsTrigger>}
         </TabsList>
@@ -232,17 +238,17 @@ export default async function SettingsPage({
           )}
         </TabsContent>
 
-        <TabsContent value="lenders" className="space-y-4 pt-4">
+        <TabsContent value="debt" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Add or archive lenders (people or companies) tracked in the debt ledger.
+              Add or archive people (or companies) you track a running balance with - either direction.
             </p>
             <AddPersonDialog />
           </div>
 
           <div className="space-y-2">
-            {people.map((person) => (
-              <PersonSettingsRow key={person.id} person={person} />
+            {people.map((person, index) => (
+              <PersonSettingsRow key={person.id} person={person} fallbackColor={GROUP_PALETTE[index % GROUP_PALETTE.length]} />
             ))}
           </div>
 
@@ -252,7 +258,7 @@ export default async function SettingsPage({
               <ArchivedList
                 items={archivedPeople}
                 restoreAction={restorePerson}
-                emptyLabel="No archived lenders."
+                emptyLabel="Nothing archived."
               />
             </div>
           )}

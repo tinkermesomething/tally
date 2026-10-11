@@ -500,7 +500,7 @@ function refreshTagged() {
   for (const path of ["/grid", "/settings", "/debt", "/savings", "/entries", "/reports"]) revalidatePath(path);
 }
 
-/** The existing expenses in a category that linking it to this lender / bucket
+/** The existing expenses in a category that linking it to this person / bucket
  * would add the tag to - shown as a list to tick before anything changes. */
 export async function previewCategoryTags(
   categoryId: number,
@@ -515,7 +515,7 @@ export async function previewCategoryTags(
   });
 }
 
-/** Links a category to a lender or bucket and tags the ticked existing expenses. */
+/** Links a category to a person or bucket and tags the ticked existing expenses. */
 export async function linkCategoryTagging(
   categoryId: number,
   link: { debtPersonId?: number; savingsBucketId?: number },
@@ -543,7 +543,7 @@ export async function setEntryTags(expenseEntryId: number, changes: { debtPerson
   );
 }
 
-/** The lenders and buckets an entry can be tagged with. */
+/** The people and buckets an entry can be tagged with. */
 export async function getEntryTagOptions() {
   return requireSession(() => getTagOptions());
 }

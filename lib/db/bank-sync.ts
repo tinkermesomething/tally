@@ -786,7 +786,7 @@ export async function confirmPencilledMatch(importedTransactionId: number, expen
 async function assertPersonExists(personId: number | null | undefined) {
   if (!personId) return;
   const person = await db.query.people.findFirst({ where: eq(people.id, personId) });
-  if (!person) throw new Error("That person no longer exists - pick someone else.");
+  if (!person) throw new Error("They no longer exist - pick someone else.");
 }
 
 const MAX_NOTE_LENGTH = 200;

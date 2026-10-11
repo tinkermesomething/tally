@@ -108,7 +108,7 @@ export function AddCategoryRuleDialog({
     targetType === "expense" && categoryId
       ? {
           categoryId: parseInt(categoryId, 10),
-          // a lender / bucket still to be created counts as chosen (-1): the list only needs to know a tag is coming
+          // a person / bucket still to be created counts as chosen (-1): the list only needs to know a tag is coming
           debtPersonId: tagDebt && personId ? (personId === NEW_PERSON ? -1 : parseInt(personId, 10)) : undefined,
           savingsBucketId: toSavings && bucketId ? (bucketId === NEW_BUCKET ? -1 : parseInt(bucketId, 10)) : undefined,
         }
@@ -136,7 +136,7 @@ export function AddCategoryRuleDialog({
       return;
     }
     if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
-      setError("Enter the new lender's name.");
+      setError("Enter their name.");
       return;
     }
     if (targetType === "expense" && toSavings && !bucketId) {
@@ -307,7 +307,7 @@ export function AddCategoryRuleDialog({
               checked={tagDebt}
               onCheckedChange={(checked) => {
                 setTagDebt(checked === true);
-                // no lenders yet: go straight to naming the first one
+                // no people yet: go straight to naming the first one
                 if (checked === true && people.length === 0 && !personId) setPersonId(NEW_PERSON);
               }}
             />

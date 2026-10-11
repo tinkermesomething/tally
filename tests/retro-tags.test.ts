@@ -84,7 +84,7 @@ describe("linking a category and tagging its past expenses together", () => {
     expect(e2.id).toBeDefined();
   });
 
-  it("sets the lender link, with or without expenses ticked", async () => {
+  it("sets the person link, with or without expenses ticked", async () => {
     const { cat, sam, e1 } = await seed();
     expect((await linkCategoryAndTag(cat.id, { debtPersonId: sam.id }, [])).tagged).toBe(0);
     expect((await db.select().from(categories).where(eq(categories.id, cat.id)))[0].linkedDebtPersonId).toBe(sam.id);
@@ -93,15 +93,15 @@ describe("linking a category and tagging its past expenses together", () => {
     expect(await db.select().from(debtLedgerEntries)).toHaveLength(1);
   });
 
-  it("rolls the link back if the lender is not available", async () => {
+  it("rolls the link back if the person is not available", async () => {
     const { cat } = await seed();
-    await expect(linkCategoryAndTag(cat.id, { debtPersonId: 9999 }, [])).rejects.toThrow("lender");
+    await expect(linkCategoryAndTag(cat.id, { debtPersonId: 9999 }, [])).rejects.toThrow("not available");
     expect((await db.select().from(categories).where(eq(categories.id, cat.id)))[0].linkedDebtPersonId).toBeNull();
   });
 });
 
 describe("tags on one entry", () => {
-  it("sets a lender and a bucket, shows them, and the balances follow", async () => {
+  it("sets a person and a bucket, shows them, and the balances follow", async () => {
     const { sam, bucket, e1 } = await seed();
     await setExpenseTags(e1.id, { debtPersonId: sam.id, savingsBucketId: bucket.id });
     expect((await getEntryTags([e1.id])).get(e1.id)).toEqual({ debtPersonId: sam.id, savingsBucketId: bucket.id });
@@ -135,11 +135,11 @@ describe("tags on one entry", () => {
     expect((await getEntryTags([e1.id])).get(e1.id)).toEqual({ debtPersonId: null, savingsBucketId: null });
   });
 
-  it("refuses an archived or missing lender / bucket and a missing entry, changing nothing", async () => {
+  it("refuses an archived or missing person / bucket and a missing entry, changing nothing", async () => {
     const { e1 } = await seed();
     const [gone] = await db.insert(savingsBuckets).values({ name: "Old", archived: true }).returning();
     await expect(setExpenseTags(e1.id, { savingsBucketId: gone.id })).rejects.toThrow("bucket");
-    await expect(setExpenseTags(e1.id, { debtPersonId: 9999 })).rejects.toThrow("lender");
+    await expect(setExpenseTags(e1.id, { debtPersonId: 9999 })).rejects.toThrow("not available");
     await expect(setExpenseTags(99999, { debtPersonId: null })).rejects.toThrow("no longer exists");
     expect(await db.select().from(savingsEntries)).toHaveLength(0);
   });
@@ -151,7 +151,7 @@ describe("tags on one entry", () => {
     expect((await getEntryTags([e1.id])).get(e1.id)!.debtPersonId).toBeNull();
   });
 
-  it("lists the lenders and buckets that can be picked, not archived ones", async () => {
+  it("lists the people and buckets that can be picked, not archived ones", async () => {
     await seed();
     await db.insert(people).values({ name: "Gone", archived: true });
     const o = await getTagOptions();

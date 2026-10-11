@@ -163,6 +163,10 @@ export const people = sqliteTable("people", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  // "#rrggbb" - this person's colour in the debt pie chart (Settings >
+  // People). Null = a palette colour picked by position, same convention
+  // as incomeSources.color.
+  color: text("color"),
 });
 
 /** A pot of money being set aside - kids' savings, a holiday, a Revolut

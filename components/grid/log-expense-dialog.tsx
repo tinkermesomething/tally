@@ -70,11 +70,11 @@ export function LogExpenseDialog({
       return;
     }
     if (isRepayment && !personId) {
-      setError("Pick who you're paying back, or add a new lender.");
+      setError("Pick who you're paying back, or add someone new.");
       return;
     }
     if (isRepayment && personId === NEW_PERSON && !newPersonName.trim()) {
-      setError("Enter the new lender's name.");
+      setError("Enter their name.");
       return;
     }
     setError(null);

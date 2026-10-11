@@ -6,9 +6,12 @@ import { people, debtLedgerEntries } from "./schema";
 export type PersonWithBalance = {
   id: number;
   name: string;
+  color: string | null;
   balancePence: number; // positive = you owe them, negative = they owe you
   entryCount: number;
 };
+
+const MAX_NAME = 80;
 
 export type LedgerRow = {
   id: number;
@@ -30,6 +33,7 @@ export async function getPeopleWithBalances(): Promise<PersonWithBalance[]> {
     .select({
       id: people.id,
       name: people.name,
+      color: people.color,
       balancePence: sql<number>`coalesce(sum(case when ${debtLedgerEntries.direction} = 'loan' then ${debtLedgerEntries.amountPence} else -${debtLedgerEntries.amountPence} end), 0)`,
       entryCount: sql<number>`count(${debtLedgerEntries.id})`,
     })
@@ -78,6 +82,27 @@ export async function getPersonLedger(personId: number): Promise<{
 export async function addPerson(name: string) {
   const [created] = await db.insert(people).values({ name }).returning();
   return created;
+}
+
+/** Renames a person. Only the name changes - ledger entries, colour and
+ * balance are untouched. Same validation as renameIncomeSource
+ * (lib/db/income-order.ts). */
+export async function renamePerson(id: number, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Give them a name.");
+  if (trimmed.length > MAX_NAME) throw new Error(`Keep the name under ${MAX_NAME} characters.`);
+  const updated = await db.update(people).set({ name: trimmed }).where(eq(people.id, id)).returning({ id: people.id });
+  if (updated.length === 0) throw new Error("They no longer exist.");
+}
+
+/** This person's colour in the debt pie chart (null = automatic, a
+ * palette colour picked by position). Same "#rrggbb" validation as
+ * setIncomeSourceColor (lib/db/queries.ts) - the value ends up in CSS. */
+export async function setPersonColor(id: number, color: string | null) {
+  const value = color === null || color === "" ? null : color.trim();
+  if (value !== null && !/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error("Colour must look like #1a2b3c.");
+  const updated = await db.update(people).set({ color: value }).where(eq(people.id, id)).returning({ id: people.id });
+  if (updated.length === 0) throw new Error("They no longer exist.");
 }
 
 export async function addDebtEntry(input: {

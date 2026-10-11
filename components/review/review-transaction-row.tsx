@@ -144,7 +144,7 @@ export function ReviewTransactionRow({
         : "Pick who this repayment is to, or turn off the debt tag.";
     }
     if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
-      return "Enter the new lender's name.";
+      return "Enter their name.";
     }
     try {
       const debtPersonId = tagDebt ? await resolvePersonId() : undefined;

@@ -17,7 +17,7 @@ import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
 import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
 import { MobileSummaryBar } from "@/components/grid/mobile-summary-bar";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
-import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
+import { MONTH_ABBREVIATIONS as MONTHS, MONTH_NAMES } from "@/lib/months";
 import { withCurrentUser } from "@/lib/db/current-user";
 
 export default async function GridPage({
@@ -50,7 +50,7 @@ export default async function GridPage({
   );
 
   const currentMonthIndex = nowPeriod.year === year ? nowPeriod.month - 1 : 0;
-  const monthLabel = MONTHS[currentMonthIndex];
+  const monthLabel = MONTH_NAMES[currentMonthIndex];
   const plannedNow = data.plannedByMonth[currentMonthIndex];
   const wagesNow = data.wagesByMonth[currentMonthIndex];
   const availableNow = data.availableByMonth[currentMonthIndex];
@@ -70,6 +70,7 @@ export default async function GridPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight">Budget</h1>
+          <span className="text-sm text-muted-foreground">{monthLabel}</span>
           <YearSwitcher year={year} years={years} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -94,14 +95,14 @@ export default async function GridPage({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <StatCard
-            label={`Budgeted (${monthLabel})`}
+            label="Budgeted"
             value={formatPence(plannedNow, currency)}
             icon={ReceiptText}
             tone="neutral"
             className="w-full justify-center sm:w-auto sm:justify-start"
           />
           <StatCard
-            label={`Income (${monthLabel})`}
+            label="Income"
             value={formatPence(wagesNow, currency)}
             icon={Banknote}
             tone="neutral"

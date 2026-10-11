@@ -8,6 +8,8 @@ import {
   addPerson as addPersonQuery,
   archivePerson as archivePersonQuery,
   deleteDebtEntry,
+  renamePerson as renamePersonQuery,
+  setPersonColor as setPersonColorQuery,
   unarchivePerson as unarchivePersonQuery,
   updateDebtEntry,
 } from "@/lib/db/debt";
@@ -23,6 +25,24 @@ export async function createPerson(name: string) {
     const person = await addPersonQuery(trimmed);
     revalidatePath("/debt");
     return person;
+  });
+}
+
+export async function renamePerson(personId: number, name: string) {
+  return requireSession(async () => {
+    await renamePersonQuery(personId, name);
+    revalidatePath("/debt");
+    revalidatePath("/settings");
+  });
+}
+
+/** Debt page's own pie chart (app/debt/page.tsx) also depends on this -
+ * it falls back to a palette colour by position when null. */
+export async function setPersonColor(personId: number, color: string | null) {
+  return requireSession(async () => {
+    await setPersonColorQuery(personId, color);
+    revalidatePath("/debt");
+    revalidatePath("/settings");
   });
 }
 

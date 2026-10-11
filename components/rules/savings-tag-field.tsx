@@ -10,7 +10,7 @@ import { createBucketNamed } from "@/app/savings/actions";
 export const NEW_BUCKET = "__new_bucket__";
 
 /** Which savings bucket a rule pays into, including "make a new one": mirrors
- * usePersonSelection (the lender picker) so both tags work the same way. */
+ * usePersonSelection (the person picker) so both tags work the same way. */
 export function useBucketSelection() {
   const [bucketId, setBucketId] = useState("");
   const [newBucketName, setNewBucketName] = useState("");

@@ -8,7 +8,7 @@ import { Popover, PopoverPortal, PopoverPositioner, PopoverPopup } from "@/compo
 import { PersonPickerField } from "@/components/grid/person-picker";
 
 /** repayment: money OUT paying someone back. loan: money IN borrowed from
- * someone. Same control and same person picker (including "+ New person")
+ * someone. Same control and same person picker (including "+ New…")
  * either way - only the wording differs. */
 export type DebtKind = "repayment" | "loan";
 
