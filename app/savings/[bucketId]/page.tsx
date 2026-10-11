@@ -9,6 +9,7 @@ import { EntryDialog } from "@/components/savings/entry-dialog";
 import { ArchiveBucketButton } from "@/components/savings/bucket-actions";
 import { BucketSummaryBlock } from "@/components/savings/bucket-summary";
 import { SavingsLedgerTable } from "@/components/savings/ledger-table";
+import { SavingsProgressChart } from "@/components/savings/progress-chart";
 import { bucketPaint } from "@/lib/savings-math";
 import { cn } from "@/lib/utils";
 import { formatPence } from "@/lib/money";
@@ -73,6 +74,16 @@ export default async function BucketPage({ params }: { params: Promise<{ bucketI
           </p>
         </div>
       </div>
+
+      {ledger.entries.length > 1 && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="mb-1 font-medium">Progress</h2>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {bucket.goalPence ? "Balance over time, against your goal." : "Balance over time."}
+          </p>
+          <SavingsProgressChart entries={ledger.entries} goalPence={bucket.goalPence} color={paint.accent} />
+        </div>
+      )}
 
       <SavingsLedgerTable bucketId={bucket.id} openingPence={ledger.openingPence} entries={ledger.entries} />
     </div>

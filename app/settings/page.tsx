@@ -137,7 +137,7 @@ export default async function SettingsPage({
     <div className="space-y-4">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
-      <Tabs defaultValue={SETTINGS_TABS.includes(TAB_ALIASES[tab ?? ""] ?? tab ?? "") ? (TAB_ALIASES[tab ?? ""] ?? tab!) : "categories"}>
+      <Tabs defaultValue={SETTINGS_TABS.includes(TAB_ALIASES[tab ?? ""] ?? tab ?? "") ? (TAB_ALIASES[tab ?? ""] ?? tab!) : "account"}>
         <TabsList>
           <TabsTrigger value="account">Account settings</TabsTrigger>
           <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>

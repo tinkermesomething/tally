@@ -14,9 +14,8 @@ export function ExportGridButton({ year, csv }: { year: number; csv: Record<Grid
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button size="sm" variant="outline" aria-label="Export the grid as CSV" title="Export the grid as a CSV for a spreadsheet">
+          <Button size="icon-sm" variant="outline" aria-label="Export the grid as CSV" title="Export the grid as a CSV for a spreadsheet">
             <Download className="size-4 text-chart-1" />
-            Export CSV
           </Button>
         }
       />

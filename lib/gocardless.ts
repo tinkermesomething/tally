@@ -35,11 +35,11 @@ export type PendingConnection = {
 let tokenCache: { secretId: string; token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(): Promise<string> {
-  // Dynamic import: this module has no other reason to touch the database,
-  // and every real caller already has a per-user connection active by the
-  // time it gets here (actions/routes via requireSession or
-  // resolveCurrentUser) - a plain top-level import would work too, this
-  // just keeps the dependency obvious at the call site.
+  // Dynamic import: this module has no other reason to touch the database
+  // at all (credentials live in the shared keystore now, not a per-user
+  // connection) - a plain top-level import would work too, this just keeps
+  // the one DB dependency obvious at the call site in an otherwise-pure
+  // HTTP client module.
   const { getGocardlessCredentials } = await import("./db/gocardless-credentials");
   const creds = await getGocardlessCredentials();
   if (!creds) {

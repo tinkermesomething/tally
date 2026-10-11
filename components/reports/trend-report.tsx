@@ -303,16 +303,30 @@ export function TrendReport({ tree, year }: { tree: TrendNode[]; year: number })
                       )}
                     </span>
                   </th>
-                  {n[metric].map((v, m) => (
-                    <td
-                      key={m}
-                      onPointerEnter={() => setHover(m < through ? m : null)}
-                      className={cn("px-1 py-0.5 text-right tabular-nums", hover === m && "outline outline-1 -outline-offset-1 outline-foreground/50", m >= through && "text-muted-foreground/50")}
-                      style={m < through && v > 0 ? { backgroundColor: `color-mix(in srgb, ${n.color} ${Math.round(6 + (v / max) * 40)}%, transparent)` } : undefined}
-                    >
-                      {m >= through ? "—" : v === 0 ? "·" : money(v).replace(/\.00$/, "")}
-                    </td>
-                  ))}
+                  {n[metric].map((v, m) => {
+                    // An inline "data bar" (Excel's term for this exact
+                    // pattern) instead of a flat background tint - a hard
+                    // edge at the value's own share of the row's max reads
+                    // at a glance, where a uniform-opacity tint only ever
+                    // showed up as a vague intensity difference between
+                    // cells. Added alongside the area/line chart above,
+                    // not instead of it - this is about the table.
+                    const barPct = Math.round((v / max) * 100);
+                    return (
+                      <td
+                        key={m}
+                        onPointerEnter={() => setHover(m < through ? m : null)}
+                        className={cn("px-1 py-0.5 text-right tabular-nums", hover === m && "outline outline-1 -outline-offset-1 outline-foreground/50", m >= through && "text-muted-foreground/50")}
+                        style={
+                          m < through && v > 0
+                            ? { background: `linear-gradient(to right, color-mix(in srgb, ${n.color} 45%, transparent) ${barPct}%, transparent ${barPct}%)` }
+                            : undefined
+                        }
+                      >
+                        {m >= through ? "—" : v === 0 ? "·" : money(v).replace(/\.00$/, "")}
+                      </td>
+                    );
+                  })}
                   <td className="py-0.5 pl-2 text-right font-medium tabular-nums">{money(yearTotal(n, metric))}</td>
                 </tr>
               );

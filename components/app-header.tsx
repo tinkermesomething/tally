@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { LogOut } from "lucide-react";
 import { auth, signOut } from "@/auth";
 import { AccentPicker } from "@/components/accent-picker";
 import { UserMenu } from "@/components/user-menu";
+import { Button } from "@/components/ui/button";
 import { getPendingTransactions, getBankAccounts } from "@/lib/db/bank-sync";
 import { withCurrentUser } from "@/lib/db/current-user";
 import type { UserRow } from "@/lib/db/users";
@@ -101,7 +103,7 @@ export async function AppHeader() {
               ))}
             </nav>
             <AccentPicker />
-            {currentUser && (
+            {currentUser ? (
               <UserMenu
                 userId={currentUser.id}
                 name={currentUser.name}
@@ -111,6 +113,17 @@ export async function AppHeader() {
                 expiringBankAccounts={expiringBankAccounts}
                 onSignOut={signOutAction}
               />
+            ) : (
+              // currentUser failed to resolve (see the catch above) but the
+              // session cookie itself is still present - sign-out is the
+              // only way out of that short of clearing cookies by hand, so
+              // it has to survive independently of session resolution
+              // succeeding, not live only inside UserMenu.
+              <form action={signOutAction}>
+                <Button type="submit" size="icon-sm" variant="ghost" title="Sign out">
+                  <LogOut className="size-4" />
+                </Button>
+              </form>
             )}
           </>
         )}

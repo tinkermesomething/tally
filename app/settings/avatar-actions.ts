@@ -43,6 +43,25 @@ function assertFetchableUrl(raw: string): URL {
   return url;
 }
 
+const MAX_REDIRECTS = 5;
+
+/** `redirect: "follow"` would otherwise fetch wherever a 3xx Location
+ * header points with zero re-validation - a URL that passes
+ * assertFetchableUrl and then 302s to http://169.254.169.254/ or
+ * http://localhost/ would sail straight through the hostname check,
+ * entirely defeating it. Every hop gets the same check the first URL did,
+ * capped so a redirect loop can't hang the request forever. */
+async function fetchFollowingValidatedRedirects(start: URL, signal: AbortSignal): Promise<Response> {
+  let current = start;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    const res = await fetch(current, { signal, redirect: "manual" });
+    const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!location) return res;
+    current = assertFetchableUrl(new URL(location, current).toString());
+  }
+  throw new Error("Too many redirects.");
+}
+
 /** Fetches an image from a URL server-side and stores it the same way an
  * upload would - the form only ever offers one or the other, never both at
  * once (see components/settings/avatar-picker.tsx). */
@@ -58,8 +77,9 @@ export async function fetchAvatarFromUrlAction(rawUrl: string): Promise<ActionRe
       try {
         let res: Response;
         try {
-          res = await fetch(url, { signal: controller.signal, redirect: "follow" });
-        } catch {
+          res = await fetchFollowingValidatedRedirects(url, controller.signal);
+        } catch (err) {
+          if (err instanceof Error && (err.message === "Too many redirects." || err.message === "That address isn't reachable from here.")) throw err;
           throw new Error("Couldn't reach that address.");
         }
         if (!res.ok) throw new Error(`That link returned ${res.status}.`);

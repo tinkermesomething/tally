@@ -21,6 +21,8 @@ import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 const PIE_INNER_RADIUS = 64;
 const PIE_OUTER_RADIUS = 110;
+// Fixed pixels, not responsive, on purpose - see the print-only block below.
+const PRINT_PIE_SIZE = 260;
 
 export type CategoryBreakdown = {
   name: string;
@@ -83,7 +85,7 @@ export function CategoryPieChart({
           itself wider - which is what pushed one Compare half over the other.
           Taken out of the flow, the chart can no longer influence its column
           in any browser, and overflow-hidden clips any stray pixels. */}
-      <div className="relative h-80 w-full min-w-0 overflow-hidden" data-testid="pie-box">
+      <div className="relative h-80 w-full min-w-0 overflow-hidden print:hidden" data-testid="pie-box">
       <ChartContainer config={config} className="absolute inset-0 h-full w-full aspect-auto!">
         <PieChart>
           <ChartTooltip
@@ -114,6 +116,34 @@ export function CategoryPieChart({
           </Pie>
         </PieChart>
       </ChartContainer>
+      </div>
+
+      {/* Print/PDF only - deliberately NOT ChartContainer/ResponsiveContainer.
+          ResponsiveContainer sizes the chart by measuring its parent with a
+          ResizeObserver, asynchronously, after mount. Print layout doesn't
+          reliably fire a resize/observer signal before the browser snapshots
+          the page (confirmed: this is why the earlier width:100%!important
+          CSS fix on .recharts-wrapper/.recharts-surface didn't work - in
+          Safari specifically the chart can measure ZERO size at print time,
+          so there was no drawn content to rescale, only values/legend
+          showing). A plain PieChart with real pixel width/height has no
+          measurement to get wrong - nothing for print's lack of a reflow
+          event to break. */}
+      <div className="hidden justify-center print:flex" data-testid="pie-box-print">
+        <PieChart width={PRINT_PIE_SIZE} height={PRINT_PIE_SIZE}>
+          <Pie
+            data={chartData}
+            dataKey="value"
+            nameKey="name"
+            innerRadius={PIE_INNER_RADIUS}
+            outerRadius={PIE_OUTER_RADIUS}
+            strokeWidth={2}
+          >
+            {slices.map((s) => (
+              <Cell key={s.group} fill={s.color} stroke="var(--card)" />
+            ))}
+          </Pie>
+        </PieChart>
       </div>
 
       <ul className="min-w-0 space-y-1" data-testid="pie-legend">

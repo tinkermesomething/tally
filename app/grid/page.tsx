@@ -73,11 +73,6 @@ export default async function GridPage({
           <YearSwitcher year={year} years={years} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <GridWidthToggle />
-          <ExportGridButton
-            year={year}
-            csv={Object.fromEntries(GRID_CSV_VIEWS.map((v) => [v.id, gridToCsv(data, v.id, currency)])) as Record<GridCsvView, string>}
-          />
           <LogExpenseDialog
             categories={data.categories.flatMap((c) => [
               { id: c.id, name: c.name },
@@ -96,21 +91,44 @@ export default async function GridPage({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <StatCard label={`Budgeted (${monthLabel})`} value={formatPence(plannedNow, currency)} icon={ReceiptText} tone="neutral" />
-        <StatCard label={`Income (${monthLabel})`} value={formatPence(wagesNow, currency)} icon={Banknote} tone="neutral" />
-        <StatCard
-          label="Available"
-          value={formatPence(availableNow, currency)}
-          icon={PiggyBank}
-          tone={availableNow < 0 ? "critical" : "good"}
-        />
-        <StatCard
-          label="Left to spend"
-          value={formatPence(leftToSpendNow, currency)}
-          icon={Wallet}
-          tone={leftToSpendNow < 0 ? "critical" : "good"}
-        />
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <StatCard
+            label={`Budgeted (${monthLabel})`}
+            value={formatPence(plannedNow, currency)}
+            icon={ReceiptText}
+            tone="neutral"
+            className="w-full justify-center sm:w-auto sm:justify-start"
+          />
+          <StatCard
+            label={`Income (${monthLabel})`}
+            value={formatPence(wagesNow, currency)}
+            icon={Banknote}
+            tone="neutral"
+            className="w-full justify-center sm:w-auto sm:justify-start"
+          />
+          <StatCard
+            label="Available"
+            value={formatPence(availableNow, currency)}
+            icon={PiggyBank}
+            tone={availableNow < 0 ? "critical" : "good"}
+            className="w-full justify-center sm:w-auto sm:justify-start"
+          />
+          <StatCard
+            label="Left to spend"
+            value={formatPence(leftToSpendNow, currency)}
+            icon={Wallet}
+            tone={leftToSpendNow < 0 ? "critical" : "good"}
+            className="w-full justify-center sm:w-auto sm:justify-start"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <GridWidthToggle iconOnly />
+          <ExportGridButton
+            year={year}
+            csv={Object.fromEntries(GRID_CSV_VIEWS.map((v) => [v.id, gridToCsv(data, v.id, currency)])) as Record<GridCsvView, string>}
+          />
+        </div>
       </div>
 
       {carryOverNow !== 0 && (

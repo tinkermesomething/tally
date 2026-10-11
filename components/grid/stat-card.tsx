@@ -6,14 +6,19 @@ export function StatCard({
   value,
   icon: Icon,
   tone = "neutral",
+  className,
 }: {
   label: string;
   value: string;
   icon: LucideIcon;
   tone?: "neutral" | "good" | "critical";
+  /** Overrides the default `w-fit` sizing - e.g. the grid page passes a
+   * fixed/equal width so its 4 pills line up on mobile instead of each
+   * sizing to its own label+value length. */
+  className?: string;
 }) {
   return (
-    <div className="inline-flex w-fit items-center gap-3 rounded-full border border-border bg-card py-2 pr-5 pl-2 shadow-sm">
+    <div className={cn("inline-flex w-fit items-center gap-3 rounded-full border border-border bg-card py-2 pr-5 pl-2 shadow-sm", className)}>
       <span
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded-full",

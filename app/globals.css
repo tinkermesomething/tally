@@ -447,24 +447,20 @@
   }
 
   /* Pie charts (recharts, via components/ui/chart.tsx's ResponsiveContainer)
-     were coming out truncated - confirmed in a real exported PDF, not
-     guessed: ResponsiveContainer sizes the chart by measuring its container
-     with a ResizeObserver and writes that measurement as an explicit pixel
-     width/height on the wrapper div AND the inner <svg> (recharts-surface).
-     That measurement happens for the ON-SCREEN layout; nothing reliably
-     re-measures it for print's own layout pass (no guaranteed resize event),
-     so the chart keeps its screen-sized pixels while the column around it
-     reflows narrower for the printed page - the surplus just gets clipped by
-     the card's own overflow-hidden. Forcing both elements to 100%/100% here
-     makes the browser rescale the ALREADY-DRAWN svg to fit, using its own
-     viewBox (recharts always sets one) - a pure CSS/rendering fix, nothing
-     depends on React re-measuring or re-rendering for the print pass. */
-  .recharts-responsive-container,
-  .recharts-wrapper,
-  .recharts-surface {
-    width: 100% !important;
-    height: 100% !important;
-  }
+     were coming out BLANK in a real exported PDF, not just wrongly sized -
+     a CSS-only fix was tried here first (forcing .recharts-wrapper/
+     .recharts-surface to width/height: 100%, on the theory that the SVG
+     just needed rescaling to its own viewBox). Confirmed live that it
+     didn't work: ResponsiveContainer measures its container with a
+     ResizeObserver, asynchronously, and print layout doesn't reliably fire
+     that signal before the browser snapshots the page - in Safari
+     specifically the chart can measure ZERO size at print time, so there
+     was no drawn content for this rule to rescale in the first place. The
+     real fix lives in the component, not here: CategoryPieChart now
+     renders a second, fixed-pixel-size chart (no ResponsiveContainer at
+     all, so nothing to measure) shown only for print via Tailwind's
+     print:hidden/hidden print:block, swapping in for the responsive one
+     that's shown on screen. */
 
   /* Trend report's month table was coming out truncated too (also confirmed
      in a real exported PDF) - a different cause: on screen it scrolls

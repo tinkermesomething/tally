@@ -5,6 +5,8 @@ import { getAppSettings } from "@/lib/db/settings";
 import { formatPence } from "@/lib/money";
 import { AddPersonDialog } from "@/components/debt/add-person-dialog";
 import { StatCard } from "@/components/grid/stat-card";
+import { CategoryPieChart, type GroupSlice } from "@/components/reports/category-pie-chart";
+import { GROUP_PALETTE } from "@/lib/group-colors";
 import { cn } from "@/lib/utils";
 import { withCurrentUser } from "@/lib/db/current-user";
 
@@ -16,6 +18,18 @@ export default async function DebtPage() {
   return withCurrentUser(async () => {
   const [people, { currency }] = await Promise.all([getPeopleWithBalances(), getAppSettings()]);
   const netBalancePence = people.reduce((sum, p) => sum + p.balancePence, 0);
+  // High-level only: size of each balance, not direction - someone you owe
+  // and someone who owes you can both show up as similarly-sized slices.
+  // The StatCard above already states the net figure; this is "where does
+  // the debt sit", not "am I up or down overall".
+  const debtSlices: GroupSlice[] = people
+    .filter((p) => p.balancePence !== 0)
+    .map((p, i) => ({
+      group: p.name,
+      amountPence: Math.abs(p.balancePence),
+      color: GROUP_PALETTE[i % GROUP_PALETTE.length],
+      categories: [],
+    }));
 
   return (
     <div className="space-y-4">
@@ -31,6 +45,14 @@ export default async function DebtPage() {
           icon={Scale}
           tone={netBalancePence > 0 ? "critical" : "good"}
         />
+      )}
+
+      {debtSlices.length > 1 && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="mb-1 font-medium">Where the balance sits</h2>
+          <p className="mb-2 text-xs text-muted-foreground">Size of each balance, not direction.</p>
+          <CategoryPieChart slices={debtSlices} compact />
+        </div>
       )}
 
       {people.length === 0 ? (
