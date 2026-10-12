@@ -101,6 +101,25 @@ export function linkCategoryToHousehold(categoryId: number, share: boolean, expe
   });
 }
 
+/** Bulk version of linkCategoryToHousehold, for the Categories tab's
+ * multi-select bar - silently skips any id that has children (sharing is
+ * leaf-only, same rule CategoryLinksRow already enforces by not offering
+ * the toggle on a parent/rollup row). No expense backfill here - this
+ * only flips the category's own default; existing expenses can still be
+ * backfilled one category at a time via the normal share dialog. */
+export async function bulkShareCategoriesToHousehold(categoryIds: number[], share: boolean): Promise<number> {
+  let updated = 0;
+  for (const id of new Set(categoryIds)) {
+    const category = await db.query.categories.findFirst({ where: eq(categories.id, id) });
+    if (!category) continue;
+    const child = await db.query.categories.findFirst({ where: eq(categories.parentId, id) });
+    if (child) continue;
+    await linkCategoryToHousehold(id, share, []);
+    updated++;
+  }
+  return updated;
+}
+
 /** The per-entry override - same rule as setExpenseTags: sets it regardless
  * of what the category default says. */
 export async function setExpenseHouseholdShare(expenseEntryId: number, share: boolean) {

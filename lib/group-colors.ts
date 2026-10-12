@@ -16,14 +16,20 @@ export const UNGROUPED = "Ungrouped";
 
 /** Assigns each group a stable color slot the first time it's seen, in the
  * given category order - never reassigned later, so a group's color doesn't
- * shift depending on which categories/months happen to be visible. */
+ * shift depending on which categories/months happen to be visible.
+ *
+ * `overrides` (lib/db/groups.ts's getGroupStyles) wins when a group has one -
+ * a customized colour set on Settings > Groups always beats the auto-pick,
+ * regardless of where that group happens to fall in this particular
+ * category order. */
 export function buildGroupColorMap(
-  categories: { groupName: string | null }[]
+  categories: { groupName: string | null }[],
+  overrides?: Map<string, string>
 ): Map<string, string> {
   const order: string[] = [];
   for (const c of categories) {
     const group = c.groupName ?? UNGROUPED;
     if (!order.includes(group)) order.push(group);
   }
-  return new Map(order.map((group, i) => [group, GROUP_PALETTE[i % GROUP_PALETTE.length]]));
+  return new Map(order.map((group, i) => [group, overrides?.get(group) ?? GROUP_PALETTE[i % GROUP_PALETTE.length]]));
 }

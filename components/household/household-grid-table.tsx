@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { formatPence } from "@/lib/money";
-import { budgetValueColorClass, cn } from "@/lib/utils";
-import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
+import { budgetValueColorClass, cn, FLOATING_PANEL_EDGE, floatingPanelFill } from "@/lib/utils";
+import { UNGROUPED } from "@/lib/group-colors";
 import { MONTH_ABBREVIATIONS as MONTHS } from "@/lib/months";
+import { ScrollFade } from "@/components/scroll-fade";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { HouseholdCellDetailPopover } from "@/components/household/household-cell-detail-popover";
 import type { HouseholdGridRow } from "@/lib/db/household";
@@ -14,14 +15,33 @@ import type { HouseholdGridRow } from "@/lib/db/household";
  * component (and CategoryRow/GridCell underneath it) is wired throughout
  * to one signed-in user's own mutate actions and real category ids, which
  * a cross-user, text-keyed, non-editable view has no business touching.
- * Same visual language (muted header, sticky category column, tabular
- * numbers, a totals row) so it reads as "the same kind of page," built
- * fresh. Budgeted/spent colour reuses the real grid's own
- * budgetValueColorClass (lib/utils.ts) for consistency. */
-export function HouseholdGridTable({ rows, year }: { rows: HouseholdGridRow[]; year: number }) {
+ * Same column widths, same sticky left/right columns, same scroll-fade -
+ * it's meant to read as the SAME grid, just not editable here. Width/sync
+ * props (monthColWidth, containerRef, onScroll) come from the shared
+ * household-desktop-tables.tsx wrapper, same way the Grid's own
+ * IncomeTable/MonthlySummaryTable take theirs from DesktopGridTables. */
+export function HouseholdGridTable({
+  rows,
+  year,
+  groupColors,
+  categoryColWidth,
+  monthColWidth,
+  summaryColWidth,
+  containerRef,
+  onScroll,
+}: {
+  rows: HouseholdGridRow[];
+  year: number;
+  groupColors: Map<string, string>;
+  categoryColWidth: number;
+  monthColWidth: number;
+  summaryColWidth: number;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: (el: HTMLDivElement) => void;
+}) {
   const { currency } = useAppSettings();
   const [openCell, setOpenCell] = useState<{ categoryName: string; month: number; anchor: HTMLElement } | null>(null);
-  const groupColors = buildGroupColorMap(rows);
+  const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
 
   const monthTotals = Array.from({ length: 12 }, (_, i) => {
     const month = i + 1;
@@ -36,8 +56,22 @@ export function HouseholdGridTable({ rows, year }: { rows: HouseholdGridRow[]; y
   let lastGroup: string | null = null;
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/60 bg-card shadow-sm">
-      <table className="w-full border-collapse text-sm" style={{ minWidth: 980 }}>
+    <ScrollFade
+      className="overflow-x-auto overflow-y-hidden rounded-xl border border-border/60 bg-card shadow-sm"
+      leftInset={categoryColWidth}
+      rightInset={summaryColWidth * 2}
+      containerRef={containerRef}
+      onScroll={onScroll}
+    >
+      <table className="border-collapse text-sm" style={{ tableLayout: "fixed", width: tableWidth }}>
+        <colgroup>
+          <col style={{ width: categoryColWidth }} />
+          {MONTHS.map((m) => (
+            <col key={m} style={{ width: monthColWidth }} />
+          ))}
+          <col style={{ width: summaryColWidth }} />
+          <col style={{ width: summaryColWidth }} />
+        </colgroup>
         <thead>
           <tr className="bg-muted">
             <th className="sticky left-0 z-10 bg-muted px-3 py-2 text-left font-medium">Category</th>
@@ -46,13 +80,21 @@ export function HouseholdGridTable({ rows, year }: { rows: HouseholdGridRow[]; y
                 {m}
               </th>
             ))}
-            <th className="px-3 py-2 text-right font-medium">Year total</th>
+            <th
+              style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--muted") }}
+              className={cn("sticky z-10 px-3 py-2 text-right font-medium", FLOATING_PANEL_EDGE)}
+            >
+              Year Total
+            </th>
+            <th style={{ right: 0, backgroundColor: floatingPanelFill("--muted") }} className="sticky z-10 px-3 py-2 text-right font-medium">
+              Monthly avg
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={14} className="px-3 py-10 text-center text-muted-foreground">
+              <td colSpan={15} className="px-3 py-10 text-center text-muted-foreground">
                 Nothing shared for {year} yet.
               </td>
             </tr>
@@ -65,10 +107,11 @@ export function HouseholdGridTable({ rows, year }: { rows: HouseholdGridRow[]; y
                 <GroupedRow
                   key={row.categoryName}
                   row={row}
-                  color={groupColors.get(group)!}
+                  color={groupColors.get(group) ?? "var(--chart-1)"}
                   showGroupHeader={showGroupHeader}
                   group={group}
                   currency={currency}
+                  summaryColWidth={summaryColWidth}
                   onCellClick={(month, anchor) => setOpenCell({ categoryName: row.categoryName, month, anchor })}
                 />
               );
@@ -84,8 +127,14 @@ export function HouseholdGridTable({ rows, year }: { rows: HouseholdGridRow[]; y
                   <CellValue budgetedPence={t.budgetedPence} spentPence={t.spentPence} currency={currency} />
                 </td>
               ))}
-              <td className="px-3 py-2 text-right font-bold tabular-nums">
+              <td
+                style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--secondary") }}
+                className={cn("sticky z-10 px-3 py-2 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
+              >
                 <CellValue budgetedPence={yearTotalBudgeted} spentPence={yearTotalSpent} currency={currency} />
+              </td>
+              <td style={{ right: 0, backgroundColor: floatingPanelFill("--secondary") }} className="sticky z-10 px-3 py-2 text-right font-bold tabular-nums">
+                <CellValue budgetedPence={Math.round(yearTotalBudgeted / 12)} spentPence={Math.round(yearTotalSpent / 12)} currency={currency} />
               </td>
             </tr>
           </tfoot>
@@ -100,7 +149,7 @@ export function HouseholdGridTable({ rows, year }: { rows: HouseholdGridRow[]; y
           onClose={() => setOpenCell(null)}
         />
       )}
-    </div>
+    </ScrollFade>
   );
 }
 
@@ -120,6 +169,7 @@ function GroupedRow({
   showGroupHeader,
   group,
   currency,
+  summaryColWidth,
   onCellClick,
 }: {
   row: HouseholdGridRow;
@@ -127,19 +177,27 @@ function GroupedRow({
   showGroupHeader: boolean;
   group: string;
   currency: string;
+  summaryColWidth: number;
   onCellClick: (month: number, anchor: HTMLElement) => void;
 }) {
   return (
     <>
       {showGroupHeader && (
         <tr>
-          <td colSpan={14} className="px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground" style={{ borderLeft: `3px solid ${color}` }}>
+          <td colSpan={15} className="sticky left-0 z-10 bg-card px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground" style={{ borderLeft: `3px solid ${color}` }}>
             {group}
           </td>
         </tr>
       )}
-      <tr className="row-line border-b border-border/60" style={{ borderLeft: `3px solid ${color}` }}>
-        <td className="sticky left-0 z-10 bg-card px-3 py-2">{row.categoryName}</td>
+      <tr className="row-line border-b border-border/60">
+        <td className="sticky left-0 z-10 bg-card px-3 py-2" style={{ borderLeft: `3px solid ${color}` }}>
+          {row.categoryName}
+          {row.contributors.length > 0 && (
+            <span className="block truncate text-xs font-normal text-muted-foreground" title={row.contributors.join(", ")}>
+              {row.contributors.join(", ")}
+            </span>
+          )}
+        </td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => {
           const cell = row.months[month];
           const hasData = cell.budgetedPence > 0 || cell.spentPence > 0;
@@ -161,8 +219,14 @@ function GroupedRow({
             </td>
           );
         })}
-        <td className="px-3 py-2 text-right font-medium tabular-nums">
+        <td
+          style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
+          className={cn("sticky z-10 px-3 py-2 text-right font-medium tabular-nums", FLOATING_PANEL_EDGE)}
+        >
           <CellValue budgetedPence={row.yearBudgetedPence} spentPence={row.yearSpentPence} currency={currency} />
+        </td>
+        <td style={{ right: 0, backgroundColor: floatingPanelFill("--card") }} className="sticky z-10 px-3 py-2 text-right font-medium tabular-nums">
+          <CellValue budgetedPence={Math.round(row.yearBudgetedPence / 12)} spentPence={Math.round(row.yearSpentPence / 12)} currency={currency} />
         </td>
       </tr>
     </>

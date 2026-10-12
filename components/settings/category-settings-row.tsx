@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { CategoryLinksRow } from "@/components/settings/category-links-row";
@@ -10,6 +11,7 @@ import { CategoryBillLink } from "@/components/settings/category-bill-link";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { MoveCategoryButton } from "@/components/settings/move-category-button";
 import { useCategoryDrag } from "@/components/grid/use-category-drag";
+import { useCategorySelection } from "@/components/settings/category-selection-provider";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
 import type { CategoryTreeNode } from "@/lib/db/queries";
 import type { BillWithStatus } from "@/lib/db/bills";
@@ -40,10 +42,16 @@ export function CategorySettingsRow({
 }) {
   const [pending, startTransition] = useTransition();
   const drag = useCategoryDrag(new Date().getFullYear());
+  const { selected, toggle } = useCategorySelection();
 
   return (
     <div className="space-y-1.5" data-reorder-group="settings-top" data-reorder-id={category.id}>
       <div className="flex items-center gap-2 row-card rounded-lg bg-card px-3 py-2">
+        <Checkbox
+          checked={selected.has(category.id)}
+          onCheckedChange={() => toggle(category.id)}
+          aria-label={`Select ${category.name}`}
+        />
         <span
           onPointerDown={(e) => drag.onPointerDown(e, "settings-top", category.id)}
           title="Press and hold to drag this category up or down"
@@ -112,6 +120,11 @@ export function CategorySettingsRow({
               data-reorder-group={`settings-kids-${category.id}`}
               data-reorder-id={child.id}
             >
+              <Checkbox
+                checked={selected.has(child.id)}
+                onCheckedChange={() => toggle(child.id)}
+                aria-label={`Select ${child.name}`}
+              />
               <span
                 onPointerDown={(e) => drag.onPointerDown(e, `settings-kids-${category.id}`, child.id)}
                 title="Press and hold to drag this subcategory up or down"

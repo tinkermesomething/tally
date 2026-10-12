@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatSyncTime, syncSlotHours, syncTimeZone } from "@/lib/sync-schedule";
 import {
   getCategoryTree,
@@ -16,11 +17,14 @@ import { HouseholdAdminToggle } from "@/components/household/household-admin-tog
 import { ruleConditionsOf } from "@/lib/rules";
 import { accountLabels } from "@/lib/accounts";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
+import { getGroupStyles } from "@/lib/db/groups";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
 import { AddPersonDialog } from "@/components/debt/add-person-dialog";
 import { CategorySettingsRow } from "@/components/settings/category-settings-row";
+import { CategorySelectionProvider } from "@/components/settings/category-selection-provider";
+import { CategoryBulkBar } from "@/components/settings/category-bulk-bar";
 import { IncomeSourceSettingsRow } from "@/components/settings/income-source-settings-row";
 import { PersonSettingsRow } from "@/components/settings/person-settings-row";
 import { PreferencesSettings } from "@/components/settings/preferences-settings";
@@ -98,6 +102,7 @@ export default async function SettingsPage({
     gocardlessConfigured,
     bills,
     householdEnabled,
+    groupStyles,
   ] = await Promise.all([
     getCategoryTree(),
     getIncomeSourceList(),
@@ -112,6 +117,7 @@ export default async function SettingsPage({
     hasGocardlessCredentials(),
     getBills(),
     isHouseholdEnabled(),
+    getGroupStyles(),
   ]);
   const recentByAccount = await getRecentTransactions(bankAccounts.map((a) => a.id), 5);
   const buckets = savingsBuckets.map((b) => ({ id: b.id, name: b.name, color: bucketColor(b) }));
@@ -122,7 +128,7 @@ export default async function SettingsPage({
     billNamesByCategoryId.set(bill.categoryId, [...(billNamesByCategoryId.get(bill.categoryId) ?? []), bill.name]);
   }
 
-  const groupColors = buildGroupColorMap(categoryTree);
+  const groupColors = buildGroupColorMap(categoryTree, groupStyles);
   const existingGroups = Array.from(
     new Set(categoryTree.map((c) => c.groupName).filter((g): g is string => !!g))
   );
@@ -173,15 +179,23 @@ export default async function SettingsPage({
         </TabsList>
 
         <TabsContent value="categories" className="space-y-4 pt-4">
-          <div className="flex items-center justify-between">
+          <CategorySelectionProvider>
+          <div className="flex items-center justify-between gap-2">
             <p className="text-sm text-muted-foreground">
-              Rename, regroup, add subcategories, or archive. Press and hold a name to drag it into place.
+              Rename, regroup, add subcategories, or archive. Press and hold a name to drag it into place. Tick several to change them at once.
             </p>
-            <AddCategoryDialog
-              topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
-              existingGroups={existingGroups}
-            />
+            <div className="flex shrink-0 items-center gap-2">
+              <Link href="/settings/groups" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                Manage groups
+              </Link>
+              <AddCategoryDialog
+                topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
+                existingGroups={existingGroups}
+              />
+            </div>
           </div>
+
+          <CategoryBulkBar existingGroups={existingGroups} householdEnabled={householdEnabled} />
 
           <FilterableList
             label="categories"
@@ -227,6 +241,7 @@ export default async function SettingsPage({
               />
             </div>
           )}
+          </CategorySelectionProvider>
         </TabsContent>
 
         <TabsContent value="income" className="space-y-4 pt-4">

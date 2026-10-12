@@ -23,7 +23,8 @@ function asSignedInUser(sub: string, email: string, fn: () => Promise<void>) {
   return realAsSignedInUser(sub, email, fn);
 }
 import { db } from "@/lib/db";
-import { categories, categoryEntries, expenseEntries, incomeEntries, incomeSources } from "@/lib/db/schema";
+import { getSystemConn } from "@/lib/db/system-connection";
+import { categories, categoryEntries, expenseEntries, incomeEntries, incomeSources, users } from "@/lib/db/schema";
 import { linkCategoryToHousehold, shareCategoryExpenses, shareIncomeSource, setExpenseHouseholdShare } from "@/lib/db/household-tags";
 import {
   getHouseholdCellDetail,
@@ -244,6 +245,37 @@ describe("getHouseholdGrid - the real grid replica", () => {
     expect(grid[0].yearSpentPence).toBe(20000);
   });
 
+  it("contributors list every distinct name sharing the row, deduped, alphabetical", async () => {
+    await setHouseholdEnabled(true);
+    const alice = await seedSignedInUser("alice-sub", "alice@example.com");
+    const bob = await seedSignedInUser("bob-sub", "bob@example.com");
+    await getSystemConn().db.update(users).set({ name: "Bob" }).where(eq(users.id, bob.id));
+    await getSystemConn().db.update(users).set({ name: "Alice" }).where(eq(users.id, alice.id));
+
+    await asSignedInUser("alice-sub", "alice@example.com", async () => {
+      const [cat] = await db.insert(categories).values({ name: "Groceries" }).returning();
+      await db.insert(categoryEntries).values({ categoryId: cat.id, year: 2026, month: 9, amountPence: 30000 });
+      const [e1] = await db.insert(expenseEntries).values({ categoryId: cat.id, year: 2026, month: 9, amountPence: 5000, entryDate: "2026-09-01" }).returning();
+      const [e2] = await db.insert(expenseEntries).values({ categoryId: cat.id, year: 2026, month: 9, amountPence: 3000, entryDate: "2026-09-02" }).returning();
+      await linkCategoryToHousehold(cat.id, true, [e1.id, e2.id]);
+      await reconcileHouseholdDataForUser(alice.id);
+    })();
+    await asSignedInUser("bob-sub", "bob@example.com", async () => {
+      const [cat] = await db.insert(categories).values({ name: "Groceries" }).returning();
+      await db.insert(categoryEntries).values({ categoryId: cat.id, year: 2026, month: 9, amountPence: 20000 });
+      await linkCategoryToHousehold(cat.id, true, []);
+      await reconcileHouseholdDataForUser(bob.id);
+    })();
+
+    const grid = await getHouseholdGrid(2026);
+    const groceries = grid.find((r) => r.categoryName === "Groceries");
+    // Alice has two expense entries, not two contributor rows - the set
+    // dedupes same-name repeats, and the result is alphabetical regardless
+    // of insertion order (Bob's budget row went in after Alice's, but
+    // both his expenses came from her).
+    expect(groceries?.contributors).toEqual(["Alice", "Bob"]);
+  });
+
   it("only the requested year's figures show up", async () => {
     await setHouseholdEnabled(true);
     const alice = await seedSignedInUser("alice-sub", "alice@example.com");
@@ -275,7 +307,33 @@ describe("getHouseholdIncomeGrid", () => {
       await reconcileHouseholdDataForUser(alice.id);
     })();
     const grid = await getHouseholdIncomeGrid(2026);
-    expect(grid).toEqual([{ sourceName: "Salary", months: expect.objectContaining({ 8: 250000, 9: 250000, 1: 0 }), yearTotalPence: 500000 }]);
+    expect(grid).toEqual([
+      { sourceName: "Salary", months: expect.objectContaining({ 8: 250000, 9: 250000, 1: 0 }), yearTotalPence: 500000, contributors: ["Test User"] },
+    ]);
+  });
+
+  it("contributors dedupe by name across different income sources merged under the same name", async () => {
+    await setHouseholdEnabled(true);
+    const alice = await seedSignedInUser("alice-sub", "alice@example.com");
+    const bob = await seedSignedInUser("bob-sub", "bob@example.com");
+    await getSystemConn().db.update(users).set({ name: "Alice" }).where(eq(users.id, alice.id));
+    await getSystemConn().db.update(users).set({ name: "Bob" }).where(eq(users.id, bob.id));
+
+    await asSignedInUser("alice-sub", "alice@example.com", async () => {
+      const [source] = await db.insert(incomeSources).values({ name: "Salary" }).returning();
+      await db.insert(incomeEntries).values({ incomeSourceId: source.id, year: 2026, month: 8, amountPence: 100000 });
+      await shareIncomeSource(source.id, true);
+      await reconcileHouseholdDataForUser(alice.id);
+    })();
+    await asSignedInUser("bob-sub", "bob@example.com", async () => {
+      const [source] = await db.insert(incomeSources).values({ name: "Salary" }).returning();
+      await db.insert(incomeEntries).values({ incomeSourceId: source.id, year: 2026, month: 8, amountPence: 90000 });
+      await shareIncomeSource(source.id, true);
+      await reconcileHouseholdDataForUser(bob.id);
+    })();
+
+    const grid = await getHouseholdIncomeGrid(2026);
+    expect(grid.find((r) => r.sourceName === "Salary")?.contributors).toEqual(["Alice", "Bob"]);
   });
 });
 

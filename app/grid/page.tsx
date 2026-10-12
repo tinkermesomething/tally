@@ -17,6 +17,7 @@ import { MobileCategoryCard } from "@/components/grid/mobile-category-card";
 import { MobileIncomeCard } from "@/components/grid/mobile-income-card";
 import { MobileSummaryBar } from "@/components/grid/mobile-summary-bar";
 import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
+import { getGroupStyles } from "@/lib/db/groups";
 import { MONTH_ABBREVIATIONS as MONTHS, MONTH_NAMES } from "@/lib/months";
 import { withCurrentUser } from "@/lib/db/current-user";
 
@@ -37,13 +38,14 @@ export default async function GridPage({
   // moved into the next one.
   const nowPeriod = await resolvePeriodForDate(new Date().toISOString().slice(0, 10));
   const year = yearParam ? parseInt(yearParam, 10) : nowPeriod.year;
-  const [data, years, people, { currency }] = await Promise.all([
+  const [data, years, people, { currency }, groupStyles] = await Promise.all([
     getGridData(year),
     getAvailableYears(),
     getPeopleWithBalances(),
     getAppSettings(),
+    getGroupStyles(),
   ]);
-  const groupColors = buildGroupColorMap(data.categories);
+  const groupColors = buildGroupColorMap(data.categories, groupStyles);
   const groupColorsObj = Object.fromEntries(groupColors);
   const existingGroups = Array.from(
     new Set(data.categories.map((c) => c.groupName).filter((g): g is string => !!g))

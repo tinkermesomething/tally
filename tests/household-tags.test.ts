@@ -3,6 +3,7 @@ import { resetDb } from "./helpers/db";
 import { db } from "@/lib/db";
 import { categories, expenseEntries, incomeSources } from "@/lib/db/schema";
 import {
+  bulkShareCategoriesToHousehold,
   linkCategoryToHousehold,
   listUnshared,
   setExpenseHouseholdShare,
@@ -84,6 +85,40 @@ describe("linkCategoryToHousehold", () => {
 
   it("refuses a category that no longer exists", async () => {
     await expect(linkCategoryToHousehold(999, true, [])).rejects.toThrow("no longer exists");
+  });
+});
+
+describe("bulkShareCategoriesToHousehold", () => {
+  it("shares every leaf id given, skipping a parent-with-children and a nonexistent id without throwing", async () => {
+    const { cat, other } = await seed();
+    const [parent] = await db.insert(categories).values({ name: "Mobile" }).returning();
+    await db.insert(categories).values({ name: "Giffgaff", parentId: parent.id });
+
+    const updated = await bulkShareCategoriesToHousehold([cat.id, other.id, parent.id, 999], true);
+
+    expect(updated).toBe(2);
+    for (const id of [cat.id, other.id]) {
+      const row = await db.query.categories.findFirst({ where: (c, { eq }) => eq(c.id, id) });
+      expect(row?.sharedToHousehold).toBe(true);
+    }
+    const parentRow = await db.query.categories.findFirst({ where: (c, { eq }) => eq(c.id, parent.id) });
+    expect(parentRow?.sharedToHousehold).toBe(false);
+  });
+
+  it("unshares every leaf id given, clearing their expenses too (same as the single-category path)", async () => {
+    const { cat, e1, other } = await seed();
+    await linkCategoryToHousehold(cat.id, true, [e1.id]);
+    await bulkShareCategoriesToHousehold([cat.id, other.id], false);
+    const catRow = await db.query.categories.findFirst({ where: (c, { eq }) => eq(c.id, cat.id) });
+    expect(catRow?.sharedToHousehold).toBe(false);
+    const e1Row = await db.query.expenseEntries.findFirst({ where: (e, { eq }) => eq(e.id, e1.id) });
+    expect(e1Row?.sharedToHousehold).toBe(false);
+  });
+
+  it("de-duplicates repeated ids", async () => {
+    const { cat } = await seed();
+    const updated = await bulkShareCategoriesToHousehold([cat.id, cat.id], true);
+    expect(updated).toBe(1);
   });
 });
 

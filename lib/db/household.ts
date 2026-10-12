@@ -220,6 +220,11 @@ export type HouseholdGridRow = {
   months: Record<number, HouseholdGridCell>; // 1-12
   yearBudgetedPence: number;
   yearSpentPence: number;
+  /** Distinct source-user names behind this row, alphabetical - a row can
+   * merge several people's own category of the same name (see the
+   * function's own comment below), and this is the always-visible hint of
+   * who's behind it, without having to click a cell to find out. */
+  contributors: string[];
 };
 
 /** One row per distinct category NAME (see lib/db/household.ts's own top
@@ -234,21 +239,36 @@ export async function getHouseholdGrid(year: number): Promise<HouseholdGridRow[]
   const sys = sysDb();
   const [budgets, expenses] = await Promise.all([
     sys
-      .select({ categoryName: householdCategoryBudgets.categoryName, groupName: householdCategoryBudgets.groupName, month: householdCategoryBudgets.month, amountPence: householdCategoryBudgets.amountPence })
+      .select({
+        categoryName: householdCategoryBudgets.categoryName,
+        groupName: householdCategoryBudgets.groupName,
+        month: householdCategoryBudgets.month,
+        amountPence: householdCategoryBudgets.amountPence,
+        sourceUserName: users.name,
+      })
       .from(householdCategoryBudgets)
+      .innerJoin(users, eq(users.id, householdCategoryBudgets.sourceUserId))
       .where(eq(householdCategoryBudgets.year, year)),
     sys
-      .select({ categoryName: householdExpenseEntries.categoryName, entryDate: householdExpenseEntries.entryDate, amountPence: householdExpenseEntries.amountPence })
-      .from(householdExpenseEntries),
+      .select({
+        categoryName: householdExpenseEntries.categoryName,
+        entryDate: householdExpenseEntries.entryDate,
+        amountPence: householdExpenseEntries.amountPence,
+        sourceUserName: users.name,
+      })
+      .from(householdExpenseEntries)
+      .innerJoin(users, eq(users.id, householdExpenseEntries.sourceUserId)),
   ]);
 
   const rows = new Map<string, HouseholdGridRow>();
+  const contributorsByCategory = new Map<string, Set<string>>();
   const ensure = (categoryName: string, groupName: string | null) => {
     let row = rows.get(categoryName);
     if (!row) {
-      row = { categoryName, groupName, months: {}, yearBudgetedPence: 0, yearSpentPence: 0 };
+      row = { categoryName, groupName, months: {}, yearBudgetedPence: 0, yearSpentPence: 0, contributors: [] };
       for (let m = 1; m <= 12; m++) row.months[m] = { budgetedPence: 0, spentPence: 0 };
       rows.set(categoryName, row);
+      contributorsByCategory.set(categoryName, new Set());
     } else if (groupName && !row.groupName) {
       row.groupName = groupName;
     }
@@ -259,6 +279,7 @@ export async function getHouseholdGrid(year: number): Promise<HouseholdGridRow[]
     const row = ensure(b.categoryName, b.groupName);
     row.months[b.month].budgetedPence += b.amountPence;
     row.yearBudgetedPence += b.amountPence;
+    if (b.sourceUserName) contributorsByCategory.get(b.categoryName)!.add(b.sourceUserName);
   }
   const yearPrefix = `${year}-`;
   for (const e of expenses) {
@@ -267,6 +288,11 @@ export async function getHouseholdGrid(year: number): Promise<HouseholdGridRow[]
     const row = ensure(e.categoryName, null);
     row.months[month].spentPence += e.amountPence;
     row.yearSpentPence += e.amountPence;
+    if (e.sourceUserName) contributorsByCategory.get(e.categoryName)!.add(e.sourceUserName);
+  }
+
+  for (const [categoryName, names] of contributorsByCategory) {
+    rows.get(categoryName)!.contributors = [...names].sort();
   }
 
   return [...rows.values()].sort(
@@ -278,6 +304,8 @@ export type HouseholdIncomeGridRow = {
   sourceName: string;
   months: Record<number, number>; // 1-12, amountPence
   yearTotalPence: number;
+  /** Same idea as HouseholdGridRow's - distinct source-user names, alphabetical. */
+  contributors: string[];
 };
 
 /** Income has no separate "planned" figure in this app even for a single
@@ -285,20 +313,32 @@ export type HouseholdIncomeGridRow = {
  * here, amount only, no budgeted/spent split. */
 export async function getHouseholdIncomeGrid(year: number): Promise<HouseholdIncomeGridRow[]> {
   const rows = await sysDb()
-    .select({ sourceName: householdIncomeEntries.sourceName, month: householdIncomeEntries.month, amountPence: householdIncomeEntries.amountPence })
+    .select({
+      sourceName: householdIncomeEntries.sourceName,
+      month: householdIncomeEntries.month,
+      amountPence: householdIncomeEntries.amountPence,
+      sourceUserName: users.name,
+    })
     .from(householdIncomeEntries)
+    .innerJoin(users, eq(users.id, householdIncomeEntries.sourceUserId))
     .where(eq(householdIncomeEntries.year, year));
 
   const map = new Map<string, HouseholdIncomeGridRow>();
+  const contributorsBySource = new Map<string, Set<string>>();
   for (const r of rows) {
     let row = map.get(r.sourceName);
     if (!row) {
-      row = { sourceName: r.sourceName, months: {}, yearTotalPence: 0 };
+      row = { sourceName: r.sourceName, months: {}, yearTotalPence: 0, contributors: [] };
       for (let m = 1; m <= 12; m++) row.months[m] = 0;
       map.set(r.sourceName, row);
+      contributorsBySource.set(r.sourceName, new Set());
     }
     row.months[r.month] += r.amountPence;
     row.yearTotalPence += r.amountPence;
+    if (r.sourceUserName) contributorsBySource.get(r.sourceName)!.add(r.sourceUserName);
+  }
+  for (const [sourceName, names] of contributorsBySource) {
+    map.get(sourceName)!.contributors = [...names].sort();
   }
   return [...map.values()].sort((a, b) => a.sourceName.localeCompare(b.sourceName));
 }

@@ -24,6 +24,7 @@ import {
   unarchiveIncomeSource as unarchiveIncomeSourceQuery,
   updateCategoryDueDay as updateCategoryDueDayQuery,
   updateCategoryDebtLink as updateCategoryDebtLinkQuery,
+  bulkUpdateCategoryGroup as bulkUpdateCategoryGroupQuery,
   updateCategoryGroup as updateCategoryGroupQuery,
   updateExpenseEntry as updateExpenseEntryQuery,
   upsertCategoryEntry,
@@ -34,6 +35,7 @@ import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
 import { renameIncomeSource as renameIncomeSourceQuery, reorderIncomeSourceTo } from "@/lib/db/income-order";
 import { getTagOptions, linkCategoryAndTag, listMissingTags, setExpenseTags, type MissingTagRow } from "@/lib/db/retro-tags";
 import {
+  bulkShareCategoriesToHousehold,
   linkCategoryToHousehold,
   listUnshared,
   setExpenseHouseholdShare,
@@ -413,6 +415,44 @@ export async function updateCategoryGroup(categoryId: number, groupName: string)
     await updateCategoryGroupQuery(categoryId, groupName.trim() || null);
     revalidatePath("/grid");
     revalidatePath("/reports");
+  });
+}
+
+/** Sets the group for every selected id in one go, from the Categories
+ * tab's multi-select bar - ids that aren't top-level categories are
+ * silently skipped (see bulkUpdateCategoryGroup), so `updated` can be
+ * lower than `categoryIds.length` without that being an error. */
+export async function bulkSetCategoryGroup(categoryIds: number[], groupName: string): Promise<{ ok: true; updated: number } | { ok: false; error: string }> {
+  return requireSession(async () => {
+    try {
+      const trimmed = groupName.trim();
+      if (!trimmed) return { ok: false, error: "Enter a group name." };
+      const ids = Array.isArray(categoryIds) ? categoryIds.filter((n) => Number.isInteger(n)) : [];
+      const updated = await bulkUpdateCategoryGroupQuery(ids, trimmed);
+      revalidatePath("/grid");
+      revalidatePath("/reports");
+      revalidatePath("/settings");
+      return { ok: true, updated };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't set that group." };
+    }
+  });
+}
+
+/** Shares (or unshares) every selected id's own default in one go - leaf
+ * categories only (see bulkShareCategoriesToHousehold), no backfill of
+ * existing expenses (that still needs the per-category dialog). */
+export async function bulkSetHouseholdShare(categoryIds: number[], share: boolean): Promise<{ ok: true; updated: number } | { ok: false; error: string }> {
+  return requireSession(async (user) => {
+    try {
+      const ids = Array.isArray(categoryIds) ? categoryIds.filter((n) => Number.isInteger(n)) : [];
+      const updated = await bulkShareCategoriesToHousehold(ids, share);
+      await reconcileHouseholdDataForUser(user.id);
+      refreshTagged();
+      return { ok: true, updated };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't update sharing." };
+    }
   });
 }
 

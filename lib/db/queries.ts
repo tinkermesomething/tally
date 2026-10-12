@@ -100,6 +100,21 @@ export async function updateCategoryGroup(categoryId: number, groupName: string 
     .where(eq(categories.id, categoryId));
 }
 
+/** Bulk version of updateCategoryGroup, for the Categories tab's
+ * multi-select bar - silently skips any id that isn't a top-level
+ * category (subcategories inherit their parent's group, same rule the UI
+ * already enforces by not rendering EditableGroupTag on a child row). */
+export async function bulkUpdateCategoryGroup(categoryIds: number[], groupName: string | null): Promise<number> {
+  let updated = 0;
+  for (const id of new Set(categoryIds)) {
+    const category = await db.query.categories.findFirst({ where: eq(categories.id, id) });
+    if (!category || category.parentId !== null) continue;
+    await db.update(categories).set({ groupName }).where(eq(categories.id, id));
+    updated++;
+  }
+  return updated;
+}
+
 export function logExpense(input: Parameters<typeof logExpenseUnsafe>[0]) {
   return inTransaction(() => logExpenseUnsafe(input));
 }

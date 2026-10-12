@@ -650,3 +650,23 @@ export const householdCategoryBudgets = sqliteTable("household_category_budgets"
   month: integer("month").notNull(),
   amountPence: integer("amount_pence").notNull(),
 });
+
+/** A colour override for a group, keyed by the group's own NAME - groups
+ * aren't a first-class entity (categories.groupName is just free text,
+ * shared across however many categories happen to use the same string),
+ * so this is the lightest way to make a group's colour persistent/
+ * customizable rather than always auto-picked by lib/group-colors.ts's
+ * first-seen-order palette. No row here = that auto-pick still applies
+ * (see buildGroupColorMap's optional overrides argument). Renaming a
+ * group (lib/db/groups.ts's renameGroup) updates this row's name to
+ * match, in the same transaction as the categories.group_name bulk
+ * update. */
+export const groupStyles = sqliteTable(
+  "group_styles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    color: text("color").notNull(), // "#rrggbb"
+  },
+  (table) => [uniqueIndex("group_styles_name_unique").on(table.name)]
+);

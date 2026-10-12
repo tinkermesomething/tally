@@ -92,8 +92,11 @@ Tally started as a replacement for a spreadsheet that had outgrown itself: a mon
 ## Features
 
 - **Budget grid**: categories (with sub-category rollups) x months, planned vs. actually spent, carries unspent money into the next period automatically from a point you choose
+- **Household budget**: share specific categories and income sources into a combined household view - everyone's shared data merges by category name into one grid, nobody's full account or unshared categories are exposed to anyone else
 - **Debt ledger**: per-person running balance from loan/repayment entries, not a cell you overwrite by hand
 - **Savings buckets**: goal + target date per bucket, deposits/withdrawals, optionally auto-funded from a linked category
+- **Net worth**: assets and linked bank accounts combined into one figure, tracked over time with a trend chart
+- **Bills**: recurring bills with a due day, auto-populated into the grid each month so they're never forgotten
 - **Reports**: category spend grouped and charted by year/month - budgeted vs. spent, compare, trend, variance - exportable to PDF (landscape by default) for the whole page or a single panel
 - **Bank sync**: connects real accounts via GoCardless Bank Account Data (one shared credential pair, admin-managed in Settings > Admin), stages imported transactions for review, auto-categorizes via explicit rules plus a learned-pattern fallback, flags possible duplicates against manual entries (suggestion only, never automatic); unsettled pending transactions can be "pencilled in" as a guess before they clear
 - **CSV import**: for accounts not on GoCardless, or backfilling history

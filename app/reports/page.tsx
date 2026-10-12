@@ -13,6 +13,7 @@ import { ReportPanelCard, ReportBody } from "@/components/reports/report-panel-c
 import { TrendReport } from "@/components/reports/trend-report";
 import { buildTrendTree } from "@/lib/trend";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
+import { getGroupStyles } from "@/lib/db/groups";
 import { withCurrentUser } from "@/lib/db/current-user";
 
 export default async function ReportsPage({
@@ -25,17 +26,18 @@ export default async function ReportsPage({
   const view = parseReportView(viewParam);
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
   const month = monthParam ?? "all";
-  const [data, panels, years, { currency }] = await Promise.all([
+  const [data, panels, years, { currency }, groupStyles] = await Promise.all([
     getGridData(year),
     getReportPanels(),
     getAvailableYears(),
     getAppSettings(),
+    getGroupStyles(),
   ]);
 
   // Stable group -> color assignment, derived from the full category list
   // (not the filtered view), shared with the /grid tags so a group is
   // always the same color everywhere.
-  const colorByGroup = buildGroupColorMap(data.categories);
+  const colorByGroup = buildGroupColorMap(data.categories, groupStyles);
   const groupOrder = Array.from(colorByGroup.keys());
   const existingGroups = groupOrder.filter((g) => g !== UNGROUPED);
 
