@@ -3,10 +3,17 @@ import { LogOut } from "lucide-react";
 import { auth, signOut } from "@/auth";
 import { AccentPicker } from "@/components/accent-picker";
 import { UserMenu } from "@/components/user-menu";
+import { BillBell } from "@/components/bills/bill-bell";
 import { Button } from "@/components/ui/button";
 import { getPendingTransactions, getBankAccounts } from "@/lib/db/bank-sync";
+import { getUpcomingBills, type BillWithStatus } from "@/lib/db/bills";
+import { getAppSettings } from "@/lib/db/settings";
 import { withCurrentUser } from "@/lib/db/current-user";
 import type { UserRow } from "@/lib/db/users";
+
+// Same threshold as EXPIRY_WARNING_DAYS below - "due soon" for a bill gets
+// the same runway as "about to lapse" for a bank connection.
+const BILL_DUE_SOON_DAYS = 14;
 
 async function signOutAction() {
   "use server";
@@ -17,8 +24,10 @@ async function signOutAction() {
 // (components/user-menu.tsx), not the main nav.
 const NAV_ITEMS = [
   { href: "/grid", label: "Budget" },
-  { href: "/debt", label: "Debt" },
+  { href: "/debt", label: "Debts" },
   { href: "/savings", label: "Savings" },
+  { href: "/net-worth", label: "Net worth" },
+  { href: "/bills", label: "Bills" },
   { href: "/reports", label: "Reports" },
   { href: "/review", label: "Review" },
   { href: "/entries", label: "Entries" },
@@ -47,6 +56,12 @@ export async function AppHeader() {
   // same as being signed out.
   let pendingCount = 0;
   let expiringBankAccounts = 0;
+  let upcomingBills: BillWithStatus[] = [];
+  // Default to showing both - only hidden once a resolved user's own
+  // settings say to, same "nothing hidden on a resolution failure" stance
+  // as every other badge below.
+  let showDebtTab = true;
+  let showNetWorthTab = true;
   // Returned from the closure rather than assigned to an outer `let` from
   // inside it - TypeScript's narrowing doesn't track a reassignment made
   // inside a nested callback, so `currentUser` read after this block would
@@ -68,11 +83,16 @@ export async function AppHeader() {
         const expiring = (await getBankAccounts()).filter(
           (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
         ).length;
-        return { user, pending, expiring };
+        const bills = await getUpcomingBills(BILL_DUE_SOON_DAYS);
+        const settings = await getAppSettings();
+        return { user, pending, expiring, bills, settings };
       });
       currentUser = result.user;
       pendingCount = result.pending;
       expiringBankAccounts = result.expiring;
+      upcomingBills = result.bills;
+      showDebtTab = result.settings.showDebtTab;
+      showNetWorthTab = result.settings.showNetWorthTab;
     } catch (err) {
       console.error("[app-header] session doesn't resolve to a real account:", err);
     }
@@ -95,7 +115,7 @@ export async function AppHeader() {
                 get to Settings or sign out from mobile). Scrollbar hidden
                 for a tab-bar look; the row still scrolls by touch/drag. */}
             <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.filter((item) => (item.href !== "/debt" || showDebtTab) && (item.href !== "/net-worth" || showNetWorthTab)).map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -112,6 +132,7 @@ export async function AppHeader() {
             </nav>
             <div className="flex shrink-0 items-center gap-2">
               <AccentPicker />
+              <BillBell bills={upcomingBills} />
               {currentUser ? (
                 <UserMenu
                   userId={currentUser.id}

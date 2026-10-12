@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { updatePreferences } from "@/app/settings/actions";
 import { CURRENCIES } from "@/lib/money";
 import { DATE_FORMATS, DATE_FORMAT_LABELS, type DateFormat } from "@/lib/date-format";
@@ -19,11 +20,15 @@ export function PreferencesSettings({
   dateFormat,
   carryOverStartYear,
   carryOverStartMonth,
+  showDebtTab,
+  showNetWorthTab,
 }: {
   currency: string;
   dateFormat: DateFormat;
   carryOverStartYear: number;
   carryOverStartMonth: number;
+  showDebtTab: boolean;
+  showNetWorthTab: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   // Local echo so the Select updates instantly instead of waiting on the
@@ -33,6 +38,8 @@ export function PreferencesSettings({
   const [localDateFormat, setLocalDateFormat] = useState(dateFormat);
   const [localStartYear, setLocalStartYear] = useState(carryOverStartYear);
   const [localStartMonth, setLocalStartMonth] = useState(carryOverStartMonth);
+  const [localShowDebtTab, setLocalShowDebtTab] = useState(showDebtTab);
+  const [localShowNetWorthTab, setLocalShowNetWorthTab] = useState(showNetWorthTab);
   const startYearOptions = [localStartYear - 1, localStartYear, localStartYear + 1].filter(
     (y, i, arr) => arr.indexOf(y) === i
   );
@@ -142,6 +149,34 @@ export function PreferencesSettings({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      <div className="space-y-3 border-t border-border pt-4">
+        <Label>Tabs in the header</Label>
+        <p className="text-xs text-muted-foreground">
+          Not everyone tracks debts or wants a net worth page - hide what you don&apos;t use. This is yours alone; it
+          doesn&apos;t affect anyone else on this instance.
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">Debts</span>
+          <Switch
+            checked={localShowDebtTab}
+            onCheckedChange={(next) => {
+              setLocalShowDebtTab(next);
+              startTransition(() => updatePreferences({ showDebtTab: next }));
+            }}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">Net worth</span>
+          <Switch
+            checked={localShowNetWorthTab}
+            onCheckedChange={(next) => {
+              setLocalShowNetWorthTab(next);
+              startTransition(() => updatePreferences({ showNetWorthTab: next }));
+            }}
+          />
         </div>
       </div>
 

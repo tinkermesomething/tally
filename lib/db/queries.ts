@@ -6,6 +6,7 @@ import { markCellPaid, unpayCellIfNoExpenses } from "./cells";
 import { resolvePeriodForDate } from "./pay-period";
 import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
 import { addSavingsEntry, deleteSavingsEntriesForExpense, syncSavingsEntriesForExpense } from "./savings";
+import { advanceBillsForExpense } from "./bills";
 import {
   categories,
   categoryEntries,
@@ -180,6 +181,13 @@ async function logExpenseUnsafe(input: {
   // pencilling it in: reflect money the bank's already earmarked.
   await markCellPaid(input.categoryId, year, month);
 
+  // Unlike the debt/savings auto-tags above, a bill's due date only moves
+  // once the expense is CONFIRMED (see confirmPencilledExpense, which
+  // calls this same advance) - discarding a pencilled-in guess has no
+  // "unadvance" to undo it with, so advancing early would be a one-way
+  // mistake a wrong guess can't take back.
+  if (!input.provisional) await advanceBillsForExpense(input.categoryId, input.entryDate);
+
   return created;
 }
 
@@ -343,6 +351,7 @@ export async function confirmPencilledExpense(id: number, importedTransactionId:
     .update(expenseEntries)
     .set({ provisional: false, importedTransactionId })
     .where(eq(expenseEntries.id, id));
+  await advanceBillsForExpense(entry.categoryId, entry.entryDate);
 }
 
 export async function upsertIncomeEntry(input: {

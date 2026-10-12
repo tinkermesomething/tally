@@ -19,6 +19,10 @@ export type AppSettings = {
   bankSyncFrequencyHours: number;
   /** Pause switch for automatic backups (they also need BACKUP_DIR). */
   autoBackupEnabled: boolean;
+  /** Per-user nav visibility - hides the Debts/Net worth tabs for anyone
+   * who doesn't track either. */
+  showDebtTab: boolean;
+  showNetWorthTab: boolean;
 };
 
 export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat };
@@ -44,6 +48,8 @@ export async function getAppSettings(): Promise<AppSettings> {
       bankSyncEnabled: row.bankSyncEnabled,
       bankSyncFrequencyHours: row.bankSyncFrequencyHours,
       autoBackupEnabled: row.autoBackupEnabled,
+      showDebtTab: row.showDebtTab,
+      showNetWorthTab: row.showNetWorthTab,
     };
   }
   const [created] = await db.insert(appSettings).values({}).returning();
@@ -55,6 +61,8 @@ export async function getAppSettings(): Promise<AppSettings> {
     bankSyncEnabled: created.bankSyncEnabled,
     bankSyncFrequencyHours: created.bankSyncFrequencyHours,
     autoBackupEnabled: created.autoBackupEnabled,
+    showDebtTab: created.showDebtTab,
+    showNetWorthTab: created.showNetWorthTab,
   };
 }
 
@@ -68,6 +76,8 @@ export async function updateAppSettings(input: {
   bankSyncEnabled?: boolean;
   bankSyncFrequencyHours?: number;
   autoBackupEnabled?: boolean;
+  showDebtTab?: boolean;
+  showNetWorthTab?: boolean;
 }) {
   if (input.currency !== undefined && !isCurrencyCode(input.currency)) {
     throw new Error(`Unrecognized currency code: "${input.currency}"`);
@@ -93,6 +103,8 @@ export async function updateAppSettings(input: {
       ...(input.bankSyncEnabled !== undefined ? { bankSyncEnabled: input.bankSyncEnabled } : {}),
       ...(input.bankSyncFrequencyHours !== undefined ? { bankSyncFrequencyHours: input.bankSyncFrequencyHours } : {}),
       ...(input.autoBackupEnabled !== undefined ? { autoBackupEnabled: input.autoBackupEnabled } : {}),
+      ...(input.showDebtTab !== undefined ? { showDebtTab: input.showDebtTab } : {}),
+      ...(input.showNetWorthTab !== undefined ? { showNetWorthTab: input.showNetWorthTab } : {}),
     })
     .where(eq(appSettings.id, row!.id));
 }

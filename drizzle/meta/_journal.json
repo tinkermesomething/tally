@@ -218,6 +218,20 @@
       "when": 1791546773225,
       "tag": "0030_people_color",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791633173225,
+      "tag": "0031_net_worth_and_bills",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791633273225,
+      "tag": "0032_nav_toggles",
+      "breakpoints": true
     }
   ]
 }

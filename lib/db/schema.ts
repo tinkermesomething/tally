@@ -169,6 +169,40 @@ export const people = sqliteTable("people", {
   color: text("color"),
 });
 
+/** Something worth money that isn't a tracked bank account or a debt -
+ * cash, an investment pot, a car, a house. No valuePence column here: same
+ * reasoning as savingsBuckets/people's balances - the CURRENT value is
+ * always the latest row in assetValuations below, computed on read, never
+ * stored redundantly. Every asset is created together with its first
+ * valuation (see lib/db/assets.ts's addAsset), so there's always at least
+ * one row to read. */
+export const assets = sqliteTable("assets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type", { enum: ["cash", "investment", "property", "vehicle", "other"] }).notNull(),
+  color: text("color"), // "#rrggbb"; null = a palette colour picked by position
+  note: text("note"),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+});
+
+/** An appraisal of one asset's value on one date - append-only, like
+ * debtLedgerEntries/savingsEntries, so "value over time" is real history,
+ * not a single overwritten number. Unlike those two, there's no
+ * deposit/withdrawal to compute from - the user just states what it's
+ * worth now, as often or rarely as that's worth doing (daily for a cash
+ * pot, once a year for a house). */
+export const assetValuations = sqliteTable("asset_valuations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  assetId: integer("asset_id")
+    .notNull()
+    .references(() => assets.id),
+  entryDate: text("entry_date").notNull(), // ISO date
+  valuePence: integer("value_pence").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(current_timestamp)`),
+});
+
 /** A pot of money being set aside - kids' savings, a holiday, a Revolut
  * bucket. Its balance is opening + deposits - withdrawals, computed on read
  * (never stored), so it can't drift if an entry is edited or deleted. Every
@@ -263,6 +297,14 @@ export const appSettings = sqliteTable("app_settings", {
   // how many to keep, password) - see lib/auto-backup-settings.ts. Null =
   // nothing chosen yet, so the stack's BACKUP_* environment applies.
   autoBackupConfig: text("auto_backup_config"),
+  // Per-user nav visibility - not everyone tracks debts or wants a net
+  // worth page cluttering the header. Lives on THIS table (not a new one)
+  // because app_settings already lives inside each user's own encrypted
+  // DB file, same as every other display preference here - "per user" is
+  // free, it's just where this table already is. Both default true: the
+  // feature exists until someone decides they don't want it, not opt-in.
+  showDebtTab: integer("show_debt_tab", { mode: "boolean" }).notNull().default(true),
+  showNetWorthTab: integer("show_net_worth_tab", { mode: "boolean" }).notNull().default(true),
 });
 
 /** A append-only record of security-relevant events - sign-ins, failed API
@@ -376,6 +418,12 @@ export const bankAccounts = sqliteTable("bank_accounts", {
   // A name the user chose ("Main account", "Holiday pot"), shown everywhere
   // instead of the bank's own label. Null = use displayName.
   alias: text("alias"),
+  // Cached from the LAST real sync's own balance call (one extra GoCardless
+  // request per sync, not per page view - same rate-limit reasoning as
+  // pendingPreviewJson above). Null until the first sync after this column
+  // existed. Feeds the net worth page; nothing else reads it.
+  cachedBalancePence: integer("cached_balance_pence"),
+  balanceUpdatedAt: integer("balance_updated_at", { mode: "timestamp" }),
 });
 
 /** A single staged bank transaction, before (or instead of) becoming a real
@@ -484,4 +532,24 @@ export const categoryRules = sqliteTable("category_rules", {
   savingsBucketId: integer("savings_bucket_id").references(() => savingsBuckets.id),
   sortOrder: integer("sort_order").notNull().default(0),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+});
+
+/** A recurring bill/subscription - "due soon" reminders only (the bell
+ * icon in the header), no email/push. categoryId is optional and is how a
+ * bill gets marked paid automatically: any expense landing in that
+ * category on/after nextDueDate rolls it forward (see lib/db/bills.ts) -
+ * same spirit as a category linked to a savings bucket or debt person,
+ * just advancing a date instead of adding a ledger row. Without a
+ * category, a bill is reminder-only - the user marks it paid by hand. */
+export const bills = sqliteTable("bills", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  amountPence: integer("amount_pence").notNull(),
+  cadence: text("cadence", { enum: ["weekly", "monthly", "yearly", "custom_days"] }).notNull(),
+  // Only meaningful for cadence "custom_days" - every N days from
+  // nextDueDate. Null for the other three (their interval is implicit).
+  cadenceDays: integer("cadence_days"),
+  nextDueDate: text("next_due_date").notNull(), // ISO date
+  categoryId: integer("category_id").references(() => categories.id),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
 });

@@ -8,11 +8,13 @@ import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { EditableDueDay } from "@/components/grid/editable-due-day";
 import { EditableDebtLink } from "@/components/grid/editable-debt-link";
 import { EditableBucketLink } from "@/components/settings/editable-bucket-link";
+import { CategoryBillLink } from "@/components/settings/category-bill-link";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { MoveCategoryButton } from "@/components/settings/move-category-button";
 import { useCategoryDrag } from "@/components/grid/use-category-drag";
 import { renameCategory, archiveCategory } from "@/app/grid/actions";
 import type { CategoryTreeNode } from "@/lib/db/queries";
+import type { BillWithStatus } from "@/lib/db/bills";
 
 export function CategorySettingsRow({
   category,
@@ -21,8 +23,10 @@ export function CategorySettingsRow({
   topLevelCategories,
   people,
   buckets = [],
+  bills = [],
 }: {
   buckets?: { id: number; name: string; color: string }[];
+  bills?: BillWithStatus[];
   category: CategoryTreeNode;
   color: string;
   existingGroups: string[];
@@ -74,6 +78,7 @@ export function CategorySettingsRow({
               linkedBucketId={category.linkedBucketId}
               buckets={buckets}
             />
+            <CategoryBillLink categoryId={category.id} bills={bills} />
             <MoveCategoryButton
               categoryId={category.id}
               currentParentId={null}
@@ -124,6 +129,7 @@ export function CategorySettingsRow({
                 linkedBucketId={child.linkedBucketId}
                 buckets={buckets}
               />
+              <CategoryBillLink categoryId={child.id} bills={bills} />
               <MoveCategoryButton
                 categoryId={child.id}
                 currentParentId={category.id}

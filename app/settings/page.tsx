@@ -10,6 +10,7 @@ import { getBuckets } from "@/lib/db/savings";
 import { bucketColor } from "@/lib/savings-math";
 import { getAppSettings } from "@/lib/db/settings";
 import { getBankAccounts, getCategoryRules, getRecentTransactions } from "@/lib/db/bank-sync";
+import { getBills } from "@/lib/db/bills";
 import { ruleConditionsOf } from "@/lib/rules";
 import { accountLabels } from "@/lib/accounts";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
@@ -93,6 +94,7 @@ export default async function SettingsPage({
     categoryRules,
     savingsBuckets,
     gocardlessConfigured,
+    bills,
   ] = await Promise.all([
     getCategoryTree(),
     getIncomeSourceList(),
@@ -105,10 +107,16 @@ export default async function SettingsPage({
     getCategoryRules(),
     getBuckets(),
     hasGocardlessCredentials(),
+    getBills(),
   ]);
   const recentByAccount = await getRecentTransactions(bankAccounts.map((a) => a.id), 5);
   const buckets = savingsBuckets.map((b) => ({ id: b.id, name: b.name, color: bucketColor(b) }));
   const bucketNameById = new Map(buckets.map((b) => [b.id, b.name]));
+  const billNamesByCategoryId = new Map<number, string[]>();
+  for (const bill of bills) {
+    if (bill.categoryId === null) continue;
+    billNamesByCategoryId.set(bill.categoryId, [...(billNamesByCategoryId.get(bill.categoryId) ?? []), bill.name]);
+  }
 
   const groupColors = buildGroupColorMap(categoryTree);
   const existingGroups = Array.from(
@@ -144,14 +152,20 @@ export default async function SettingsPage({
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
       <Tabs defaultValue={SETTINGS_TABS.includes(TAB_ALIASES[tab ?? ""] ?? tab ?? "") ? (TAB_ALIASES[tab ?? ""] ?? tab!) : "account"}>
-        <TabsList>
-          <TabsTrigger value="account">Account settings</TabsTrigger>
-          <TabsTrigger value="bank-sync">Bank sync</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="income">Income</TabsTrigger>
-          <TabsTrigger value="debt">Debt</TabsTrigger>
-          <TabsTrigger value="rules">Rules</TabsTrigger>
-          {me.isAdmin && <TabsTrigger value="admin">Admin</TabsTrigger>}
+        {/* Same horizontal-scroll, hidden-scrollbar treatment as the main
+            header nav (components/app-header.tsx) - on a narrow phone this
+            row has as many triggers as the main nav has links, and was
+            overflowing the same way before this. w-full (overriding
+            TabsList's own w-fit) so it actually has room to scroll within
+            instead of just overflowing its own fit-content box. */}
+        <TabsList className="w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsTrigger value="account" className="shrink-0">Account settings</TabsTrigger>
+          <TabsTrigger value="bank-sync" className="shrink-0">Bank sync</TabsTrigger>
+          <TabsTrigger value="categories" className="shrink-0">Categories</TabsTrigger>
+          <TabsTrigger value="income" className="shrink-0">Income</TabsTrigger>
+          <TabsTrigger value="debt" className="shrink-0">Debts</TabsTrigger>
+          <TabsTrigger value="rules" className="shrink-0">Rules</TabsTrigger>
+          {me.isAdmin && <TabsTrigger value="admin" className="shrink-0">Admin</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="categories" className="space-y-4 pt-4">
@@ -176,10 +190,12 @@ export default async function SettingsPage({
                 category.groupName,
                 category.linkedDebtPersonId ? personNameById.get(category.linkedDebtPersonId) : null,
                 category.linkedBucketId ? bucketNameById.get(category.linkedBucketId) : null,
+                ...billNamesByCategoryId.get(category.id) ?? [],
                 ...category.children.flatMap((child) => [
                   child.name,
                   child.linkedDebtPersonId ? personNameById.get(child.linkedDebtPersonId) : null,
                   child.linkedBucketId ? bucketNameById.get(child.linkedBucketId) : null,
+                  ...billNamesByCategoryId.get(child.id) ?? [],
                 ]),
               ],
               node: (
@@ -187,6 +203,7 @@ export default async function SettingsPage({
                   category={category}
                   color={groupColors.get(category.groupName ?? UNGROUPED)!}
                   buckets={buckets}
+                  bills={bills}
                   existingGroups={existingGroups}
                   topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
                   people={people.map((p) => ({ id: p.id, name: p.name }))}
@@ -412,6 +429,8 @@ export default async function SettingsPage({
               dateFormat={appSettings.dateFormat}
               carryOverStartYear={appSettings.carryOverStartYear}
               carryOverStartMonth={appSettings.carryOverStartMonth}
+              showDebtTab={appSettings.showDebtTab}
+              showNetWorthTab={appSettings.showNetWorthTab}
             />
           </div>
 

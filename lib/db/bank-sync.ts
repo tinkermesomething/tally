@@ -18,7 +18,7 @@ import {
   savingsBuckets,
   savingsEntries,
 } from "./schema";
-import { getAccountTransactions, toRawImportedTransaction, gcAmountToPence, payeeFromTransaction } from "../gocardless";
+import { getAccountTransactions, getAccountBalances, pickBalance, toRawImportedTransaction, gcAmountToPence, payeeFromTransaction } from "../gocardless";
 import {
   validateConditions,
   allConditionsMatch,
@@ -174,9 +174,22 @@ export async function syncBankAccount(bankAccountId: number): Promise<{ staged: 
     payeeRaw: payeeFromTransaction(t),
   }));
 
+  // One extra GoCardless call per sync (not per page view - see the net
+  // worth page, which only ever reads the cached columns below). A bank
+  // not supporting the balances endpoint, or a transient failure, must not
+  // take down the rest of the sync - the transactions above are the real
+  // point of syncing, the balance is a bonus.
+  let balanceUpdate: { cachedBalancePence: number; balanceUpdatedAt: Date } | undefined;
+  try {
+    const balance = pickBalance(await getAccountBalances(account.externalAccountId));
+    if (balance) balanceUpdate = { cachedBalancePence: gcAmountToPence(balance.balanceAmount.amount), balanceUpdatedAt: new Date() };
+  } catch (err) {
+    console.warn(`[bank-sync] couldn't fetch balance for account ${bankAccountId}:`, err);
+  }
+
   await db
     .update(bankAccounts)
-    .set({ lastSyncedAt: new Date(), pendingPreviewJson: JSON.stringify(pendingPreview) })
+    .set({ lastSyncedAt: new Date(), pendingPreviewJson: JSON.stringify(pendingPreview), ...balanceUpdate })
     .where(eq(bankAccounts.id, bankAccountId));
 
   return { staged: staged.length };

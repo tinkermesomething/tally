@@ -15,6 +15,8 @@ export async function updatePreferences(input: {
   bankSyncEnabled?: boolean;
   bankSyncFrequencyHours?: number;
   autoBackupEnabled?: boolean;
+  showDebtTab?: boolean;
+  showNetWorthTab?: boolean;
 }) {
   return requireSession(async () => {
     await updateAppSettings(input);

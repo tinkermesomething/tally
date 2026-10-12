@@ -198,6 +198,32 @@ export function gcAmountToPence(amount: string): number {
   return negative ? -pence : pence;
 }
 
+export type GcBalance = {
+  balanceAmount: { amount: string; currency: string };
+  balanceType: string;
+  referenceDate?: string;
+};
+
+export async function getAccountBalances(accountId: string): Promise<GcBalance[]> {
+  const data = await gcFetch(`/accounts/${accountId}/balances/`);
+  return data.balances;
+}
+
+/** One balance to show as "the" balance, when a bank reports several
+ * (booked vs. pending, available vs. expected) - confirmed via GoCardless's
+ * own docs that `interimAvailable` is the closest to "what you could spend
+ * right now", with `expected` (includes pending) as the fallback most
+ * banks report instead. Any other type (or none at all) falls back to
+ * whatever came first, rather than showing nothing. */
+export function pickBalance(balances: GcBalance[]): GcBalance | null {
+  if (balances.length === 0) return null;
+  return (
+    balances.find((b) => b.balanceType === "interimAvailable") ??
+    balances.find((b) => b.balanceType === "expected") ??
+    balances[0]
+  );
+}
+
 export function payeeFromTransaction(t: GcTransaction): string {
   return t.creditorName || t.debtorName || t.remittanceInformationUnstructured || "Unknown payee";
 }

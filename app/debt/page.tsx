@@ -34,7 +34,7 @@ export default async function DebtPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">Debt</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Debts</h1>
         <AddPersonDialog />
       </div>
 
