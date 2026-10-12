@@ -1,5 +1,6 @@
 import { getAppSettings } from "./db/settings";
 import { getBankAccounts, syncAllBankAccounts } from "./db/bank-sync";
+import { isHouseholdEnabled, reconcileHouseholdDataForUser } from "./db/household";
 import { lastSyncSlot } from "./sync-schedule";
 import { runWithUserDb } from "./db/context";
 import { listUsers } from "./db/users";
@@ -79,12 +80,26 @@ async function checkAndMaybeSync() {
   running = true;
   try {
     const users = await listUsers();
+    // Checked ONCE, not per user - sysDb() is always-open/cheap regardless,
+    // but there's no point opening every user's own pooled connection just
+    // to have reconcileHouseholdDataForUser immediately no-op on an
+    // instance that never turned this on.
+    const householdOn = await isHouseholdEnabled();
     for (const user of users) {
       if (user.disabledAt || !user.oidcSub || !user.dekSealed) continue;
       try {
         await syncOneUser(user.id, user.oidcSub, user.dekSealed);
       } catch (err) {
         console.error(`[scheduled-sync] user ${user.id} failed:`, err);
+      }
+      // Deliberately its own try/catch, separate from bank sync above - one
+      // failing must never block or be blocked by the other.
+      if (householdOn) {
+        try {
+          await syncHouseholdForUser(user.id, user.oidcSub, user.dekSealed);
+        } catch (err) {
+          console.error(`[scheduled-sync] household reconcile for user ${user.id} failed:`, err);
+        }
       }
     }
   } catch (err) {
@@ -115,4 +130,14 @@ async function syncOneUser(userId: number, oidcSub: string, dekSealed: string) {
       console.error(`[scheduled-sync] user ${userId}: one or more accounts failed:`, failed);
     }
   });
+}
+
+/** The self-healing backstop for lib/db/household-tags.ts's eager reconcile
+ * calls - this same per-user connection pattern, on the same already-proven
+ * cadence, catches anything those don't directly wrap (an edit or delete
+ * made through a path that isn't a share toggle). */
+async function syncHouseholdForUser(userId: number, oidcSub: string, dekSealed: string) {
+  const dek = openDek(dekSealed, oidcSub);
+  const conn = getOrOpenUserDb(userId, dekToHex(dek));
+  await runWithUserDb(conn, () => reconcileHouseholdDataForUser(userId));
 }

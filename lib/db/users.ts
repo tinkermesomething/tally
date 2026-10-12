@@ -5,6 +5,7 @@ import { closeAndForget, fileFor } from "./pool";
 import { users } from "./schema";
 import { resolveSignIn, isEffectiveAdmin, canDelete, type ExistingAccount, type SignInResolution } from "../accounts-rules";
 import { generateDek, resealDek, sealDek } from "../user-dek";
+import { removeHouseholdDataForUser } from "./household";
 import { audit } from "../audit";
 
 /** Every function here uses the shared keystore connection directly
@@ -177,6 +178,7 @@ export async function deleteUser(id: number, callerId: number, allowedEmail: str
   fs.rmSync(fileFor(id), { force: true });
   fs.rmSync(`${fileFor(id)}-wal`, { force: true });
   fs.rmSync(`${fileFor(id)}-shm`, { force: true });
+  await removeHouseholdDataForUser(id);
   await db.delete(users).where(eq(users.id, id));
   await audit("user_deleted", target.email);
   return { ok: true };

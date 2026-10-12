@@ -1,11 +1,11 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Anchor, Archive } from "lucide-react";
+import { Anchor, Archive, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner } from "@/components/ui/popover";
 import { SwatchRow, nativePickerActive } from "@/components/swatch-row";
-import { archiveIncomeSource, moveIncomeSourceToIndex, renameIncomeSource, setIncomeColor, setPayAnchor } from "@/app/grid/actions";
+import { archiveIncomeSource, moveIncomeSourceToIndex, renameIncomeSource, setIncomeColor, setPayAnchor, shareIncomeSourceAction } from "@/app/grid/actions";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { useRowDrag } from "@/components/grid/use-row-drag";
 import { runAction } from "@/lib/action-result";
@@ -17,6 +17,8 @@ export function IncomeSourceSettingsRow({
   isPayAnchor,
   color = null,
   fallbackColor = "var(--chart-1)",
+  sharedToHousehold = false,
+  householdEnabled = false,
 }: {
   id: number;
   name: string;
@@ -25,11 +27,24 @@ export function IncomeSourceSettingsRow({
   color?: string | null;
   /** The automatic colour shown when none is chosen (what the Grid uses). */
   fallbackColor?: string;
+  sharedToHousehold?: boolean;
+  /** Hides the household toggle entirely when the feature is off
+   * instance-wide. */
+  householdEnabled?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [householdError, setHouseholdError] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
+
+  function toggleHousehold() {
+    setHouseholdError(null);
+    startTransition(async () => {
+      const failure = await runAction(() => shareIncomeSourceAction(id, !sharedToHousehold));
+      if (failure) setHouseholdError(failure);
+    });
+  }
   const drag = useRowDrag((sourceId, toIndex) => moveIncomeSourceToIndex(sourceId, toIndex, new Date().getFullYear()));
 
   function save(next: string | null) {
@@ -112,6 +127,33 @@ export function IncomeSourceSettingsRow({
           <Anchor className="size-3" />
           {isPayAnchor ? "Pay anchor" : "Set as pay anchor"}
         </button>
+        {householdEnabled && (
+          <>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={toggleHousehold}
+              title={
+                sharedToHousehold
+                  ? "Shared to the household tab, every month - click to stop sharing new months"
+                  : "Share every month of this source to the household tab"
+              }
+              className={
+                sharedToHousehold
+                  ? "inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.65rem] text-primary"
+                  : "shrink-0 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground hover:border-muted-foreground"
+              }
+            >
+              <Home className="size-3" />
+              {sharedToHousehold ? "Shared" : "Share to household"}
+            </button>
+            {householdError && (
+              <span role="alert" className="text-[0.65rem] text-status-critical">
+                {householdError}
+              </span>
+            )}
+          </>
+        )}
         <Button
           size="icon-xs"
           variant="ghost"

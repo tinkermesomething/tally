@@ -11,6 +11,8 @@ import { bucketColor } from "@/lib/savings-math";
 import { getAppSettings } from "@/lib/db/settings";
 import { getBankAccounts, getCategoryRules, getRecentTransactions } from "@/lib/db/bank-sync";
 import { getBills } from "@/lib/db/bills";
+import { isHouseholdEnabled } from "@/lib/db/household";
+import { HouseholdAdminToggle } from "@/components/household/household-admin-toggle";
 import { ruleConditionsOf } from "@/lib/rules";
 import { accountLabels } from "@/lib/accounts";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
@@ -95,6 +97,7 @@ export default async function SettingsPage({
     savingsBuckets,
     gocardlessConfigured,
     bills,
+    householdEnabled,
   ] = await Promise.all([
     getCategoryTree(),
     getIncomeSourceList(),
@@ -108,6 +111,7 @@ export default async function SettingsPage({
     getBuckets(),
     hasGocardlessCredentials(),
     getBills(),
+    isHouseholdEnabled(),
   ]);
   const recentByAccount = await getRecentTransactions(bankAccounts.map((a) => a.id), 5);
   const buckets = savingsBuckets.map((b) => ({ id: b.id, name: b.name, color: bucketColor(b) }));
@@ -204,6 +208,7 @@ export default async function SettingsPage({
                   color={groupColors.get(category.groupName ?? UNGROUPED)!}
                   buckets={buckets}
                   bills={bills}
+                  householdEnabled={householdEnabled}
                   existingGroups={existingGroups}
                   topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
                   people={people.map((p) => ({ id: p.id, name: p.name }))}
@@ -239,6 +244,8 @@ export default async function SettingsPage({
                 isPayAnchor={source.isPayAnchor}
                 color={source.color}
                 fallbackColor={GROUP_PALETTE[index % GROUP_PALETTE.length]}
+                sharedToHousehold={source.sharedToHousehold}
+                householdEnabled={householdEnabled}
               />
             ))}
           </div>
@@ -466,6 +473,10 @@ export default async function SettingsPage({
             <div className="space-y-4 border-t border-border pt-4">
               <h2 className="text-sm font-medium">Backup</h2>
               <BackupSettings auto={await autoBackupView()} />
+            </div>
+            <div className="space-y-2 border-t border-border pt-4">
+              <h2 className="text-sm font-medium">Household budget</h2>
+              <HouseholdAdminToggle enabled={householdEnabled} />
             </div>
           </TabsContent>
         )}

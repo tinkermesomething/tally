@@ -206,6 +206,8 @@ export type ExpenseEntryRow = {
   debtPersonName: string | null;
   savingsBucketId: number | null;
   savingsBucketName: string | null;
+  /** See lib/db/household-tags.ts. */
+  sharedToHousehold: boolean;
 };
 
 const expenseRowColumns = {
@@ -218,6 +220,7 @@ const expenseRowColumns = {
   note: expenseEntries.note,
   entryDate: expenseEntries.entryDate,
   provisional: expenseEntries.provisional,
+  sharedToHousehold: expenseEntries.sharedToHousehold,
   debtPersonId: expenseEntries.debtPersonId,
   debtPersonName: sql<string | null>`(select p.name from people p where p.id = ${expenseEntries.debtPersonId})`,
   savingsBucketId: sql<number | null>`(select s.bucket_id from savings_entries s where s.expense_entry_id = ${expenseEntries.id} order by s.id limit 1)`,
@@ -491,7 +494,7 @@ export async function getArchivedCategories() {
 
 /** Lightweight active income source list (no months/amounts) for Settings. */
 export async function getIncomeSourceList(): Promise<
-  { id: number; name: string; isPayAnchor: boolean; color: string | null }[]
+  { id: number; name: string; isPayAnchor: boolean; color: string | null; sharedToHousehold: boolean }[]
 > {
   return db.query.incomeSources.findMany({
     where: (s, { isNull }) => isNull(s.archivedAt),

@@ -8,6 +8,7 @@ import { EditableGroupTag } from "@/components/grid/editable-group-tag";
 import { EditableDueDay } from "@/components/grid/editable-due-day";
 import { EditableDebtLink } from "@/components/grid/editable-debt-link";
 import { EditableBucketLink } from "@/components/settings/editable-bucket-link";
+import { EditableHouseholdLink } from "@/components/grid/editable-household-link";
 import { CategoryBillLink } from "@/components/settings/category-bill-link";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { MoveCategoryButton } from "@/components/settings/move-category-button";
@@ -24,9 +25,14 @@ export function CategorySettingsRow({
   people,
   buckets = [],
   bills = [],
+  householdEnabled = false,
 }: {
   buckets?: { id: number; name: string; color: string }[];
   bills?: BillWithStatus[];
+  /** Hides EditableHouseholdLink entirely when the household feature is
+   * off instance-wide - no point offering a toggle for a tab that doesn't
+   * exist. */
+  householdEnabled?: boolean;
   category: CategoryTreeNode;
   color: string;
   existingGroups: string[];
@@ -79,6 +85,9 @@ export function CategorySettingsRow({
               buckets={buckets}
             />
             <CategoryBillLink categoryId={category.id} bills={bills} />
+            {householdEnabled && (
+              <EditableHouseholdLink categoryId={category.id} categoryName={category.name} sharedToHousehold={category.sharedToHousehold} />
+            )}
             <MoveCategoryButton
               categoryId={category.id}
               currentParentId={null}
@@ -130,6 +139,9 @@ export function CategorySettingsRow({
                 buckets={buckets}
               />
               <CategoryBillLink categoryId={child.id} bills={bills} />
+              {householdEnabled && (
+                <EditableHouseholdLink categoryId={child.id} categoryName={child.name} sharedToHousehold={child.sharedToHousehold} />
+              )}
               <MoveCategoryButton
                 categoryId={child.id}
                 currentParentId={category.id}

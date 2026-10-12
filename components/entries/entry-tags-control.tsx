@@ -1,15 +1,21 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { PiggyBank, UserRound } from "lucide-react";
+import { Home, PiggyBank, UserRound } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { getEntryTagOptions, setEntryTags } from "@/app/grid/actions";
+import { getEntryTagOptions, getHouseholdEnabledFlag, setEntryHouseholdShare, setEntryTags } from "@/app/grid/actions";
 import { runAction } from "@/lib/action-result";
 
 const NONE = "none";
 
-export type EntryTagState = { debtPersonId: number | null; debtPersonName: string | null; savingsBucketId: number | null; savingsBucketName: string | null };
+export type EntryTagState = {
+  debtPersonId: number | null;
+  debtPersonName: string | null;
+  savingsBucketId: number | null;
+  savingsBucketName: string | null;
+  sharedToHousehold: boolean;
+};
 type Options = { people: { id: number; name: string }[]; buckets: { id: number; name: string }[] };
 
 // One fetch shared by every row on the page.
@@ -20,6 +26,18 @@ function loadOptions() {
     throw err;
   });
   return optionsPromise;
+}
+
+// Same singleton-fetch pattern as loadOptions - whether the household
+// toggle shows at all is instance-wide, not per-entry, so every row on the
+// page shares one fetch of it.
+let householdEnabledPromise: Promise<boolean> | null = null;
+function loadHouseholdEnabled() {
+  householdEnabledPromise ??= getHouseholdEnabledFlag().catch((err) => {
+    householdEnabledPromise = null;
+    throw err;
+  });
+  return householdEnabledPromise;
 }
 
 const pill = (set: boolean) =>
@@ -45,16 +63,28 @@ export function EntryTagsControl({
   onChanged: (next: EntryTagState) => void;
 }) {
   const [options, setOptions] = useState<Options | null>(null);
+  const [householdEnabled, setHouseholdEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
     let live = true;
     loadOptions().then((o) => live && setOptions(o)).catch(() => {});
+    loadHouseholdEnabled().then((v) => live && setHouseholdEnabled(v)).catch(() => {});
     return () => {
       live = false;
     };
   }, []);
+
+  function toggleHousehold() {
+    const next = !tags.sharedToHousehold;
+    setError(null);
+    startTransition(async () => {
+      const failure = await runAction(() => setEntryHouseholdShare(entryId, next));
+      if (failure) return setError(failure);
+      onChanged({ ...tags, sharedToHousehold: next });
+    });
+  }
 
   function change(kind: "debt" | "savings", value: string | null) {
     const id = !value || value === NONE ? null : parseInt(value, 10);
@@ -121,6 +151,18 @@ export function EntryTagsControl({
           ))}
         </SelectContent>
       </Select>
+      {householdEnabled && (
+        <button
+          type="button"
+          onClick={toggleHousehold}
+          aria-label={`Share to household for ${label}`}
+          title={tags.sharedToHousehold ? "Shared to the household tab - click to stop sharing" : "Share to the household tab"}
+          className={pill(tags.sharedToHousehold)}
+        >
+          <Home className="size-3" />
+          {tags.sharedToHousehold ? "Shared" : "+ household"}
+        </button>
+      )}
       {error && (
         <span role="alert" className="text-[0.65rem] text-status-critical">
           {error}

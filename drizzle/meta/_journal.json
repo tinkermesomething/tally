@@ -232,6 +232,13 @@
       "when": 1791633273225,
       "tag": "0032_nav_toggles",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791633373225,
+      "tag": "0033_household",
+      "breakpoints": true
     }
   ]
 }

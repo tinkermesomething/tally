@@ -5,20 +5,29 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
-import { linkCategoryTagging } from "@/app/grid/actions";
+import { linkCategoryTagging, linkCategoryToHouseholdAction } from "@/app/grid/actions";
 import { formatDate } from "@/lib/date-format";
 import { formatPence } from "@/lib/money";
 import type { MissingTagRow } from "@/lib/db/retro-tags";
+import type { HouseholdShareRow } from "@/lib/db/household-tags";
 
-export type LinkTarget = {
-  /** What the category is being linked to. */
-  link: { debtPersonId?: number; savingsBucketId?: number };
-  /** "Sam" or "Trip" */
-  name: string;
-  kind: "debt" | "savings";
-  rows: MissingTagRow[];
-  total: number;
-};
+export type LinkTarget =
+  | {
+      /** What the category is being linked to. */
+      link: { debtPersonId?: number; savingsBucketId?: number };
+      /** "Sam" or "Trip" */
+      name: string;
+      kind: "debt" | "savings";
+      rows: MissingTagRow[];
+      total: number;
+    }
+  | {
+      /** No "which" to name - there's only one household. */
+      kind: "household";
+      name: "the household";
+      rows: HouseholdShareRow[];
+      total: number;
+    };
 
 /** Shown when linking a category to a person or a savings bucket and it
  * already has expenses that would count towards it: the list is ticked, so the
@@ -44,7 +53,7 @@ export function LinkTaggingDialog({
   const rows = target?.rows ?? [];
   const ticked = (id: number) => overrides.get(id) ?? true;
   const tickedIds = rows.filter((r) => ticked(r.expenseEntryId)).map((r) => r.expenseEntryId);
-  const noun = target?.kind === "debt" ? "debt repayment" : "savings deposit";
+  const noun = target?.kind === "debt" ? "debt repayment" : target?.kind === "savings" ? "savings deposit" : "household share";
 
   function close() {
     setOverrides(new Map());
@@ -57,9 +66,13 @@ export function LinkTaggingDialog({
     if (!target) return;
     setError(null);
     startTransition(async () => {
-      const res = await linkCategoryTagging(categoryId, target.link, ids);
+      const res =
+        target.kind === "household"
+          ? await linkCategoryToHouseholdAction(categoryId, true, ids)
+          : await linkCategoryTagging(categoryId, target.link, ids);
       if (!res.ok) return setError(res.error);
-      if (ids.length > 0) setDone({ tagged: res.tagged });
+      const tagged = "tagged" in res ? res.tagged : res.shared;
+      if (ids.length > 0) setDone({ tagged });
       else close();
     });
   }

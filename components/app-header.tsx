@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getPendingTransactions, getBankAccounts } from "@/lib/db/bank-sync";
 import { getUpcomingBills, type BillWithStatus } from "@/lib/db/bills";
 import { getAppSettings } from "@/lib/db/settings";
+import { isHouseholdEnabled } from "@/lib/db/household";
 import { withCurrentUser } from "@/lib/db/current-user";
 import type { UserRow } from "@/lib/db/users";
 
@@ -24,6 +25,7 @@ async function signOutAction() {
 // (components/user-menu.tsx), not the main nav.
 const NAV_ITEMS = [
   { href: "/grid", label: "Budget" },
+  { href: "/household", label: "Household" },
   { href: "/debt", label: "Debts" },
   { href: "/savings", label: "Savings" },
   { href: "/net-worth", label: "Net worth" },
@@ -62,6 +64,11 @@ export async function AppHeader() {
   // as every other badge below.
   let showDebtTab = true;
   let showNetWorthTab = true;
+  // Unlike the two above, defaults to HIDDEN, not shown - this is
+  // instance-wide (admin-controlled, see Settings > Admin), and a
+  // resolution failure is the wrong moment to fail open on a tab that
+  // surfaces OTHER people's shared data.
+  let householdOn = false;
   // Returned from the closure rather than assigned to an outer `let` from
   // inside it - TypeScript's narrowing doesn't track a reassignment made
   // inside a nested callback, so `currentUser` read after this block would
@@ -85,7 +92,8 @@ export async function AppHeader() {
         ).length;
         const bills = await getUpcomingBills(BILL_DUE_SOON_DAYS);
         const settings = await getAppSettings();
-        return { user, pending, expiring, bills, settings };
+        const household = await isHouseholdEnabled();
+        return { user, pending, expiring, bills, settings, household };
       });
       currentUser = result.user;
       pendingCount = result.pending;
@@ -93,6 +101,7 @@ export async function AppHeader() {
       upcomingBills = result.bills;
       showDebtTab = result.settings.showDebtTab;
       showNetWorthTab = result.settings.showNetWorthTab;
+      householdOn = result.household;
     } catch (err) {
       console.error("[app-header] session doesn't resolve to a real account:", err);
     }
@@ -115,7 +124,12 @@ export async function AppHeader() {
                 get to Settings or sign out from mobile). Scrollbar hidden
                 for a tab-bar look; the row still scrolls by touch/drag. */}
             <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {NAV_ITEMS.filter((item) => (item.href !== "/debt" || showDebtTab) && (item.href !== "/net-worth" || showNetWorthTab)).map((item) => (
+              {NAV_ITEMS.filter(
+                (item) =>
+                  (item.href !== "/debt" || showDebtTab) &&
+                  (item.href !== "/net-worth" || showNetWorthTab) &&
+                  (item.href !== "/household" || householdOn)
+              ).map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}

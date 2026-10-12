@@ -33,6 +33,14 @@ import { addDebtEntry } from "@/lib/db/debt";
 import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
 import { renameIncomeSource as renameIncomeSourceQuery, reorderIncomeSourceTo } from "@/lib/db/income-order";
 import { getTagOptions, linkCategoryAndTag, listMissingTags, setExpenseTags, type MissingTagRow } from "@/lib/db/retro-tags";
+import {
+  linkCategoryToHousehold,
+  listUnshared,
+  setExpenseHouseholdShare,
+  shareIncomeSource,
+  type HouseholdShareRow,
+} from "@/lib/db/household-tags";
+import { isHouseholdEnabled, reconcileHouseholdDataForUser } from "@/lib/db/household";
 import { setIncomeSourceColor } from "@/lib/db/queries";
 import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
@@ -497,7 +505,7 @@ export async function setIncomeColor(incomeSourceId: number, color: string | nul
 // ---- tags on existing expenses (debt repayment / savings) ----
 
 function refreshTagged() {
-  for (const path of ["/grid", "/settings", "/debt", "/savings", "/entries", "/reports"]) revalidatePath(path);
+  for (const path of ["/grid", "/settings", "/debt", "/savings", "/entries", "/reports", "/household"]) revalidatePath(path);
 }
 
 /** The existing expenses in a category that linking it to this person / bucket
@@ -546,4 +554,72 @@ export async function setEntryTags(expenseEntryId: number, changes: { debtPerson
 /** The people and buckets an entry can be tagged with. */
 export async function getEntryTagOptions() {
   return requireSession(() => getTagOptions());
+}
+
+// ---- household sharing (lib/db/household-tags.ts) ----
+
+/** Whether to even show a "share to household" control anywhere - an
+ * admin-only instance-wide switch (Settings > Admin), not per-user like
+ * the Debts/Net worth nav toggles. */
+export async function getHouseholdEnabledFlag(): Promise<boolean> {
+  return requireSession(() => isHouseholdEnabled());
+}
+
+/** The existing expenses in a category that sharing it would add, shown as
+ * a list to tick before anything changes - same shape as previewCategoryTags. */
+export async function previewHouseholdShare(categoryId: number): Promise<{ ok: true; rows: HouseholdShareRow[]; total: number } | { ok: false; error: string }> {
+  return requireSession(async () => {
+    try {
+      return { ok: true, ...(await listUnshared(categoryId)) };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't look that up." };
+    }
+  });
+}
+
+/** Shares (or unshares) a category and, when sharing, the ticked existing
+ * expenses - then reconciles so the Household tab reflects it right away
+ * rather than waiting for the next background tick. */
+export async function linkCategoryToHouseholdAction(
+  categoryId: number,
+  share: boolean,
+  expenseEntryIds: number[]
+): Promise<{ ok: true; shared: number } | { ok: false; error: string }> {
+  return requireSession(async (user) => {
+    try {
+      const ids = Array.isArray(expenseEntryIds) ? expenseEntryIds.filter((n) => Number.isInteger(n)) : [];
+      const result = await linkCategoryToHousehold(categoryId, share, ids);
+      await reconcileHouseholdDataForUser(user.id);
+      refreshTagged();
+      return { ok: true, ...result };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Couldn't share that." };
+    }
+  });
+}
+
+/** The per-entry override. */
+export async function setEntryHouseholdShare(expenseEntryId: number, share: boolean): Promise<ActionResult> {
+  return requireSession((user) =>
+    toResult(async () => {
+      await setExpenseHouseholdShare(expenseEntryId, share);
+      await reconcileHouseholdDataForUser(user.id);
+      refreshTagged();
+    })
+  );
+}
+
+/** Whole-source income sharing - see lib/db/household-tags.ts for why
+ * there's no per-entry equivalent on the income side. */
+export async function shareIncomeSourceAction(incomeSourceId: number, share: boolean): Promise<ActionResult> {
+  return requireSession((user) =>
+    toResult(async () => {
+      await shareIncomeSource(incomeSourceId, share);
+      await reconcileHouseholdDataForUser(user.id);
+      // Not refreshTagged() - this is an income path, not an expense tag.
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+      revalidatePath("/household");
+    })
+  );
 }

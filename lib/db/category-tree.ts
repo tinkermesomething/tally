@@ -186,6 +186,7 @@ export type CategoryTreeNode = {
   dueDay: number | null;
   linkedDebtPersonId: number | null;
   linkedBucketId: number | null;
+  sharedToHousehold: boolean;
   children: CategoryTreeNode[];
 };
 
@@ -214,6 +215,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
       dueDay: c.dueDay,
       linkedDebtPersonId: c.linkedDebtPersonId,
       linkedBucketId: c.linkedBucketId,
+      sharedToHousehold: c.sharedToHousehold,
       children: (childrenByParent.get(c.id) ?? []).map((child) => ({
         id: child.id,
         name: child.name,
@@ -223,6 +225,7 @@ export async function getCategoryTree(): Promise<CategoryTreeNode[]> {
         dueDay: child.dueDay,
         linkedDebtPersonId: child.linkedDebtPersonId,
         linkedBucketId: child.linkedBucketId,
+        sharedToHousehold: child.sharedToHousehold,
         children: [],
       })),
     }));

@@ -16,6 +16,15 @@ export const categories = sqliteTable("categories", {
   isAnnual: integer("is_annual", { mode: "boolean" }).notNull().default(false),
   annualMonth: integer("annual_month"),
   dueDay: integer("due_day"), // 1-31, day of the month this is due
+  // Future default for new expenses in this category (same relationship
+  // linkedDebtPersonId has with expenseEntries.debtPersonId - resolved in
+  // logExpenseUnsafe, overridable per-entry). Backfilling existing
+  // expenses when this is first turned on goes through
+  // lib/db/household-tags.ts, same two-level pattern as the debt/bucket
+  // links above, just without a "which" target - there's only one
+  // household. See lib/db/household.ts for what actually happens with a
+  // shared expense (nothing here reaches outside this user's own file).
+  sharedToHousehold: integer("shared_to_household", { mode: "boolean" }).notNull().default(false),
   // When set, logging an expense against this category auto-creates a debt
   // repayment for this person too (unless the caller already passed an
   // explicit debtPersonId, which always wins). For categories that only ever
@@ -84,6 +93,12 @@ export const expenseEntries = sqliteTable("expense_entries", {
   // "pending" - that word already means "unsettled at the bank" elsewhere
   // in this codebase, a different concept.
   provisional: integer("provisional", { mode: "boolean" }).notNull().default(false),
+  // Set at creation from the category's own sharedToHousehold default
+  // (same resolution as debtPersonId/bucketId above), overridable per-entry
+  // via lib/db/household-tags.ts. A true row gets mirrored into the shared
+  // household_expense_entries table (lib/db/household.ts) - never read
+  // directly by anyone else, only ever by this user's own reconcile.
+  sharedToHousehold: integer("shared_to_household", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),
@@ -103,6 +118,11 @@ export const incomeSources = sqliteTable("income_sources", {
   // "#rrggbb" - the colour of this source's row in the Grid's income table
   // (set in Settings > Income). Null = a palette colour picked by position.
   color: text("color"),
+  // Whole-source sharing, all months past and future - income_entries is a
+  // monthly aggregate (one row per source per month, no per-transaction
+  // fields at all), so unlike expenses there's no per-entry override to
+  // offer. See lib/db/household-tags.ts.
+  sharedToHousehold: integer("shared_to_household", { mode: "boolean" }).notNull().default(false),
 });
 
 export const incomeEntries = sqliteTable(
@@ -552,4 +572,49 @@ export const bills = sqliteTable("bills", {
   nextDueDate: text("next_due_date").notNull(), // ISO date
   categoryId: integer("category_id").references(() => categories.id),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+});
+
+/** Shared-tier tables (lib/db/household.ts) - exist in every per-user file
+ * too (same reasoning as `users`/`audit_log` on system-connection.ts: one
+ * shared schema/migration history for everything), but only ever read or
+ * written through sysDb(), never the ambient per-request `db`. A row here
+ * is a COPY, mirrored in from one user's own sharedToHousehold-flagged
+ * expense/income entries by lib/db/household.ts's reconcile - editing or
+ * deleting the original on the source user's own page is what makes it
+ * change or disappear here too, nothing is ever written to these tables
+ * directly from a page a VIEWER of the household tab interacts with. */
+export const householdSettings = sqliteTable("household_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+});
+
+export const householdExpenseEntries = sqliteTable("household_expense_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sourceUserId: integer("source_user_id")
+    .notNull()
+    .references(() => users.id),
+  // That user's own expense_entries.id, in THEIR file - meaningless as a
+  // cross-file reference (no FK), just the reconcile's own diff key for
+  // "replace this exact row next time," and removed if deleteUser ever
+  // removes that account.
+  sourceExpenseEntryId: integer("source_expense_entry_id").notNull(),
+  // Denormalized text, not a category FK - two different users' category
+  // ids refer to entirely different rows in entirely different files, so
+  // there is no category to join to from here.
+  categoryName: text("category_name").notNull(),
+  amountPence: integer("amount_pence").notNull(),
+  entryDate: text("entry_date").notNull(),
+  note: text("note"),
+});
+
+export const householdIncomeEntries = sqliteTable("household_income_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sourceUserId: integer("source_user_id")
+    .notNull()
+    .references(() => users.id),
+  sourceIncomeSourceId: integer("source_income_source_id").notNull(),
+  sourceName: text("source_name").notNull(),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  amountPence: integer("amount_pence").notNull(),
 });
