@@ -246,6 +246,13 @@
       "when": 1791633473225,
       "tag": "0034_household_category_budgets",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791633573225,
+      "tag": "0035_locale",
+      "breakpoints": true
     }
   ]
 }

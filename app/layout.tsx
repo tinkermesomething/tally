@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { NextIntlClientProvider } from "next-intl";
 import { PageContainer, WIDE_COOKIE } from "@/components/page-width";
 import type { Metadata } from "next";
 import "./globals.css";
@@ -50,11 +51,11 @@ export default async function RootLayout({
   // otherwise the sign-in page gets display defaults (it shows no
   // financial data anyway) rather than throwing.
   const session = await auth();
-  const { currency, dateFormat } = session ? await loadSettings() : SETTINGS_DEFAULTS;
+  const { currency, dateFormat, locale } = session ? await loadSettings() : SETTINGS_DEFAULTS;
   const wide = (await cookies()).get(WIDE_COOKIE)?.value === "1";
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
         <AccentNoFlashScript />
       </head>
@@ -62,9 +63,16 @@ export default async function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="dark">
           <AccentProvider>
             <AppSettingsProvider currency={currency} dateFormat={dateFormat}>
-              <AppHeader />
-              <PageContainer initialWide={wide}>{children}</PageContainer>
-              <Footer />
+              {/* Auto-inherits locale/messages from i18n/request.ts (next-intl
+                  4.x) - no props to thread here. A separate provider from
+                  AppSettingsProvider above on purpose: that one is this app's
+                  own currency/date-formatting context, unrelated to
+                  next-intl's own translation mechanism. */}
+              <NextIntlClientProvider>
+                <AppHeader />
+                <PageContainer initialWide={wide}>{children}</PageContainer>
+                <Footer />
+              </NextIntlClientProvider>
             </AppSettingsProvider>
           </AccentProvider>
         </ThemeProvider>

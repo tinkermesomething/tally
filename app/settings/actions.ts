@@ -6,10 +6,12 @@ import { signOut } from "@/auth";
 import { updateAppSettings } from "@/lib/db/settings";
 import { setAvatarColor, deleteUser } from "@/lib/db/users";
 import type { DateFormat } from "@/lib/date-format";
+import type { Locale } from "@/lib/locales";
 
 export async function updatePreferences(input: {
   currency?: string;
   dateFormat?: DateFormat;
+  locale?: Locale;
   carryOverStartYear?: number;
   carryOverStartMonth?: number;
   bankSyncEnabled?: boolean;

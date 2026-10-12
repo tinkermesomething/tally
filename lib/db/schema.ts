@@ -325,6 +325,18 @@ export const appSettings = sqliteTable("app_settings", {
   // feature exists until someone decides they don't want it, not opt-in.
   showDebtTab: integer("show_debt_tab", { mode: "boolean" }).notNull().default(true),
   showNetWorthTab: integer("show_net_worth_tab", { mode: "boolean" }).notNull().default(true),
+  // ISO 639-1 code, validated against lib/locales.ts's SUPPORTED_LOCALES -
+  // resolved by lib/locale.ts into i18n/request.ts, the same way currency/
+  // dateFormat already feed the client settings context. No URL routing:
+  // see i18n/request.ts's own comment for why. At the END of this table,
+  // not grouped next to currency/dateFormat where it reads more naturally
+  // - a hand-authored ALTER TABLE ADD always appends physically, and
+  // drizzle-kit's own snapshot diffing checks column ORDER, not just
+  // presence (confirmed the hard way: putting it mid-table here made
+  // `drizzle-kit generate` emit a full table-rebuild migration instead of
+  // reporting zero drift, because the physical column order the ALTER
+  // TABLE produces didn't match where this sat in the source).
+  locale: text("locale").notNull().default("en"),
 });
 
 /** A append-only record of security-relevant events - sign-ins, failed API

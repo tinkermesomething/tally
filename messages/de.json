@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "budget": "Budget",
+    "household": "Haushalt",
+    "debts": "Schulden",
+    "savings": "Ersparnisse",
+    "netWorth": "Nettovermögen",
+    "bills": "Rechnungen",
+    "reports": "Berichte",
+    "review": "Überprüfung",
+    "entries": "Einträge"
+  },
+  "userMenu": {
+    "settings": "Einstellungen",
+    "signOut": "Abmelden"
+  }
+}

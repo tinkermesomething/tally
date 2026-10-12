@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -43,4 +44,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Points next-intl at i18n/request.ts (its default location) - this is
+// the only wiring needed on the build side; no [locale] routing, no
+// middleware (see i18n/request.ts's own comment for why).
+const withNextIntl = createNextIntlPlugin();
+export default withNextIntl(nextConfig);

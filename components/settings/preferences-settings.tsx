@@ -14,10 +14,12 @@ import { updatePreferences } from "@/app/settings/actions";
 import { CURRENCIES } from "@/lib/money";
 import { DATE_FORMATS, DATE_FORMAT_LABELS, type DateFormat } from "@/lib/date-format";
 import { MONTH_NAMES } from "@/lib/months";
+import { SUPPORTED_LOCALES, LOCALE_LABELS, type Locale } from "@/lib/locales";
 
 export function PreferencesSettings({
   currency,
   dateFormat,
+  locale,
   carryOverStartYear,
   carryOverStartMonth,
   showDebtTab,
@@ -25,6 +27,7 @@ export function PreferencesSettings({
 }: {
   currency: string;
   dateFormat: DateFormat;
+  locale: Locale;
   carryOverStartYear: number;
   carryOverStartMonth: number;
   showDebtTab: boolean;
@@ -36,6 +39,7 @@ export function PreferencesSettings({
   // disagrees (e.g. another tab changed it first).
   const [localCurrency, setLocalCurrency] = useState(currency);
   const [localDateFormat, setLocalDateFormat] = useState(dateFormat);
+  const [localLocale, setLocalLocale] = useState(locale);
   const [localStartYear, setLocalStartYear] = useState(carryOverStartYear);
   const [localStartMonth, setLocalStartMonth] = useState(carryOverStartMonth);
   const [localShowDebtTab, setLocalShowDebtTab] = useState(showDebtTab);
@@ -96,6 +100,33 @@ export function PreferencesSettings({
         <p className="text-xs text-muted-foreground">
           Only affects how dates are displayed - date pickers always use your browser&apos;s
           own format.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="pref-locale">Language</Label>
+        <Select
+          value={localLocale}
+          onValueChange={(v) => {
+            if (!v || v === localLocale) return;
+            const next = v as Locale;
+            setLocalLocale(next);
+            startTransition(() => updatePreferences({ locale: next }));
+          }}
+        >
+          <SelectTrigger id="pref-locale" className="w-full">
+            <SelectValue>{(value: string) => LOCALE_LABELS[value as Locale]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LOCALES.map((l) => (
+              <SelectItem key={l} value={l}>
+                {LOCALE_LABELS[l]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Translation is ongoing - anything not yet translated shows in English.
         </p>
       </div>
 

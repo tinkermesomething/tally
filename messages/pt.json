@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "budget": "Orçamento",
+    "household": "Agregado familiar",
+    "debts": "Dívidas",
+    "savings": "Poupanças",
+    "netWorth": "Patrimônio líquido",
+    "bills": "Contas",
+    "reports": "Relatórios",
+    "review": "Revisão",
+    "entries": "Lançamentos"
+  },
+  "userMenu": {
+    "settings": "Definições",
+    "signOut": "Terminar sessão"
+  }
+}

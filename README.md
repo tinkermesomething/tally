@@ -128,6 +128,7 @@ Migrations run automatically on boot - no separate migrate step needed, includin
 ## Documentation
 
 - [API.md](API.md) - the token-authenticated REST API for scripts/agents
+- [CONTRIBUTING.md](CONTRIBUTING.md) - dev setup, and how to help with translations
 
 ## Tech stack
 
@@ -137,7 +138,7 @@ One container, one SQLite file per account - each encrypted with a key sealed to
 
 ## Structure
 
-- `app/` - routes: `grid`, `entries`, `debt`, `reports`, `review` (bank-sync queue), `settings` (account, bank sync, categories, income, lenders, rules, admin), `api/v1` (the token API)
+- `app/` - routes: `grid`, `household`, `debt`, `savings`, `net-worth`, `bills`, `entries`, `reports`, `review` (bank-sync queue), `settings` (account, bank sync, categories, income, debts, rules, admin), `api/v1` (the token API)
 - `lib/db/` - schema plus all query/mutation logic, one file per domain (`queries.ts`, `debt.ts`, `bank-sync.ts`, `settings.ts`, `users.ts`); `context.ts`/`pool.ts`/`connection.ts` resolve which account's encrypted file the current request sees
 - `lib/gocardless.ts` - the bank-sync API client
 - `components/` - grouped by the route that owns them, plus `ui/` for the shared primitives

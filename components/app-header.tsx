@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogOut } from "lucide-react";
+import { getTranslations } from "next-intl/server";
 import { auth, signOut } from "@/auth";
 import { AccentPicker } from "@/components/accent-picker";
 import { UserMenu } from "@/components/user-menu";
@@ -22,17 +23,21 @@ async function signOutAction() {
 }
 
 // Settings isn't in this list - it's reached from the user menu instead
-// (components/user-menu.tsx), not the main nav.
+// (components/user-menu.tsx), not the main nav. labelKey is a key into
+// messages/*.json's "nav" namespace (see i18n/request.ts) - the proof-of-
+// concept slice of this app translated so far; everything else still
+// reads from plain English strings in their own components, same as
+// before - that's the explicitly-deferred "ongoing work."
 const NAV_ITEMS = [
-  { href: "/grid", label: "Budget" },
-  { href: "/household", label: "Household" },
-  { href: "/debt", label: "Debts" },
-  { href: "/savings", label: "Savings" },
-  { href: "/net-worth", label: "Net worth" },
-  { href: "/bills", label: "Bills" },
-  { href: "/reports", label: "Reports" },
-  { href: "/review", label: "Review" },
-  { href: "/entries", label: "Entries" },
+  { href: "/grid", labelKey: "budget" },
+  { href: "/household", labelKey: "household" },
+  { href: "/debt", labelKey: "debts" },
+  { href: "/savings", labelKey: "savings" },
+  { href: "/net-worth", labelKey: "netWorth" },
+  { href: "/bills", labelKey: "bills" },
+  { href: "/reports", labelKey: "reports" },
+  { href: "/review", labelKey: "review" },
+  { href: "/entries", labelKey: "entries" },
 ] as const;
 
 // Same threshold bank-account-settings-row.tsx uses for its own "Expires in
@@ -50,6 +55,7 @@ export async function AppHeader() {
   // nothing below reads the database in that case anyway (see the `session
   // ? ... : 0` guards).
   const session = await auth();
+  const t = await getTranslations("nav");
   // A session that decrypts fine but names an account that no longer
   // resolves (disabled, deleted, or - once, moving off the old single-user
   // login - never linked at all) must not take the Sign out button down
@@ -135,7 +141,7 @@ export async function AppHeader() {
                   href={item.href}
                   className="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
-                  {item.label}
+                  {t(item.labelKey)}
                   {item.href === "/review" && pendingCount > 0 && (
                     <span className="flex min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1 text-[0.65rem] font-semibold text-primary-foreground">
                       {pendingCount}

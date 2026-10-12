@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "budget": "Bilancio",
+    "household": "Famiglia",
+    "debts": "Debiti",
+    "savings": "Risparmi",
+    "netWorth": "Patrimonio netto",
+    "bills": "Bollette",
+    "reports": "Rapporti",
+    "review": "Revisione",
+    "entries": "Voci"
+  },
+  "userMenu": {
+    "settings": "Impostazioni",
+    "signOut": "Esci"
+  }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { Settings, LogOut } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/settings/user-avatar";
@@ -30,6 +31,11 @@ export function UserMenu({
   expiringBankAccounts: number;
   onSignOut: () => Promise<void>;
 }) {
+  // Client-side proof of the i18n pipeline, alongside app-header.tsx's
+  // server-side getTranslations() - NextIntlClientProvider (app/layout.tsx)
+  // only gets genuinely exercised by a "use client" component actually
+  // calling useTranslations(); nothing did, until this.
+  const t = useTranslations("userMenu");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -52,11 +58,11 @@ export function UserMenu({
       <DropdownMenuContent align="end">
         <DropdownMenuItem render={<Link href="/settings" />}>
           <Settings className="size-4" />
-          Settings
+          {t("settings")}
         </DropdownMenuItem>
         <DropdownMenuItem variant="destructive" onClick={() => onSignOut()}>
           <LogOut className="size-4" />
-          Sign out
+          {t("signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -3,10 +3,16 @@ import { db } from "./index";
 import { appSettings } from "./schema";
 import { isDateFormat, type DateFormat } from "../date-format";
 import { isCurrencyCode } from "../money";
+import { isLocale, DEFAULT_LOCALE, type Locale } from "../locales";
 
 export type AppSettings = {
   currency: string;
   dateFormat: DateFormat;
+  /** UI language - resolved into i18n/request.ts the same way this whole
+   * row already is (lib/locale.ts). Not DEFAULTS.dateFormat's sibling by
+   * accident: same "validate on the way out, fall back rather than hand
+   * an unrecognized value downstream" rule. */
+  locale: Locale;
   /** The first tracked period for the Left to spend carry-over chain -
    * nothing carries INTO this period, only out of it going forward. Null
    * in the DB resolves to the current year/month here (computed fresh on
@@ -25,7 +31,7 @@ export type AppSettings = {
   showNetWorthTab: boolean;
 };
 
-export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat };
+export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat, locale: DEFAULT_LOCALE };
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -43,6 +49,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     return {
       currency: row.currency,
       dateFormat: isDateFormat(row.dateFormat) ? row.dateFormat : DEFAULTS.dateFormat,
+      locale: isLocale(row.locale) ? row.locale : DEFAULT_LOCALE,
       carryOverStartYear: row.carryOverStartYear ?? thisYear,
       carryOverStartMonth: row.carryOverStartMonth ?? thisMonth,
       bankSyncEnabled: row.bankSyncEnabled,
@@ -56,6 +63,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   return {
     currency: created.currency,
     dateFormat: DEFAULTS.dateFormat,
+    locale: DEFAULT_LOCALE,
     carryOverStartYear: thisYear,
     carryOverStartMonth: thisMonth,
     bankSyncEnabled: created.bankSyncEnabled,
@@ -71,6 +79,7 @@ const VALID_SYNC_FREQUENCIES = [6, 12, 24];
 export async function updateAppSettings(input: {
   currency?: string;
   dateFormat?: DateFormat;
+  locale?: Locale;
   carryOverStartYear?: number;
   carryOverStartMonth?: number;
   bankSyncEnabled?: boolean;
@@ -85,6 +94,9 @@ export async function updateAppSettings(input: {
   if (input.dateFormat !== undefined && !isDateFormat(input.dateFormat)) {
     throw new Error(`Unrecognized date format: "${input.dateFormat}"`);
   }
+  if (input.locale !== undefined && !isLocale(input.locale)) {
+    throw new Error(`Unrecognized locale: "${input.locale}"`);
+  }
   if (input.carryOverStartMonth !== undefined && (input.carryOverStartMonth < 1 || input.carryOverStartMonth > 12)) {
     throw new Error(`carryOverStartMonth must be 1-12, got ${input.carryOverStartMonth}`);
   }
@@ -98,6 +110,7 @@ export async function updateAppSettings(input: {
     .set({
       ...(input.currency !== undefined ? { currency: input.currency } : {}),
       ...(input.dateFormat !== undefined ? { dateFormat: input.dateFormat } : {}),
+      ...(input.locale !== undefined ? { locale: input.locale } : {}),
       ...(input.carryOverStartYear !== undefined ? { carryOverStartYear: input.carryOverStartYear } : {}),
       ...(input.carryOverStartMonth !== undefined ? { carryOverStartMonth: input.carryOverStartMonth } : {}),
       ...(input.bankSyncEnabled !== undefined ? { bankSyncEnabled: input.bankSyncEnabled } : {}),

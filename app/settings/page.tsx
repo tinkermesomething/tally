@@ -434,6 +434,7 @@ export default async function SettingsPage({
             <PreferencesSettings
               currency={appSettings.currency}
               dateFormat={appSettings.dateFormat}
+              locale={appSettings.locale}
               carryOverStartYear={appSettings.carryOverStartYear}
               carryOverStartMonth={appSettings.carryOverStartMonth}
               showDebtTab={appSettings.showDebtTab}

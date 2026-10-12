@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "budget": "Budget",
+    "household": "Household",
+    "debts": "Debts",
+    "savings": "Savings",
+    "netWorth": "Net worth",
+    "bills": "Bills",
+    "reports": "Reports",
+    "review": "Review",
+    "entries": "Entries"
+  },
+  "userMenu": {
+    "settings": "Settings",
+    "signOut": "Sign out"
+  }
+}
