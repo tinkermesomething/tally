@@ -197,4 +197,61 @@ describe("bills auto-populated from a category's own due day (getBills merge)", 
     const bills = await getBills("2026-01-01");
     expect(bills.map((b) => b.name)).toEqual(["Netflix", "Rent"]);
   });
+
+  describe("6-week lookahead (BILLS_LOOKAHEAD_DAYS)", () => {
+    it("this month's due day already paid, next month's budgeted and unpaid - shows the NEXT month's one", async () => {
+      const categoryId = await cat("Rent");
+      await updateCategoryDueDay(categoryId, 5);
+      await db.insert(categoryEntries).values([
+        { categoryId, year: 2026, month: 1, amountPence: 120000, paid: true },
+        { categoryId, year: 2026, month: 2, amountPence: 120000 },
+      ]);
+      const bills = await getBills("2026-01-10");
+      expect(bills).toHaveLength(1);
+      expect(bills[0]).toMatchObject({ nextDueDate: "2026-02-05", daysUntilDue: 26 });
+    });
+
+    it("next month's due day isn't budgeted yet - nothing to show once this month's is paid", async () => {
+      const categoryId = await cat("Rent");
+      await updateCategoryDueDay(categoryId, 5);
+      await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000, paid: true });
+      expect(await getBills("2026-01-10")).toHaveLength(0);
+    });
+
+    it("a due day more than 6 weeks out is not shown even if budgeted and unpaid", async () => {
+      const categoryId = await cat("Rent");
+      await updateCategoryDueDay(categoryId, 5);
+      // 2026-01-10 + 42 days = 2026-02-21 - March 5th is well past that.
+      await db.insert(categoryEntries).values([
+        { categoryId, year: 2026, month: 1, amountPence: 120000, paid: true },
+        { categoryId, year: 2026, month: 2, amountPence: 120000, paid: true },
+        { categoryId, year: 2026, month: 3, amountPence: 120000 },
+      ]);
+      expect(await getBills("2026-01-10")).toHaveLength(0);
+    });
+
+    it("unpaid in both this month and next - shows only the sooner one, not both", async () => {
+      const categoryId = await cat("Rent");
+      await updateCategoryDueDay(categoryId, 5);
+      await db.insert(categoryEntries).values([
+        { categoryId, year: 2026, month: 1, amountPence: 120000 },
+        { categoryId, year: 2026, month: 2, amountPence: 120000 },
+      ]);
+      const bills = await getBills("2026-01-01");
+      expect(bills).toHaveLength(1);
+      expect(bills[0].nextDueDate).toBe("2026-01-05");
+    });
+
+    it("a lookahead window spanning three calendar months still finds a late match", async () => {
+      // 2026-01-20 + 42 days = 2026-03-03, so January, February AND March
+      // all fall inside the window - this due day is budgeted and unpaid
+      // only in March.
+      const categoryId = await cat("Rent");
+      await updateCategoryDueDay(categoryId, 1);
+      await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 3, amountPence: 120000 });
+      const bills = await getBills("2026-01-20");
+      expect(bills).toHaveLength(1);
+      expect(bills[0].nextDueDate).toBe("2026-03-01");
+    });
+  });
 });

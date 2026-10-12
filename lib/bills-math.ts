@@ -4,6 +4,12 @@
 export const BILL_CADENCES = ["weekly", "monthly", "yearly", "custom_days"] as const;
 export type BillCadence = (typeof BILL_CADENCES)[number];
 
+/** How far ahead a due-day category can surface as a bill (lib/db/bills.ts's
+ * getCategoryDueBills) - lives here, not there, so the Bills page's client
+ * components (timeline view) can read the same number without pulling
+ * server-only DB code into the client bundle. */
+export const BILLS_LOOKAHEAD_DAYS = 42;
+
 function addDays(y: number, m: number, d: number, days: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + days);

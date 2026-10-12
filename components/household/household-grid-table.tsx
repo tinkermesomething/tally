@@ -184,9 +184,17 @@ function GroupedRow({
     <>
       {showGroupHeader && (
         <tr>
-          <td colSpan={15} className="sticky left-0 z-10 bg-card px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground" style={{ borderLeft: `3px solid ${color}` }}>
+          {/* `sticky` on a `colSpan` cell doesn't pin reliably (it tracks the
+              whole spanned width, not just what's visible) - exactly what
+              produced the blank-looking bar bug. Splitting into one
+              single-column sticky cell (matching every data row's own
+              category cell) plus a plain filler for the rest keeps the
+              sticky behaviour working the same way it already does for
+              every other row. */}
+          <td className="sticky left-0 z-10 bg-card px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground" style={{ borderLeft: `3px solid ${color}` }}>
             {group}
           </td>
+          <td colSpan={14} className="bg-card" />
         </tr>
       )}
       <tr className="row-line border-b border-border/60">
