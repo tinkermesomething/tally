@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db, inTransaction } from "./index";
 import { assertIsoDate } from "../validate";
@@ -441,7 +441,12 @@ export async function addIncomeSource(name: string) {
 }
 
 export async function archiveIncomeSource(id: number) {
-  await db.update(incomeSources).set({ archivedAt: new Date() }).where(eq(incomeSources.id, id));
+  // Same reasoning as archiveCategory's own fix: sharedToHousehold has no
+  // archivedAt-aware rule of its own, so without this an archived source
+  // would keep mirroring its old months into the household grid forever.
+  await inTransaction(async () => {
+    await db.update(incomeSources).set({ archivedAt: new Date(), sharedToHousehold: false }).where(eq(incomeSources.id, id));
+  });
 }
 
 export async function getIncomeSource(id: number) {
@@ -475,6 +480,18 @@ export async function archiveCategory(id: number) {
   // parent for future years rather than silently vanishing, so it's a
   // known gap rather than a silent-data-loss risk.
   await db.update(categories).set({ archivedAt: now }).where(eq(categories.parentId, id));
+
+  // Archiving implicitly un-shares (same reasoning as turning the toggle
+  // off by hand - lib/db/household-tags.ts's linkCategoryToHousehold):
+  // sharedToHousehold has no year-aware "still counted for past years"
+  // rule the way archivedAt itself does, so without this, an archived
+  // category would keep mirroring its old budgeted figures into the
+  // household grid forever (reconcile reads categories.sharedToHousehold
+  // live, with no archivedAt check of its own). Covers id AND the
+  // children just archived above, same cascade.
+  const archivedIds = [id, ...(await db.select({ id: categories.id }).from(categories).where(eq(categories.parentId, id))).map((c) => c.id)];
+  await db.update(categories).set({ sharedToHousehold: false }).where(inArray(categories.id, archivedIds));
+  await db.update(expenseEntries).set({ sharedToHousehold: false }).where(inArray(expenseEntries.categoryId, archivedIds));
   });
 }
 

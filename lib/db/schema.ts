@@ -618,3 +618,23 @@ export const householdIncomeEntries = sqliteTable("household_income_entries", {
   month: integer("month").notNull(),
   amountPence: integer("amount_pence").notNull(),
 });
+
+/** The BUDGETED half of a shared category - household_expense_entries above
+ * is what's actually been spent; a budget grid needs both. Mirrored from
+ * category_entries for every category with sharedToHousehold = true (the
+ * CATEGORY-level flag - a budgeted figure is a per-category/month thing,
+ * there's no per-entry equivalent to toggle). categoryName/groupName are
+ * denormalized text, same reasoning as household_expense_entries -
+ * different users' category ids refer to entirely different rows. */
+export const householdCategoryBudgets = sqliteTable("household_category_budgets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sourceUserId: integer("source_user_id")
+    .notNull()
+    .references(() => users.id),
+  sourceCategoryId: integer("source_category_id").notNull(),
+  categoryName: text("category_name").notNull(),
+  groupName: text("group_name"),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(),
+  amountPence: integer("amount_pence").notNull(),
+});

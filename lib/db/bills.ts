@@ -1,9 +1,9 @@
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { db } from "./index";
 import { assertIsoDate } from "../validate";
 import { BILL_CADENCES, nextDueDateAfter, daysUntil, type BillCadence } from "../bills-math";
 import { localIsoDate } from "../date";
-import { bills, categories } from "./schema";
+import { bills, categories, categoryEntries } from "./schema";
 
 export type { BillCadence };
 
@@ -17,6 +17,11 @@ export type BillWithStatus = {
   categoryId: number | null;
   categoryName: string | null;
   daysUntilDue: number;
+  /** True = derived live from a category's own due day (lib/db/grid.ts's
+   * applyOverdueFlags has the exact same rule for the Grid's own Overdue
+   * alert), not a real `bills` row - no id to edit/archive/mark-paid
+   * against. See getCategoryDueBills. */
+  synthetic: boolean;
 };
 
 export type BillInput = {
@@ -88,7 +93,7 @@ export async function getArchivedBills() {
   return db.query.bills.findMany({ where: eq(bills.archived, true), orderBy: (b, { asc }) => [asc(b.name)] });
 }
 
-export async function getBills(today: string = localIsoDate()): Promise<BillWithStatus[]> {
+async function getRealBills(today: string): Promise<BillWithStatus[]> {
   const rows = await db
     .select({
       id: bills.id,
@@ -104,7 +109,66 @@ export async function getBills(today: string = localIsoDate()): Promise<BillWith
     .leftJoin(categories, eq(categories.id, bills.categoryId))
     .where(eq(bills.archived, false))
     .orderBy(asc(bills.nextDueDate));
-  return rows.map((r) => ({ ...r, cadence: r.cadence as BillCadence, daysUntilDue: daysUntil(r.nextDueDate, today) }));
+  return rows.map((r) => ({ ...r, cadence: r.cadence as BillCadence, daysUntilDue: daysUntil(r.nextDueDate, today), synthetic: false }));
+}
+
+/** Every active category with a due day, surfaced as a bill automatically -
+ * "the bills tab should populate with the entries that have a due date in
+ * the categories," not require typing each one in by hand. Mirrors
+ * lib/db/grid.ts's applyOverdueFlags EXACTLY (same no-entry/paid/overdue
+ * rule) so the Bills tab and the Grid's own Overdue alert can never
+ * silently disagree about the same category: no category_entries row this
+ * month, or one with no amount set, means nothing was planned - not a
+ * bill. Already paid this month - done, nothing to remind about (will
+ * reappear once next month's cell exists and isn't paid). A category
+ * already linked to a real `bills` row is skipped here - that's the
+ * richer, manually-tracked version of the same thing, shown once, not
+ * twice. */
+async function getCategoryDueBills(today: string): Promise<BillWithStatus[]> {
+  const [year, month] = today.split("-").map(Number);
+  const linkedCategoryIds = (
+    await db.select({ categoryId: bills.categoryId }).from(bills).where(and(eq(bills.archived, false), isNotNull(bills.categoryId)))
+  ).map((r) => r.categoryId!);
+
+  const dueDayCategories = await db.query.categories.findMany({
+    where: and(isNull(categories.archivedAt), isNotNull(categories.dueDay)),
+  });
+  const candidateIds = dueDayCategories.map((c) => c.id).filter((id) => !linkedCategoryIds.includes(id));
+  if (candidateIds.length === 0) return [];
+
+  const entries = await db
+    .select()
+    .from(categoryEntries)
+    .where(and(inArray(categoryEntries.categoryId, candidateIds), eq(categoryEntries.year, year), eq(categoryEntries.month, month)));
+  const entryByCategory = new Map(entries.map((e) => [e.categoryId, e]));
+
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const result: BillWithStatus[] = [];
+  for (const cat of dueDayCategories) {
+    if (!candidateIds.includes(cat.id)) continue;
+    const entry = entryByCategory.get(cat.id);
+    if (!entry || entry.paid) continue; // nothing planned, or already done this month
+    const day = Math.min(cat.dueDay!, lastDayOfMonth);
+    const nextDueDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    result.push({
+      id: -cat.id, // negative = never a real bills.id - never passed to markBillPaid/updateBill/archiveBill
+      name: cat.name,
+      amountPence: entry.amountPence,
+      cadence: "monthly",
+      cadenceDays: null,
+      nextDueDate,
+      categoryId: cat.id,
+      categoryName: cat.name,
+      daysUntilDue: daysUntil(nextDueDate, today),
+      synthetic: true,
+    });
+  }
+  return result;
+}
+
+export async function getBills(today: string = localIsoDate()): Promise<BillWithStatus[]> {
+  const [real, fromCategories] = await Promise.all([getRealBills(today), getCategoryDueBills(today)]);
+  return [...real, ...fromCategories].sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
 }
 
 /** The bell's own list - due soon or already overdue, soonest first. */

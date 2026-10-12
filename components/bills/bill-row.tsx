@@ -29,7 +29,7 @@ export function BillRow({ bill, categories }: { bill: BillWithStatus; categories
         <span className="font-medium">{bill.name}</span>
         <span className="text-xs text-muted-foreground">
           {formatPence(bill.amountPence, currency)} · {formatDate(bill.nextDueDate, dateFormat)}
-          {bill.categoryName ? ` · ${bill.categoryName}` : ""}
+          {bill.categoryName && !bill.synthetic ? ` · ${bill.categoryName}` : ""}
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
@@ -43,21 +43,34 @@ export function BillRow({ bill, categories }: { bill: BillWithStatus; categories
         >
           {due.text}
         </span>
-        <Button size="icon-xs" variant="ghost" disabled={pending} title="Mark paid now" onClick={() => startTransition(() => markPaid(bill.id))}>
-          <Check className="size-3.5 text-status-good" />
-        </Button>
-        <BillDialog
-          categories={categories}
-          bill={bill}
-          trigger={
-            <Button size="icon-xs" variant="ghost" title="Edit">
-              <Pencil className="size-3.5" />
+        {bill.synthetic ? (
+          // Nothing real to act on here - paying happens on the Grid
+          // (logging an expense, or ticking the cell paid), the due day
+          // itself is edited in Settings > Categories. Both already exist;
+          // duplicating "mark paid"/"edit" for a derived row would just be
+          // a second, easy-to-miss place that can drift from the real one.
+          <span className="px-1 text-xs text-muted-foreground" title="From a category's due day - paid and edited on the Budget page">
+            from your categories
+          </span>
+        ) : (
+          <>
+            <Button size="icon-xs" variant="ghost" disabled={pending} title="Mark paid now" onClick={() => startTransition(() => markPaid(bill.id))}>
+              <Check className="size-3.5 text-status-good" />
             </Button>
-          }
-        />
-        <Button size="icon-xs" variant="ghost" disabled={pending} title="Archive" onClick={() => startTransition(() => removeBill(bill.id))}>
-          <Archive className="size-3.5 text-chart-2" />
-        </Button>
+            <BillDialog
+              categories={categories}
+              bill={bill}
+              trigger={
+                <Button size="icon-xs" variant="ghost" title="Edit">
+                  <Pencil className="size-3.5" />
+                </Button>
+              }
+            />
+            <Button size="icon-xs" variant="ghost" disabled={pending} title="Archive" onClick={() => startTransition(() => removeBill(bill.id))}>
+              <Archive className="size-3.5 text-chart-2" />
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

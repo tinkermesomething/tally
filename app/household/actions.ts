@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/session";
 import { toResult, type ActionResult } from "@/lib/action-result";
-import { setHouseholdEnabled } from "@/lib/db/household";
+import { getHouseholdCellDetail, setHouseholdEnabled, type HouseholdCellDetail } from "@/lib/db/household";
 import type { UserRow } from "@/lib/db/users";
 
 /** Same re-check-isAdmin-in-the-action convention as
@@ -23,4 +23,11 @@ export async function setHouseholdEnabledAction(enabled: boolean): Promise<Actio
       revalidatePath("/", "layout");
     })
   );
+}
+
+/** Who's behind one grid cell's combined figure - fetched on demand when a
+ * cell is clicked, not as part of the page's own initial load (every cell
+ * would otherwise mean a query nobody asked to see yet). */
+export async function getHouseholdCellDetailAction(categoryName: string, year: number, month: number): Promise<HouseholdCellDetail> {
+  return requireSession(() => getHouseholdCellDetail(categoryName, year, month));
 }

@@ -23,11 +23,15 @@ export function EditableDebtLink({
   categoryName = "this category",
   linkedDebtPersonId,
   people,
+  autoOpen = false,
+  onAutoOpenChange,
 }: {
   categoryId: number;
   categoryName?: string;
   linkedDebtPersonId: number | null;
   people: { id: number; name: string }[];
+  autoOpen?: boolean;
+  onAutoOpenChange?: (open: boolean) => void;
 }) {
   const [, startTransition] = useTransition();
   const [target, setTarget] = useState<LinkTarget | null>(null);
@@ -58,7 +62,11 @@ export function EditableDebtLink({
 
   return (
     <>
-    <Select value={linkedDebtPersonId !== null ? String(linkedDebtPersonId) : NONE} onValueChange={handleChange}>
+    <Select
+      value={linkedDebtPersonId !== null ? String(linkedDebtPersonId) : NONE}
+      onValueChange={handleChange}
+      {...(autoOpen ? { open: true, onOpenChange: (next: boolean) => onAutoOpenChange?.(next) } : {})}
+    >
       <SelectTrigger
         size="sm"
         className={cn(

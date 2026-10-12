@@ -32,9 +32,16 @@ function ordinalSuffix(day: number) {
 export function EditableDueDay({
   categoryId,
   dueDay,
+  autoOpen = false,
+  onAutoOpenChange,
 }: {
   categoryId: number;
   dueDay: number | null;
+  /** Opens the picker immediately on mount - components/settings/category-links-row.tsx
+   * mounts this fresh when "Due day" is picked from its "+" menu, instead
+   * of showing an always-visible empty-state pill (see that file). */
+  autoOpen?: boolean;
+  onAutoOpenChange?: (open: boolean) => void;
 }) {
   const [, startTransition] = useTransition();
 
@@ -45,7 +52,11 @@ export function EditableDueDay({
   }
 
   return (
-    <Select value={dueDay !== null ? String(dueDay) : NONE} onValueChange={handleChange}>
+    <Select
+      value={dueDay !== null ? String(dueDay) : NONE}
+      onValueChange={handleChange}
+      {...(autoOpen ? { open: true, onOpenChange: (next: boolean) => onAutoOpenChange?.(next) } : {})}
+    >
       <SelectTrigger
         size="sm"
         className={cn(

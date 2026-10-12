@@ -75,16 +75,28 @@ export function shareCategoryExpenses(categoryId: number, expenseEntryIds: numbe
 
 /** Sets (or clears) a category's own household-share default and, when
  * turning it on, shares the ticked existing expenses in the same
- * transaction - same shape as linkCategoryAndTag (retro-tags.ts). Turning
- * it OFF only clears the category's own default for new expenses; already
- * -shared expenses stay shared (same "unlinking leaves history alone"
- * rule linkCategoryToBucket already follows). */
+ * transaction - same shape as linkCategoryAndTag (retro-tags.ts).
+ *
+ * Turning it OFF clears sharing on every expense currently in the
+ * category too - deliberately NOT the "unlinking leaves history alone"
+ * rule linkCategoryToBucket uses for debt/savings. Those create a real
+ * ledger row (money that actually moved); sharing is a revocable
+ * visibility choice with no financial event behind it, so "stop sharing
+ * this category" has to mean nothing from it is left visible, not leave
+ * orphaned entries in the household tab with spending but no budget
+ * (exactly the bug this replaced - a category's budgeted figures already
+ * vanished immediately on unshare since household_category_budgets is
+ * always rebuilt from the category's CURRENT flag, but expenseEntries'
+ * own sharedToHousehold was never cleared alongside it). */
 export function linkCategoryToHousehold(categoryId: number, share: boolean, expenseEntryIds: number[] = []): Promise<{ shared: number }> {
   return inTransaction(async () => {
     const category = await db.query.categories.findFirst({ where: eq(categories.id, categoryId) });
     if (!category) throw new Error("That category no longer exists.");
     await db.update(categories).set({ sharedToHousehold: share }).where(eq(categories.id, categoryId));
-    if (!share) return { shared: 0 };
+    if (!share) {
+      await db.update(expenseEntries).set({ sharedToHousehold: false }).where(eq(expenseEntries.categoryId, categoryId));
+      return { shared: 0 };
+    }
     return shareCategoryExpenses(categoryId, expenseEntryIds);
   });
 }

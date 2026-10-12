@@ -20,11 +20,15 @@ export function EditableBucketLink({
   categoryName,
   linkedBucketId,
   buckets,
+  autoOpen = false,
+  onAutoOpenChange,
 }: {
   categoryId: number;
   categoryName: string;
   linkedBucketId: number | null;
   buckets: { id: number; name: string; color: string }[];
+  autoOpen?: boolean;
+  onAutoOpenChange?: (open: boolean) => void;
 }) {
   const [target, setTarget] = useState<LinkTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +61,11 @@ export function EditableBucketLink({
 
   return (
     <>
-      <Select value={current ? String(current.id) : NONE} onValueChange={handleChange}>
+      <Select
+        value={current ? String(current.id) : NONE}
+        onValueChange={handleChange}
+        {...(autoOpen ? { open: true, onOpenChange: (next: boolean) => onAutoOpenChange?.(next) } : {})}
+      >
         <SelectTrigger
           size="sm"
           aria-label={`Savings bucket for ${categoryName}`}

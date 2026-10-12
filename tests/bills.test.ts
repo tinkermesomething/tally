@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "./helpers/db";
 import { db } from "@/lib/db";
-import { bankAccounts, categories, importedTransactions } from "@/lib/db/schema";
-import { logExpense, pencilInExpense, confirmPencilledExpense, discardPencilledExpense } from "@/lib/db/queries";
+import { bankAccounts, categories, categoryEntries, importedTransactions } from "@/lib/db/schema";
+import { logExpense, pencilInExpense, confirmPencilledExpense, discardPencilledExpense, updateCategoryDueDay } from "@/lib/db/queries";
 import {
   addBill,
   archiveBill,
@@ -130,5 +130,71 @@ describe("bills", () => {
       const [bill] = await getBills("2026-01-01");
       expect(bill.nextDueDate).toBe("2026-01-05");
     });
+  });
+});
+
+describe("bills auto-populated from a category's own due day (getBills merge)", () => {
+  it("a category with a due day and a budgeted, unpaid month shows up as a bill", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 5);
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000 });
+    const bills = await getBills("2026-01-10");
+    expect(bills).toHaveLength(1);
+    expect(bills[0]).toMatchObject({ name: "Rent", amountPence: 120000, nextDueDate: "2026-01-05", categoryId, synthetic: true, daysUntilDue: -5 });
+  });
+
+  it("no category_entries row this month - same as the Grid's own rule, nothing planned means not a bill", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 5);
+    expect(await getBills("2026-01-10")).toHaveLength(0);
+  });
+
+  it("already paid this month - excluded, nothing to remind about", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 5);
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000, paid: true });
+    expect(await getBills("2026-01-10")).toHaveLength(0);
+  });
+
+  it("no due day set - never a bill", async () => {
+    const categoryId = await cat("Rent");
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000 });
+    expect(await getBills("2026-01-10")).toHaveLength(0);
+  });
+
+  it("a due day past the real length of the month clamps, same as applyOverdueFlags", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 31);
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 2, amountPence: 50000 }); // Feb 2026 has 28 days
+    const [bill] = await getBills("2026-02-01");
+    expect(bill.nextDueDate).toBe("2026-02-28");
+  });
+
+  it("a category already linked to a real bill is shown once, as the real bill, not twice", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 5);
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000 });
+    await addBill({ name: "Rent (tracked manually)", amountPence: 125000, cadence: "monthly", nextDueDate: "2026-01-05", categoryId });
+    const bills = await getBills("2026-01-10");
+    expect(bills).toHaveLength(1);
+    expect(bills[0]).toMatchObject({ name: "Rent (tracked manually)", synthetic: false });
+  });
+
+  it("an archived category never shows up, even with a due day and a budgeted month", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 5);
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000 });
+    const { archiveCategory } = await import("@/lib/db/queries");
+    await archiveCategory(categoryId);
+    expect(await getBills("2026-01-10")).toHaveLength(0);
+  });
+
+  it("real bills and category-derived bills are merged and sorted together by due date", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 20);
+    await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000 });
+    await addBill({ name: "Netflix", amountPence: 999, cadence: "monthly", nextDueDate: "2026-01-05" });
+    const bills = await getBills("2026-01-01");
+    expect(bills.map((b) => b.name)).toEqual(["Netflix", "Rent"]);
   });
 });

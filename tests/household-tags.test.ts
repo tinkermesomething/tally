@@ -9,6 +9,7 @@ import {
   shareCategoryExpenses,
   shareIncomeSource,
 } from "@/lib/db/household-tags";
+import { archiveCategory, archiveIncomeSource } from "@/lib/db/queries";
 
 beforeEach(() => resetDb());
 
@@ -68,14 +69,17 @@ describe("linkCategoryToHousehold", () => {
     expect(rows.map((r) => r.expenseEntryId)).toEqual([e2.id]);
   });
 
-  it("turning it off clears the category default but leaves already-shared expenses shared", async () => {
-    const { cat, e1 } = await seed();
+  it("turning it off clears the category default AND un-shares every expense already in it - unlike debt/savings, there's no financial event to preserve, so nothing should linger", async () => {
+    const { cat, e1, e2 } = await seed();
     await linkCategoryToHousehold(cat.id, true, [e1.id]);
+    await setExpenseHouseholdShare(e2.id, true); // shared individually, not via the category backfill
     await linkCategoryToHousehold(cat.id, false);
     const updated = await db.query.categories.findFirst({ where: (c, { eq }) => eq(c.id, cat.id) });
     expect(updated?.sharedToHousehold).toBe(false);
-    const row = await db.query.expenseEntries.findFirst({ where: (e, { eq }) => eq(e.id, e1.id) });
-    expect(row?.sharedToHousehold).toBe(true);
+    for (const id of [e1.id, e2.id]) {
+      const row = await db.query.expenseEntries.findFirst({ where: (e, { eq }) => eq(e.id, id) });
+      expect(row?.sharedToHousehold).toBe(false);
+    }
   });
 
   it("refuses a category that no longer exists", async () => {
@@ -108,5 +112,32 @@ describe("shareIncomeSource", () => {
 
   it("refuses a source that no longer exists", async () => {
     await expect(shareIncomeSource(999, true)).rejects.toThrow("no longer exists");
+  });
+});
+
+describe("archiving implicitly un-shares (lib/db/queries.ts)", () => {
+  it("archiveCategory clears sharedToHousehold on the category and every expense in it", async () => {
+    const { cat, e1 } = await seed();
+    await linkCategoryToHousehold(cat.id, true, [e1.id]);
+    await archiveCategory(cat.id);
+    expect((await db.query.categories.findFirst({ where: (c, { eq }) => eq(c.id, cat.id) }))?.sharedToHousehold).toBe(false);
+    expect((await db.query.expenseEntries.findFirst({ where: (e, { eq }) => eq(e.id, e1.id) }))?.sharedToHousehold).toBe(false);
+  });
+
+  it("archiveCategory cascades the un-share to children archived in the same call", async () => {
+    const { cat } = await seed();
+    const [child] = await db.insert(categories).values({ name: "Sub", parentId: cat.id }).returning();
+    const [e] = await db.insert(expenseEntries).values({ categoryId: child.id, year: 2026, month: 9, amountPence: 500, entryDate: "2026-09-01" }).returning();
+    await linkCategoryToHousehold(child.id, true, [e.id]);
+    await archiveCategory(cat.id); // archives cat AND its children
+    expect((await db.query.categories.findFirst({ where: (c, { eq }) => eq(c.id, child.id) }))?.sharedToHousehold).toBe(false);
+    expect((await db.query.expenseEntries.findFirst({ where: (ex, { eq }) => eq(ex.id, e.id) }))?.sharedToHousehold).toBe(false);
+  });
+
+  it("archiveIncomeSource clears sharedToHousehold too", async () => {
+    const { source } = await seed();
+    await shareIncomeSource(source.id, true);
+    await archiveIncomeSource(source.id);
+    expect((await db.query.incomeSources.findFirst({ where: (s, { eq }) => eq(s.id, source.id) }))?.sharedToHousehold).toBe(false);
   });
 });

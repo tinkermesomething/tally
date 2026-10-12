@@ -5,10 +5,7 @@ import { Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { EditableGroupTag } from "@/components/grid/editable-group-tag";
-import { EditableDueDay } from "@/components/grid/editable-due-day";
-import { EditableDebtLink } from "@/components/grid/editable-debt-link";
-import { EditableBucketLink } from "@/components/settings/editable-bucket-link";
-import { EditableHouseholdLink } from "@/components/grid/editable-household-link";
+import { CategoryLinksRow } from "@/components/settings/category-links-row";
 import { CategoryBillLink } from "@/components/settings/category-bill-link";
 import { AddSubcategoryDialog } from "@/components/grid/add-subcategory-dialog";
 import { MoveCategoryButton } from "@/components/settings/move-category-button";
@@ -69,25 +66,25 @@ export function CategorySettingsRow({
           color={color}
           existingGroups={existingGroups}
         />
-        <EditableDueDay categoryId={category.id} dueDay={category.dueDay} />
+        {/* Due day is always offered, even for a parent/rollup category (it
+            can carry its own, independent of its children) - the other
+            three links only make sense for a leaf, same gating this
+            already had, now expressed as "not offered" (undefined) rather
+            than not rendering CategoryLinksRow at all. */}
+        <CategoryLinksRow
+          categoryId={category.id}
+          categoryName={category.name}
+          dueDay={category.dueDay}
+          linkedDebtPersonId={category.children.length === 0 ? category.linkedDebtPersonId : undefined}
+          linkedBucketId={category.children.length === 0 ? category.linkedBucketId : undefined}
+          sharedToHousehold={category.children.length === 0 ? category.sharedToHousehold : undefined}
+          people={people}
+          buckets={buckets}
+          householdEnabled={householdEnabled}
+        />
         {category.children.length === 0 && (
           <>
-            <EditableDebtLink
-              categoryId={category.id}
-              categoryName={category.name}
-              linkedDebtPersonId={category.linkedDebtPersonId}
-              people={people}
-            />
-            <EditableBucketLink
-              categoryId={category.id}
-              categoryName={category.name}
-              linkedBucketId={category.linkedBucketId}
-              buckets={buckets}
-            />
             <CategoryBillLink categoryId={category.id} bills={bills} />
-            {householdEnabled && (
-              <EditableHouseholdLink categoryId={category.id} categoryName={category.name} sharedToHousehold={category.sharedToHousehold} />
-            )}
             <MoveCategoryButton
               categoryId={category.id}
               currentParentId={null}
@@ -125,23 +122,18 @@ export function CategorySettingsRow({
                   onCommit={(next) => renameCategory(child.id, next)}
                 />
               </span>
-              <EditableDueDay categoryId={child.id} dueDay={child.dueDay} />
-              <EditableDebtLink
+              <CategoryLinksRow
                 categoryId={child.id}
                 categoryName={child.name}
+                dueDay={child.dueDay}
                 linkedDebtPersonId={child.linkedDebtPersonId}
-                people={people}
-              />
-              <EditableBucketLink
-                categoryId={child.id}
-                categoryName={child.name}
                 linkedBucketId={child.linkedBucketId}
+                sharedToHousehold={child.sharedToHousehold}
+                people={people}
                 buckets={buckets}
+                householdEnabled={householdEnabled}
               />
               <CategoryBillLink categoryId={child.id} bills={bills} />
-              {householdEnabled && (
-                <EditableHouseholdLink categoryId={child.id} categoryName={child.name} sharedToHousehold={child.sharedToHousehold} />
-              )}
               <MoveCategoryButton
                 categoryId={child.id}
                 currentParentId={category.id}
