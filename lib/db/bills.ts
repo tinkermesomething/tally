@@ -119,7 +119,8 @@ async function getRealBills(today: string): Promise<BillWithStatus[]> {
  * no-entry/paid/overdue rule) so the Bills tab and the Grid's own Overdue
  * alert can never silently disagree about THIS month's category; this
  * then looks forward across however many further months fall inside
- * BILLS_LOOKAHEAD_DAYS, so a due day early next month still shows up
+ * `lookaheadDays` (the Bills page's own adjustable "how far ahead" control,
+ * defaulting to BILLS_LOOKAHEAD_DAYS), so a due day early next month still shows up
  * before it's actually due, not just once its own month arrives. No
  * category_entries row for a given month, or one with no amount set,
  * means nothing was planned for that month - not a bill. Already paid -
@@ -128,7 +129,7 @@ async function getRealBills(today: string): Promise<BillWithStatus[]> {
  * manually-tracked version of the same thing, shown once, not twice. Only
  * the nearest unpaid month per category is returned - a category that's
  * unpaid two months running shows once, for the sooner of the two. */
-async function getCategoryDueBills(today: string): Promise<BillWithStatus[]> {
+async function getCategoryDueBills(today: string, lookaheadDays: number): Promise<BillWithStatus[]> {
   const linkedCategoryIds = (
     await db.select({ categoryId: bills.categoryId }).from(bills).where(and(eq(bills.archived, false), isNotNull(bills.categoryId)))
   ).map((r) => r.categoryId!);
@@ -148,7 +149,7 @@ async function getCategoryDueBills(today: string): Promise<BillWithStatus[]> {
     months.push({ year: y, month: m });
     const lastDay = new Date(y, m, 0).getDate();
     const monthEnd = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-    if (daysUntil(monthEnd, today) >= BILLS_LOOKAHEAD_DAYS) break;
+    if (daysUntil(monthEnd, today) >= lookaheadDays) break;
     m++;
     if (m > 12) {
       m = 1;
@@ -173,7 +174,7 @@ async function getCategoryDueBills(today: string): Promise<BillWithStatus[]> {
       const day = Math.min(cat.dueDay!, lastDayOfMonth);
       const nextDueDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const daysUntilDue = daysUntil(nextDueDate, today);
-      if (daysUntilDue > BILLS_LOOKAHEAD_DAYS) break; // this and every later month are further still
+      if (daysUntilDue > lookaheadDays) break; // this and every later month are further still
       result.push({
         id: -cat.id, // negative = never a real bills.id - never passed to markBillPaid/updateBill/archiveBill
         name: cat.name,
@@ -192,12 +193,23 @@ async function getCategoryDueBills(today: string): Promise<BillWithStatus[]> {
   return result;
 }
 
-export async function getBills(today: string = localIsoDate()): Promise<BillWithStatus[]> {
-  const [real, fromCategories] = await Promise.all([getRealBills(today), getCategoryDueBills(today)]);
+/** `lookaheadDays` only scopes the due-day-derived bills, not real ones -
+ * a REAL bill was explicitly, deliberately added by the person; one with a
+ * distant nextDueDate (yearly, say) should keep showing regardless of
+ * whatever window the page happens to be set to, the same as it always
+ * has. (Tried capping both the same way - regressed exactly this: a real
+ * bill whose due date sat past the selected window just vanished, which
+ * is wrong for something someone chose to track on purpose.) */
+export async function getBills(today: string = localIsoDate(), lookaheadDays: number = BILLS_LOOKAHEAD_DAYS): Promise<BillWithStatus[]> {
+  const [real, fromCategories] = await Promise.all([getRealBills(today), getCategoryDueBills(today, lookaheadDays)]);
   return [...real, ...fromCategories].sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
 }
 
-/** The bell's own list - due soon or already overdue, soonest first. */
+/** The bell's own list - due soon or already overdue, soonest first. Filters
+ * the FULL combined list itself (real bills aren't capped by `getBills`'s
+ * own `lookaheadDays` - see its comment), always by its own fixed window,
+ * independent of whatever lookahead the Bills page itself happens to be
+ * showing. */
 export async function getUpcomingBills(withinDays: number, today: string = localIsoDate()): Promise<BillWithStatus[]> {
   const all = await getBills(today);
   return all.filter((b) => b.daysUntilDue <= withinDays);

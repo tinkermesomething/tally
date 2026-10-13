@@ -161,6 +161,15 @@ async function logExpenseUnsafe(input: {
       debtPersonId,
       importedTransactionId: input.importedTransactionId,
       provisional: input.provisional ?? false,
+      // Resolved from the category's own flag, same as debtPersonId/
+      // bucketId above - this was the actual bug behind "household spent
+      // figures don't show up": this column has always defaulted to
+      // false (there's no other INSERT into expenseEntries anywhere in
+      // the app - CSV import, bank-sync confirm, rules, all funnel
+      // through here), so every expense logged AFTER a category was
+      // already shared silently never shared itself. Only the one-time
+      // backfill at the moment of sharing ever actually worked.
+      sharedToHousehold: category?.sharedToHousehold ?? false,
     })
     .returning();
 

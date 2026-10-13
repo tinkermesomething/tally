@@ -25,10 +25,11 @@ export type AppSettings = {
   bankSyncFrequencyHours: number;
   /** Pause switch for automatic backups (they also need BACKUP_DIR). */
   autoBackupEnabled: boolean;
-  /** Per-user nav visibility - hides the Debts/Net worth tabs for anyone
-   * who doesn't track either. */
+  /** Per-user nav visibility - hides the Debts/Net worth/Bills tabs for
+   * anyone who doesn't use them. */
   showDebtTab: boolean;
   showNetWorthTab: boolean;
+  showBillsTab: boolean;
 };
 
 export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat, locale: DEFAULT_LOCALE };
@@ -57,6 +58,7 @@ export async function getAppSettings(): Promise<AppSettings> {
       autoBackupEnabled: row.autoBackupEnabled,
       showDebtTab: row.showDebtTab,
       showNetWorthTab: row.showNetWorthTab,
+      showBillsTab: row.showBillsTab,
     };
   }
   const [created] = await db.insert(appSettings).values({}).returning();
@@ -71,6 +73,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     autoBackupEnabled: created.autoBackupEnabled,
     showDebtTab: created.showDebtTab,
     showNetWorthTab: created.showNetWorthTab,
+    showBillsTab: created.showBillsTab,
   };
 }
 
@@ -87,6 +90,7 @@ export async function updateAppSettings(input: {
   autoBackupEnabled?: boolean;
   showDebtTab?: boolean;
   showNetWorthTab?: boolean;
+  showBillsTab?: boolean;
 }) {
   if (input.currency !== undefined && !isCurrencyCode(input.currency)) {
     throw new Error(`Unrecognized currency code: "${input.currency}"`);
@@ -118,6 +122,7 @@ export async function updateAppSettings(input: {
       ...(input.autoBackupEnabled !== undefined ? { autoBackupEnabled: input.autoBackupEnabled } : {}),
       ...(input.showDebtTab !== undefined ? { showDebtTab: input.showDebtTab } : {}),
       ...(input.showNetWorthTab !== undefined ? { showNetWorthTab: input.showNetWorthTab } : {}),
+      ...(input.showBillsTab !== undefined ? { showBillsTab: input.showBillsTab } : {}),
     })
     .where(eq(appSettings.id, row!.id));
 }

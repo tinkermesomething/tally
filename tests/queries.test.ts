@@ -50,6 +50,16 @@ describe("paid flag follows logged expenses", () => {
     await deleteExpenseEntry(e.id);
     expect(await db.select().from(debtLedgerEntries)).toHaveLength(0);
   });
+
+  it("a new expense inherits sharedToHousehold from its category, same as debtPersonId/bucketId - the bug behind household spend never showing up for anything logged after sharing was turned on", async () => {
+    await db.update(categories).set({ sharedToHousehold: true }).where(eq(categories.id, catId));
+    const shared = await logExpense({ categoryId: catId, amountPence: 500, entryDate: "2026-10-05" });
+    expect(shared.sharedToHousehold).toBe(true);
+
+    await db.update(categories).set({ sharedToHousehold: false }).where(eq(categories.id, catId));
+    const unshared = await logExpense({ categoryId: catId, amountPence: 500, entryDate: "2026-10-06" });
+    expect(unshared.sharedToHousehold).toBe(false);
+  });
 });
 
 describe("upserts", () => {

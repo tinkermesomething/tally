@@ -185,7 +185,7 @@ export async function logExpense(input: {
    * duplicate that here. */
   debtPersonId?: number;
 }) {
-  return requireSession(() =>
+  return requireSession((user) =>
     toResult(async () => {
       assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
       const amountPence = poundsToPence(input.pounds);
@@ -196,8 +196,14 @@ export async function logExpense(input: {
         note: input.note,
         debtPersonId: input.debtPersonId,
       });
+      // Logging into an already-shared category needs this reflected in
+      // Household right away, not just whenever that page next happens to
+      // load or the 15-minute tick runs - same eager-reconcile the
+      // share-toggle actions already use.
+      await reconcileHouseholdDataForUser(user.id);
       revalidatePath("/grid");
       revalidatePath("/debt");
+      revalidatePath("/household");
     })
   );
 }
@@ -210,24 +216,28 @@ export async function editExpenseEntry(
   id: number,
   input: { pounds?: number; note?: string; entryDate?: string }
 ) {
-  return requireSession(async () => {
+  return requireSession(async (user) => {
     if (input.pounds !== undefined) assertPositivePounds(input.pounds);
     await updateExpenseEntryQuery(id, {
       amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
       note: input.note !== undefined ? input.note || null : undefined,
       entryDate: input.entryDate,
     });
+    await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
     revalidatePath("/entries");
+    revalidatePath("/household");
   });
 }
 
 export async function removeExpenseEntry(id: number) {
-  return requireSession(async () => {
+  return requireSession(async (user) => {
     await deleteExpenseEntryQuery(id);
+    await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
     revalidatePath("/entries");
     revalidatePath("/debt");
+    revalidatePath("/household");
   });
 }
 

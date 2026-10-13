@@ -51,6 +51,12 @@ describe("bills", () => {
     expect(bills[0].daysUntilDue).toBe(4);
   });
 
+  it("a real bill further out than the lookahead window still shows - lookaheadDays only scopes due-day-derived bills", async () => {
+    await addBill({ name: "Yearly insurance", amountPence: 5000, cadence: "yearly", nextDueDate: "2026-06-01" });
+    const bills = await getBills("2026-01-01", 14); // 151 days out, way past a 2-week window
+    expect(bills.map((b) => b.name)).toEqual(["Yearly insurance"]);
+  });
+
   it("getUpcomingBills filters by the threshold, including overdue (negative days)", async () => {
     await addBill({ name: "Overdue", amountPence: 100, cadence: "weekly", nextDueDate: "2025-12-20" });
     await addBill({ name: "Soon", amountPence: 100, cadence: "weekly", nextDueDate: "2026-01-05" });

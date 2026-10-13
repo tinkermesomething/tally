@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Tags } from "lucide-react";
 import { formatSyncTime, syncSlotHours, syncTimeZone } from "@/lib/sync-schedule";
 import {
   getCategoryTree,
@@ -18,6 +18,7 @@ import { ruleConditionsOf } from "@/lib/rules";
 import { accountLabels } from "@/lib/accounts";
 import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors";
 import { getGroupStyles } from "@/lib/db/groups";
+import { GroupRow } from "@/components/settings/group-row";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
@@ -179,69 +180,95 @@ export default async function SettingsPage({
         </TabsList>
 
         <TabsContent value="categories" className="space-y-4 pt-4">
-          <CategorySelectionProvider>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">
-              Rename, regroup, add subcategories, or archive. Press and hold a name to drag it into place. Tick several to change them at once.
-            </p>
-            <div className="flex shrink-0 items-center gap-2">
-              <Link href="/settings/groups" className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
-                Manage groups
-              </Link>
-              <AddCategoryDialog
-                topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
-                existingGroups={existingGroups}
-              />
-            </div>
-          </div>
+          <Tabs defaultValue="categories">
+            <TabsList>
+              <TabsTrigger value="categories">Categories</TabsTrigger>
+              <TabsTrigger value="groups">Groups</TabsTrigger>
+            </TabsList>
 
-          <CategoryBulkBar existingGroups={existingGroups} householdEnabled={householdEnabled} />
-
-          <FilterableList
-            label="categories"
-            placeholder="Search categories, subcategories or groups"
-            items={categoryTree.map((category) => ({
-              key: category.id,
-              // A parent row shows its subcategories, so it matches on them too.
-              texts: [
-                category.name,
-                category.groupName,
-                category.linkedDebtPersonId ? personNameById.get(category.linkedDebtPersonId) : null,
-                category.linkedBucketId ? bucketNameById.get(category.linkedBucketId) : null,
-                ...billNamesByCategoryId.get(category.id) ?? [],
-                ...category.children.flatMap((child) => [
-                  child.name,
-                  child.linkedDebtPersonId ? personNameById.get(child.linkedDebtPersonId) : null,
-                  child.linkedBucketId ? bucketNameById.get(child.linkedBucketId) : null,
-                  ...billNamesByCategoryId.get(child.id) ?? [],
-                ]),
-              ],
-              node: (
-                <CategorySettingsRow
-                  category={category}
-                  color={groupColors.get(category.groupName ?? UNGROUPED)!}
-                  buckets={buckets}
-                  bills={bills}
-                  householdEnabled={householdEnabled}
-                  existingGroups={existingGroups}
+            <TabsContent value="categories" className="space-y-4 pt-4">
+              <CategorySelectionProvider>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">
+                  Rename, regroup, add subcategories, or archive. Press and hold a name to drag it into place. Tick several to change them at once.
+                </p>
+                <AddCategoryDialog
                   topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
-                  people={people.map((p) => ({ id: p.id, name: p.name }))}
+                  existingGroups={existingGroups}
                 />
-              ),
-            }))}
-          />
+              </div>
 
-          {archivedCategories.length > 0 && (
-            <div className="pt-2">
-              <h2 className="pb-1 text-sm font-medium text-muted-foreground">Archived</h2>
-              <ArchivedList
-                items={archivedCategories}
-                restoreAction={unarchiveCategory}
-                emptyLabel="No archived categories."
+              <CategoryBulkBar existingGroups={existingGroups} householdEnabled={householdEnabled} />
+
+              <FilterableList
+                label="categories"
+                placeholder="Search categories, subcategories or groups"
+                items={categoryTree.map((category) => ({
+                  key: category.id,
+                  // A parent row shows its subcategories, so it matches on them too.
+                  texts: [
+                    category.name,
+                    category.groupName,
+                    category.linkedDebtPersonId ? personNameById.get(category.linkedDebtPersonId) : null,
+                    category.linkedBucketId ? bucketNameById.get(category.linkedBucketId) : null,
+                    ...billNamesByCategoryId.get(category.id) ?? [],
+                    ...category.children.flatMap((child) => [
+                      child.name,
+                      child.linkedDebtPersonId ? personNameById.get(child.linkedDebtPersonId) : null,
+                      child.linkedBucketId ? bucketNameById.get(child.linkedBucketId) : null,
+                      ...billNamesByCategoryId.get(child.id) ?? [],
+                    ]),
+                  ],
+                  node: (
+                    <CategorySettingsRow
+                      category={category}
+                      color={groupColors.get(category.groupName ?? UNGROUPED)!}
+                      buckets={buckets}
+                      bills={bills}
+                      householdEnabled={householdEnabled}
+                      existingGroups={existingGroups}
+                      topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
+                      people={people.map((p) => ({ id: p.id, name: p.name }))}
+                    />
+                  ),
+                }))}
               />
-            </div>
-          )}
-          </CategorySelectionProvider>
+
+              {archivedCategories.length > 0 && (
+                <div className="pt-2">
+                  <h2 className="pb-1 text-sm font-medium text-muted-foreground">Archived</h2>
+                  <ArchivedList
+                    items={archivedCategories}
+                    restoreAction={unarchiveCategory}
+                    emptyLabel="No archived categories."
+                  />
+                </div>
+              )}
+              </CategorySelectionProvider>
+            </TabsContent>
+
+            <TabsContent value="groups" className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground">
+                Rename a group, or give it its own colour instead of the automatic one.
+              </p>
+              {existingGroups.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
+                  <Tags className="size-6" />
+                  <p>No categories have a group yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {[...existingGroups].sort().map((name) => (
+                    // groupColors is built from this same categoryTree, so
+                    // every name here is guaranteed a real entry - never
+                    // actually falls through to the fallback, which exists
+                    // only so this isn't a non-null assertion.
+                    <GroupRow key={name} name={name} color={groupColors.get(name) ?? "var(--chart-1)"} custom={groupStyles.has(name)} />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="income" className="space-y-4 pt-4">
@@ -454,6 +481,7 @@ export default async function SettingsPage({
               carryOverStartMonth={appSettings.carryOverStartMonth}
               showDebtTab={appSettings.showDebtTab}
               showNetWorthTab={appSettings.showNetWorthTab}
+              showBillsTab={appSettings.showBillsTab}
             />
           </div>
 

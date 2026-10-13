@@ -337,6 +337,10 @@ export const appSettings = sqliteTable("app_settings", {
   // reporting zero drift, because the physical column order the ALTER
   // TABLE produces didn't match where this sat in the source).
   locale: text("locale").notNull().default("en"),
+  // Same nav-visibility idea as showDebtTab/showNetWorthTab above, just
+  // added later - at the END for the same physical-column-order reason
+  // locale's own comment explains.
+  showBillsTab: integer("show_bills_tab", { mode: "boolean" }).notNull().default(true),
 });
 
 /** A append-only record of security-relevant events - sign-ins, failed API

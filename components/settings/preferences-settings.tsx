@@ -24,6 +24,7 @@ export function PreferencesSettings({
   carryOverStartMonth,
   showDebtTab,
   showNetWorthTab,
+  showBillsTab,
 }: {
   currency: string;
   dateFormat: DateFormat;
@@ -32,6 +33,7 @@ export function PreferencesSettings({
   carryOverStartMonth: number;
   showDebtTab: boolean;
   showNetWorthTab: boolean;
+  showBillsTab: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   // Local echo so the Select updates instantly instead of waiting on the
@@ -44,6 +46,7 @@ export function PreferencesSettings({
   const [localStartMonth, setLocalStartMonth] = useState(carryOverStartMonth);
   const [localShowDebtTab, setLocalShowDebtTab] = useState(showDebtTab);
   const [localShowNetWorthTab, setLocalShowNetWorthTab] = useState(showNetWorthTab);
+  const [localShowBillsTab, setLocalShowBillsTab] = useState(showBillsTab);
   const startYearOptions = [localStartYear - 1, localStartYear, localStartYear + 1].filter(
     (y, i, arr) => arr.indexOf(y) === i
   );
@@ -186,8 +189,8 @@ export function PreferencesSettings({
       <div className="space-y-3 border-t border-border pt-4">
         <Label>Tabs in the header</Label>
         <p className="text-xs text-muted-foreground">
-          Not everyone tracks debts or wants a net worth page - hide what you don&apos;t use. This is yours alone; it
-          doesn&apos;t affect anyone else on this instance.
+          Not everyone tracks debts, wants a net worth page, or uses bill reminders - hide what you don&apos;t use. This
+          is yours alone; it doesn&apos;t affect anyone else on this instance.
         </p>
         <div className="flex items-center justify-between">
           <span className="text-sm">Debts</span>
@@ -206,6 +209,16 @@ export function PreferencesSettings({
             onCheckedChange={(next) => {
               setLocalShowNetWorthTab(next);
               startTransition(() => updatePreferences({ showNetWorthTab: next }));
+            }}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">Bills</span>
+          <Switch
+            checked={localShowBillsTab}
+            onCheckedChange={(next) => {
+              setLocalShowBillsTab(next);
+              startTransition(() => updatePreferences({ showBillsTab: next }));
             }}
           />
         </div>

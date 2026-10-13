@@ -10,6 +10,16 @@ export type BillCadence = (typeof BILL_CADENCES)[number];
  * server-only DB code into the client bundle. */
 export const BILLS_LOOKAHEAD_DAYS = 42;
 
+/** The Bills page's own adjustable "how far ahead" choices (components/bills/
+ * lookahead-select.tsx) - lives here, not in that "use client" file, even
+ * though only that component uses the UI built from it: a SERVER component
+ * (app/bills/page.tsx) also needs this same array to validate the ?weeks=
+ * param, and a plain value imported from a "use client" module doesn't cross
+ * into server code the way a normal shared module does (confirmed the hard
+ * way - it throws `.includes is not a function` at runtime, not a type
+ * error, since the client boundary only proxies component exports). */
+export const LOOKAHEAD_WEEK_OPTIONS = [2, 4, 6, 8, 12] as const;
+
 function addDays(y: number, m: number, d: number, days: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + days);

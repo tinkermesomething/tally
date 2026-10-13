@@ -70,6 +70,7 @@ export async function AppHeader() {
   // as every other badge below.
   let showDebtTab = true;
   let showNetWorthTab = true;
+  let showBillsTab = true;
   // Unlike the two above, defaults to HIDDEN, not shown - this is
   // instance-wide (admin-controlled, see Settings > Admin), and a
   // resolution failure is the wrong moment to fail open on a tab that
@@ -107,6 +108,7 @@ export async function AppHeader() {
       upcomingBills = result.bills;
       showDebtTab = result.settings.showDebtTab;
       showNetWorthTab = result.settings.showNetWorthTab;
+      showBillsTab = result.settings.showBillsTab;
       householdOn = result.household;
     } catch (err) {
       console.error("[app-header] session doesn't resolve to a real account:", err);
@@ -134,6 +136,7 @@ export async function AppHeader() {
                 (item) =>
                   (item.href !== "/debt" || showDebtTab) &&
                   (item.href !== "/net-worth" || showNetWorthTab) &&
+                  (item.href !== "/bills" || showBillsTab) &&
                   (item.href !== "/household" || householdOn)
               ).map((item) => (
                 <Link

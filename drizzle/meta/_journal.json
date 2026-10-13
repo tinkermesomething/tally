@@ -260,6 +260,13 @@
       "when": 1791633673225,
       "tag": "0036_group_styles",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1791633773225,
+      "tag": "0037_show_bills_tab",
+      "breakpoints": true
     }
   ]
 }

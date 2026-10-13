@@ -39,6 +39,7 @@ import {
   setHouseholdEnabled,
 } from "@/lib/db/household";
 import { deleteUser } from "@/lib/db/users";
+import { logExpense } from "@/lib/db/queries";
 
 beforeEach(() => resetDb());
 
@@ -290,6 +291,20 @@ describe("getHouseholdGrid - the real grid replica", () => {
     })();
     expect((await getHouseholdGrid(2025))[0].yearBudgetedPence).toBe(100000);
     expect((await getHouseholdGrid(2026))[0].yearBudgetedPence).toBe(110000);
+  });
+
+  it("an expense logged AFTER the category is already shared shows up as spent - the actual bug (logExpense never set sharedToHousehold, only the one-time backfill at the moment of sharing ever did)", async () => {
+    await setHouseholdEnabled(true);
+    const alice = await seedSignedInUser("alice-sub", "alice@example.com");
+    await asSignedInUser("alice-sub", "alice@example.com", async () => {
+      const [cat] = await db.insert(categories).values({ name: "Groceries" }).returning();
+      await linkCategoryToHousehold(cat.id, true, []); // nothing to backfill - shared with no history yet
+      await reconcileHouseholdDataForUser(alice.id);
+      await logExpense({ categoryId: cat.id, amountPence: 4500, entryDate: "2026-09-10" });
+      await reconcileHouseholdDataForUser(alice.id); // same reconcile app/grid/actions.ts now runs after logExpense
+    })();
+    const grid = await getHouseholdGrid(2026);
+    expect(grid.find((r) => r.categoryName === "Groceries")?.months[9].spentPence).toBe(4500);
   });
 });
 

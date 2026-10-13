@@ -191,15 +191,22 @@ function GroupedRow({
               category cell) plus a plain filler for the rest keeps the
               sticky behaviour working the same way it already does for
               every other row. */}
-          <td className="sticky left-0 z-10 bg-card px-3 pt-3 pb-1 text-xs font-semibold text-muted-foreground" style={{ borderLeft: `3px solid ${color}` }}>
-            {group}
+          <td className="sticky left-0 z-10 bg-card px-3 pt-3 pb-1">
+            <span
+              className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
+              style={{ backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`, color }}
+            >
+              {group}
+            </span>
           </td>
           <td colSpan={14} className="bg-card" />
         </tr>
       )}
       <tr className="row-line border-b border-border/60">
         <td className="sticky left-0 z-10 bg-card px-3 py-2" style={{ borderLeft: `3px solid ${color}` }}>
-          {row.categoryName}
+          <span style={{ color }} className="font-medium">
+            {row.categoryName}
+          </span>
           {row.contributors.length > 0 && (
             <span className="block truncate text-xs font-normal text-muted-foreground" title={row.contributors.join(", ")}>
               {row.contributors.join(", ")}
