@@ -22,6 +22,13 @@ export type BillWithStatus = {
    * alert), not a real `bills` row - no id to edit/archive/mark-paid
    * against. See getCategoryDueBills. */
   synthetic: boolean;
+  /** True = this month has no committed Grid entry yet, so `amountPence`
+   * is carried forward from the nearest prior month that has one - same
+   * number the Grid's own blank-cell hint (previousAmountPence) offers,
+   * just acted on automatically here instead of waiting for someone to
+   * click it. Only ever true alongside `synthetic` - a real bills row
+   * always has its own flat amount. */
+  estimated: boolean;
 };
 
 export type BillInput = {
@@ -109,7 +116,7 @@ async function getRealBills(today: string): Promise<BillWithStatus[]> {
     .leftJoin(categories, eq(categories.id, bills.categoryId))
     .where(eq(bills.archived, false))
     .orderBy(asc(bills.nextDueDate));
-  return rows.map((r) => ({ ...r, cadence: r.cadence as BillCadence, daysUntilDue: daysUntil(r.nextDueDate, today), synthetic: false }));
+  return rows.map((r) => ({ ...r, cadence: r.cadence as BillCadence, daysUntilDue: daysUntil(r.nextDueDate, today), synthetic: false, estimated: false }));
 }
 
 /** Every active category with a due day, surfaced as a bill automatically -
@@ -169,7 +176,31 @@ async function getCategoryDueBills(today: string, lookaheadDays: number): Promis
     if (!candidateIds.includes(cat.id)) continue;
     for (const { year, month } of months) {
       const entry = entryByCategoryMonth.get(`${cat.id}:${year}:${month}`);
-      if (!entry || entry.paid) continue; // nothing planned that month, or already done
+      if (entry?.paid) continue; // this cycle's done - check the next month
+
+      let amountPence: number;
+      let estimated: boolean;
+      if (entry) {
+        amountPence = entry.amountPence;
+        estimated = false;
+      } else {
+        // No committed Grid entry for this month yet - same fallback the
+        // Grid's own blank-cell hint offers (lib/db/grid.ts's
+        // attachPreviousMonthHints: the immediately preceding month's
+        // amount, nothing further back), just acted on here automatically
+        // instead of only ever being a suggestion someone has to click.
+        // Without this, a due-day category with no FUTURE month filled in
+        // yet never shows as upcoming at all - exactly the gap that made
+        // this feature not actually "no need to add it by hand" for
+        // anything beyond the current month.
+        const prevMonth = month === 1 ? 12 : month - 1;
+        const prevYear = month === 1 ? year - 1 : year;
+        const prev = entryByCategoryMonth.get(`${cat.id}:${prevYear}:${prevMonth}`);
+        if (!prev || prev.amountPence <= 0) continue; // nothing to estimate from either
+        amountPence = prev.amountPence;
+        estimated = true;
+      }
+
       const lastDayOfMonth = new Date(year, month, 0).getDate();
       const day = Math.min(cat.dueDay!, lastDayOfMonth);
       const nextDueDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -178,7 +209,7 @@ async function getCategoryDueBills(today: string, lookaheadDays: number): Promis
       result.push({
         id: -cat.id, // negative = never a real bills.id - never passed to markBillPaid/updateBill/archiveBill
         name: cat.name,
-        amountPence: entry.amountPence,
+        amountPence,
         cadence: "monthly",
         cadenceDays: null,
         nextDueDate,
@@ -186,6 +217,7 @@ async function getCategoryDueBills(today: string, lookaheadDays: number): Promis
         categoryName: cat.name,
         daysUntilDue,
         synthetic: true,
+        estimated,
       });
       break; // nearest unpaid month found for this category - stop looking further out
     }

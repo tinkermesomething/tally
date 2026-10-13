@@ -155,10 +155,18 @@ describe("bills auto-populated from a category's own due day (getBills merge)", 
     expect(await getBills("2026-01-10")).toHaveLength(0);
   });
 
-  it("already paid this month - excluded, nothing to remind about", async () => {
+  it("already paid this month, nothing budgeted for next month yet - shows next month's due date anyway, estimated from this month's amount", async () => {
     const categoryId = await cat("Rent");
     await updateCategoryDueDay(categoryId, 5);
     await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000, paid: true });
+    const bills = await getBills("2026-01-10");
+    expect(bills).toHaveLength(1);
+    expect(bills[0]).toMatchObject({ nextDueDate: "2026-02-05", amountPence: 120000, estimated: true, synthetic: true });
+  });
+
+  it("nothing budgeted for this month OR any prior month - genuinely nothing to show or estimate from", async () => {
+    const categoryId = await cat("Rent");
+    await updateCategoryDueDay(categoryId, 5);
     expect(await getBills("2026-01-10")).toHaveLength(0);
   });
 
@@ -214,14 +222,7 @@ describe("bills auto-populated from a category's own due day (getBills merge)", 
       ]);
       const bills = await getBills("2026-01-10");
       expect(bills).toHaveLength(1);
-      expect(bills[0]).toMatchObject({ nextDueDate: "2026-02-05", daysUntilDue: 26 });
-    });
-
-    it("next month's due day isn't budgeted yet - nothing to show once this month's is paid", async () => {
-      const categoryId = await cat("Rent");
-      await updateCategoryDueDay(categoryId, 5);
-      await db.insert(categoryEntries).values({ categoryId, year: 2026, month: 1, amountPence: 120000, paid: true });
-      expect(await getBills("2026-01-10")).toHaveLength(0);
+      expect(bills[0]).toMatchObject({ nextDueDate: "2026-02-05", daysUntilDue: 26, estimated: false });
     });
 
     it("a due day more than 6 weeks out is not shown even if budgeted and unpaid", async () => {

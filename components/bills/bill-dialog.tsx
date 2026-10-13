@@ -32,14 +32,16 @@ export type EditableBill = {
   categoryId: number | null;
 };
 
-function initial(bill?: EditableBill) {
+type Prefill = { name?: string; categoryId?: number };
+
+function initial(bill?: EditableBill, prefill?: Prefill) {
   return {
-    name: bill?.name ?? "",
+    name: bill?.name ?? prefill?.name ?? "",
     amount: bill ? (bill.amountPence / 100).toFixed(2) : "",
     cadence: bill?.cadence ?? ("monthly" as BillCadence),
     cadenceDays: bill?.cadenceDays ? String(bill.cadenceDays) : "",
     nextDueDate: bill?.nextDueDate ?? today(),
-    categoryId: bill?.categoryId ? String(bill.categoryId) : NO_CATEGORY,
+    categoryId: bill?.categoryId ? String(bill.categoryId) : prefill?.categoryId ? String(prefill.categoryId) : NO_CATEGORY,
   };
 }
 
@@ -50,14 +52,20 @@ function initial(bill?: EditableBill) {
 export function BillDialog({
   trigger,
   bill,
+  prefill,
   categories,
 }: {
   trigger: React.ReactElement;
   bill?: EditableBill;
+  /** Seeds a brand-new bill's name/category - from a category row that
+   * doesn't have one yet (components/settings/category-bill-link.tsx),
+   * so starting one doesn't mean retyping the name and re-finding the
+   * category in the dropdown. Ignored once `bill` is set (editing). */
+  prefill?: Prefill;
   categories: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(() => initial(bill));
+  const [form, setForm] = useState(() => initial(bill, prefill));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
@@ -94,7 +102,7 @@ export function BillDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { setOpen(next); setForm(initial(bill)); setError(null); }}>
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); setForm(initial(bill, prefill)); setError(null); }}>
       <DialogTrigger render={trigger} />
       <DialogContent className="sm:max-w-md">
         <DialogHeader>

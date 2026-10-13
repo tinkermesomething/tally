@@ -28,8 +28,8 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
           <div className="flex items-center gap-1">
             <h1 className="text-xl font-semibold tracking-tight">Bills</h1>
             <InfoTooltip label="How this page works">
-              A category with a due day shows up here automatically once it has a budgeted amount for that month - no need
-              to add it by hand. It reappears for the next month once this one&apos;s paid.
+              A category with a due day shows up here automatically - no need to add it by hand. If next month isn&apos;t
+              budgeted yet, it carries last month&apos;s amount forward (marked with ~) until it is.
             </InfoTooltip>
           </div>
           <div className="flex items-center gap-2">

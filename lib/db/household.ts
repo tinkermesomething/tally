@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "./index";
 import { getSystemConn } from "./system-connection";
 import {
@@ -53,6 +53,31 @@ export async function setHouseholdEnabled(enabled: boolean) {
  * work wasted) when the feature is off instance-wide. */
 export async function reconcileHouseholdDataForUser(userId: number) {
   if (!(await isHouseholdEnabled())) return;
+
+  // One-time catch-up for the logExpense bug fixed in v4.9.0: an expense
+  // logged into an already-shared category never got flagged shared
+  // itself (always defaulted false), and nothing afterward ever revisited
+  // it - the fix only stops it happening to NEW expenses, it doesn't
+  // repair ones already logged before the fix shipped. Idempotent (only
+  // ever flips an already-shared category's own still-false rows), so
+  // running it on every reconcile - not just once - is harmless and means
+  // this never needs a dedicated migration or a button someone has to
+  // remember to click.
+  const sharedCategoryIds = (
+    await db.select({ id: categories.id }).from(categories).where(eq(categories.sharedToHousehold, true))
+  ).map((r) => r.id);
+  if (sharedCategoryIds.length > 0) {
+    await db
+      .update(expenseEntries)
+      .set({ sharedToHousehold: true })
+      .where(
+        and(
+          inArray(expenseEntries.categoryId, sharedCategoryIds),
+          eq(expenseEntries.sharedToHousehold, false),
+          eq(expenseEntries.provisional, false)
+        )
+      );
+  }
 
   const sharedExpenses = await db
     .select({

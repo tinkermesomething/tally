@@ -95,6 +95,34 @@ describe("reconcileHouseholdDataForUser", () => {
     expect(byCategory["Groceries"].sourceUserId).not.toBe(byCategory["Rent"].sourceUserId);
   });
 
+  it("repairs expenses the pre-v4.9.0 logExpense bug missed - an unshared expense in an ALREADY-shared category gets picked up automatically, no manual re-share needed", async () => {
+    await setHouseholdEnabled(true);
+    const alice = await seedSignedInUser("alice-sub", "alice@example.com");
+    await asSignedInUser("alice-sub", "alice@example.com", async () => {
+      const [cat] = await db.insert(categories).values({ name: "Rent", sharedToHousehold: true }).returning();
+      // Simulates the bug directly: an expense inserted the way the OLD
+      // logExpense did, with sharedToHousehold left at its false default
+      // despite the category already being shared - never explicitly
+      // shared via setExpenseHouseholdShare/shareCategoryExpenses.
+      await db.insert(expenseEntries).values({ categoryId: cat.id, year: 2026, month: 10, amountPence: 240000, entryDate: "2026-10-01" });
+      await reconcileHouseholdDataForUser(alice.id);
+    })();
+    const rows = await getHouseholdExpenses();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ categoryName: "Rent", amountPence: 240000 });
+  });
+
+  it("does not touch a provisional (pencilled-in) expense, even in a shared category", async () => {
+    await setHouseholdEnabled(true);
+    const alice = await seedSignedInUser("alice-sub", "alice@example.com");
+    await asSignedInUser("alice-sub", "alice@example.com", async () => {
+      const [cat] = await db.insert(categories).values({ name: "Rent", sharedToHousehold: true }).returning();
+      await db.insert(expenseEntries).values({ categoryId: cat.id, year: 2026, month: 10, amountPence: 240000, entryDate: "2026-10-01", provisional: true });
+      await reconcileHouseholdDataForUser(alice.id);
+    })();
+    expect(await getHouseholdExpenses()).toHaveLength(0);
+  });
+
   it("is a full replace, not a diff - un-sharing makes the row disappear on the next reconcile", async () => {
     await setHouseholdEnabled(true);
     const alice = await seedSignedInUser("alice-sub", "alice@example.com");

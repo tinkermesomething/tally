@@ -21,6 +21,7 @@ export function CategorySettingsRow({
   color,
   existingGroups,
   topLevelCategories,
+  billCategories,
   people,
   buckets = [],
   bills = [],
@@ -38,6 +39,9 @@ export function CategorySettingsRow({
   /** Every top-level category (including this one) - used to populate the
    * "move to" target list for this row and its children. */
   topLevelCategories: { id: number; name: string }[];
+  /** Every category/subcategory, "Parent — Child" labelled - the same list
+   * Bills' own "Add bill" dialog uses, for CategoryBillLink's quick-add. */
+  billCategories: { id: number; name: string }[];
   people: { id: number; name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
@@ -92,7 +96,7 @@ export function CategorySettingsRow({
         />
         {category.children.length === 0 && (
           <>
-            <CategoryBillLink categoryId={category.id} bills={bills} />
+            <CategoryBillLink categoryId={category.id} categoryName={category.name} bills={bills} categories={billCategories} />
             <MoveCategoryButton
               categoryId={category.id}
               currentParentId={null}
@@ -146,7 +150,7 @@ export function CategorySettingsRow({
                 buckets={buckets}
                 householdEnabled={householdEnabled}
               />
-              <CategoryBillLink categoryId={child.id} bills={bills} />
+              <CategoryBillLink categoryId={child.id} categoryName={child.name} bills={bills} categories={billCategories} />
               <MoveCategoryButton
                 categoryId={child.id}
                 currentParentId={category.id}

@@ -28,8 +28,10 @@ export function BillRow({ bill, categories }: { bill: BillWithStatus; categories
       <div className="flex min-w-0 flex-col">
         <span className="font-medium">{bill.name}</span>
         <span className="text-xs text-muted-foreground">
+          {bill.estimated ? "~" : ""}
           {formatPence(bill.amountPence, currency)} · {formatDate(bill.nextDueDate, dateFormat)}
           {bill.categoryName && !bill.synthetic ? ` · ${bill.categoryName}` : ""}
+          {bill.estimated ? " · carried over from last month" : ""}
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">

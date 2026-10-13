@@ -228,6 +228,7 @@ export default async function SettingsPage({
                       householdEnabled={householdEnabled}
                       existingGroups={existingGroups}
                       topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
+                      billCategories={flatCategories}
                       people={people.map((p) => ({ id: p.id, name: p.name }))}
                     />
                   ),

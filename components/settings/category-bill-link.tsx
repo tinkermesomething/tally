@@ -1,15 +1,45 @@
+"use client";
+
 import Link from "next/link";
-import { Receipt } from "lucide-react";
+import { Receipt, Plus } from "lucide-react";
+import { BillDialog } from "@/components/bills/bill-dialog";
 import type { BillWithStatus } from "@/lib/db/bills";
 
-/** Read-only - the reverse of the Bills page's own category picker
- * (components/bills/bill-dialog.tsx). A category/subcategory with a bill
- * linked gets a small badge pointing to it, so managing categories and
- * managing bills aren't two disconnected places you have to remember to
- * check both of. Editing happens on the Bills page itself, not here. */
-export function CategoryBillLink({ categoryId, bills }: { categoryId: number; bills: BillWithStatus[] }) {
+/** A category/subcategory with a bill linked gets a small badge pointing
+ * to it (editing happens on the Bills page itself, not here) - without
+ * one, a "+" opens the same dialog Bills' own "Add bill" uses, prefilled
+ * with this category, so turning a due-day category into a properly
+ * tracked bill doesn't mean going to Bills and re-finding/retyping it. */
+export function CategoryBillLink({
+  categoryId,
+  categoryName,
+  bills,
+  categories,
+}: {
+  categoryId: number;
+  categoryName: string;
+  bills: BillWithStatus[];
+  categories: { id: number; name: string }[];
+}) {
   const linked = bills.filter((b) => b.categoryId === categoryId);
-  if (linked.length === 0) return null;
+
+  if (linked.length === 0) {
+    return (
+      <BillDialog
+        categories={categories}
+        prefill={{ name: categoryName, categoryId }}
+        trigger={
+          <button
+            type="button"
+            title="Add a tracked bill for this category"
+            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        }
+      />
+    );
+  }
 
   return (
     <Link
