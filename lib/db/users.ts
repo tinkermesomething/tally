@@ -36,10 +36,13 @@ export async function resolveAndApplySignIn(
   sub: string,
   name: string | undefined,
   allowedEmail: string | undefined,
-  /** pocket-id's own "groups" claim, unverified shape at this layer (see
-   * lib/accounts-rules.ts's hasAdminGroup) - whatever profile.groups was on
-   * the OIDC profile, straight from auth.ts's signIn callback. */
-  groups?: unknown
+  /** The OIDC profile's own "groups" claim, unverified shape at this layer
+   * (see lib/accounts-rules.ts's hasAdminGroup) - whatever profile.groups
+   * was on the OIDC profile, straight from auth.ts's signIn callback. */
+  groups?: unknown,
+  /** OIDC_ADMIN_GROUP - which group name counts as admin; "admin" if unset
+   * (hasAdminGroup's own default, not duplicated here). */
+  adminGroup?: string
 ): Promise<{ resolution: SignInResolution; user: UserRow | null }> {
   const db = sysDb();
   const bySub = await db.query.users.findFirst({ where: eq(users.oidcSub, sub) });
@@ -66,7 +69,9 @@ export async function resolveAndApplySignIn(
   // brand-new row (no existing row to fall back to) just starts as
   // whatever the bootstrap-email rule alone says.
   const effectiveAdminFor = (existingIsAdmin: boolean) =>
-    Array.isArray(groups) ? isEffectiveAdmin(email, allowedEmail, groups) : existingIsAdmin || isEffectiveAdmin(email, allowedEmail, undefined);
+    Array.isArray(groups)
+      ? isEffectiveAdmin(email, allowedEmail, groups, adminGroup)
+      : existingIsAdmin || isEffectiveAdmin(email, allowedEmail, undefined, adminGroup);
 
   if (resolution.action === "sign-in") {
     const effectiveAdmin = effectiveAdminFor(bySub!.isAdmin);

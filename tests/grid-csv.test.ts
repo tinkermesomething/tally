@@ -23,7 +23,7 @@ async function seed() {
   ]);
   await db.insert(incomeEntries).values([{ incomeSourceId: wages.id, year: YEAR, month: 1, amountPence: 400000 }]);
   // Actual received, same role logExpense plays for the categories above -
-  // WAGES/Received now come from here, not the budgeted row.
+  // INCOME/Received now come from here, not the budgeted row.
   await db.insert(incomeTransactions).values([{ incomeSourceId: wages.id, year: YEAR, month: 1, amountPence: 400000, entryDate: `${YEAR}-01-01` }]);
   await logExpense({ categoryId: rent.id, amountPence: 90000, entryDate: `${YEAR}-01-01` });
   await logExpense({ categoryId: a.id, amountPence: 350, entryDate: `${YEAR}-01-09` });
@@ -121,7 +121,7 @@ describe("gridToCsv", () => {
     const rows = parseCsv(gridToCsv(data, "budgeted"));
     const row = (n: string) => rows.find((r) => r[0] === n)!;
     expect(row("BUDGETED").slice(3, 15).map(Number)).toEqual(data.plannedByMonth.map((v) => v / 100));
-    expect(row("WAGES")[3]).toBe("4000.00");
+    expect(row("INCOME")[3]).toBe("4000.00");
     expect(row("LEFT TO SPEND").slice(3, 15).map(Number)).toEqual(data.leftToSpendByMonth.map((v) => v / 100));
     expect(Number(row("ACTUALLY SPENT")[15])).toBe(data.yearTotal.actuallySpent / 100);
     expect(row("Income - Wages")[3]).toBe("4000.00");

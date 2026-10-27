@@ -64,7 +64,7 @@ export type GridData = {
   incomeSources: IncomeSourceRow[];
   /** Effective (spent-if-known, else planned) total per month - feeds only
    * the main expense table's own SUBTOTAL footer row, a per-category-column
-   * total. Everything else (the top stat cards, the WAGES/AVAILABLE summary
+   * total. Everything else (the top stat cards, the INCOME/AVAILABLE summary
    * bar) uses the planned/actuallySpent pair below instead - two distinct
    * numbers, not this blended one, since conflating them is what caused the
    * "why did my numbers change" confusion this was split out to fix. */

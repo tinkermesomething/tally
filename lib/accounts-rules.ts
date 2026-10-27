@@ -23,20 +23,23 @@ export function isBootstrapAdminEmail(email: string | undefined, allowedEmail: s
   return !!email && !!allowedEmail && email.toLowerCase() === allowedEmail.toLowerCase();
 }
 
-/** Whether the OIDC profile's own "groups" claim puts this identity in
- * pocket-id's "admin" group - the real, ongoing source of admin status
- * (re-checked on every sign-in, not just set once at account creation, so
- * a group change at the IdP takes effect on next login either way). */
-export function hasAdminGroup(groups: unknown): boolean {
-  return Array.isArray(groups) && groups.includes("admin");
+/** Whether the OIDC profile's own "groups" claim puts this identity in the
+ * admin group - the real, ongoing source of admin status (re-checked on
+ * every sign-in, not just set once at account creation, so a group change
+ * at the IdP takes effect on next login either way). `adminGroup` is
+ * OIDC_ADMIN_GROUP (lib/db/users.ts's caller reads the env var) - "admin"
+ * unless the self-hoster's own IdP already uses that name for something
+ * else and they renamed it there. */
+export function hasAdminGroup(groups: unknown, adminGroup: string = "admin"): boolean {
+  return Array.isArray(groups) && groups.includes(adminGroup);
 }
 
 /** The actual admin decision applied on every sign-in: the group claim, OR
- * the bootstrap email - always, regardless of group - so a pocket-id group
+ * the bootstrap email - always, regardless of group - so an OIDC group
  * misconfiguration can never lock every admin out at once (the one thing
  * worse than an extra admin is zero admins able to fix it). */
-export function isEffectiveAdmin(email: string | undefined, allowedEmail: string | undefined, groups: unknown): boolean {
-  return hasAdminGroup(groups) || isBootstrapAdminEmail(email, allowedEmail);
+export function isEffectiveAdmin(email: string | undefined, allowedEmail: string | undefined, groups: unknown, adminGroup?: string): boolean {
+  return hasAdminGroup(groups, adminGroup) || isBootstrapAdminEmail(email, allowedEmail);
 }
 
 /**

@@ -75,6 +75,10 @@ describe("hasAdminGroup", () => {
     expect(hasAdminGroup(null)).toBe(false);
     expect(hasAdminGroup("admin")).toBe(false);
   });
+  it("a custom group name (OIDC_ADMIN_GROUP) replaces 'admin', not add to it", () => {
+    expect(hasAdminGroup(["staff"], "staff")).toBe(true);
+    expect(hasAdminGroup(["admin"], "staff")).toBe(false); // the default no longer counts once overridden
+  });
 });
 
 describe("isEffectiveAdmin", () => {
@@ -87,6 +91,10 @@ describe("isEffectiveAdmin", () => {
   });
   it("false for neither", () => {
     expect(isEffectiveAdmin("other@example.com", ADMIN, ["other-group"])).toBe(false);
+  });
+  it("respects a custom admin group name when given one", () => {
+    expect(isEffectiveAdmin("other@example.com", ADMIN, ["staff"], "staff")).toBe(true);
+    expect(isEffectiveAdmin("other@example.com", ADMIN, ["admin"], "staff")).toBe(false);
   });
 });
 

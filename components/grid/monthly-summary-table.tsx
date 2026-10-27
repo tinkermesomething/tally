@@ -12,14 +12,14 @@ type SummaryRow = {
   total: number;
   showAverage: boolean;
   /** Negative reads as a problem (red), non-negative as fine (green) - only
-   * the two "money you actually have" rows get this; WAGES/Budgeted/
+   * the two "money you actually have" rows get this; INCOME/Budgeted/
    * Actually spent are plain facts, not a health signal either way. */
   signed: boolean;
   /** This row's colour (a chart token): edge bar, label, tint and totals. */
   color: string;
 };
 
-/** WAGES/Budgeted/AVAILABLE/Actually spent/Left to spend aren't expense line
+/** INCOME/Budgeted/AVAILABLE/Actually spent/Left to spend aren't expense line
  * items - they're derived from expenses + income together, so they get their
  * own bubble instead of living in the expense table's footer next to
  * SUBTOTAL. Budgeted/Available are a stable, forward-looking pair ("if I
@@ -61,7 +61,7 @@ export function MonthlySummaryTable({
   const tableWidth = categoryColWidth + monthColWidth * 12 + summaryColWidth * 2;
 
   const rows: SummaryRow[] = [
-    { label: "WAGES", values: wagesByMonth, total: yearTotal.wages, showAverage: true, signed: false, color: "var(--chart-6)" },
+    { label: "INCOME", values: wagesByMonth, total: yearTotal.wages, showAverage: true, signed: false, color: "var(--chart-6)" },
     { label: "BUDGETED", values: plannedByMonth, total: yearTotal.planned, showAverage: true, signed: false, color: "var(--chart-1)" },
     { label: "AVAILABLE", values: availableByMonth, total: yearTotal.available, showAverage: true, signed: true, color: "var(--chart-3)" },
     {

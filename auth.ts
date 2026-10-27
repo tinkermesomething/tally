@@ -3,6 +3,10 @@ import authConfig from "./auth.config";
 import { checkProfile } from "@/lib/auth-rules";
 
 const allowedEmail = process.env.ALLOWED_EMAIL;
+// Which OIDC "groups" claim value counts as admin - "admin" unless the
+// self-hoster's own IdP already has a group by that name used for
+// something else, in which case they can point this at their own.
+const adminGroup = process.env.OIDC_ADMIN_GROUP || undefined;
 
 // Dynamic, not a top-level import: even though the database-touching
 // `signIn` callback below now lives only in THIS file (never in
@@ -46,10 +50,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth((req) => {
           profile!.sub!,
           profile?.name ?? undefined,
           allowedEmail,
-          // pocket-id's own "groups" claim (see auth.config.ts's "groups"
-          // scope) - lib/accounts-rules.ts's hasAdminGroup checks its shape,
-          // this callback never assumes it.
-          (profile as { groups?: unknown } | undefined)?.groups
+          // The OIDC provider's "groups" claim (see auth.config.ts's
+          // "groups" scope) - lib/accounts-rules.ts's hasAdminGroup checks
+          // its shape, this callback never assumes it.
+          (profile as { groups?: unknown } | undefined)?.groups,
+          adminGroup
         );
         await audit(resolution.allow ? "sign_in" : "sign_in_rejected", resolution.auditDetail);
         return resolution.allow;

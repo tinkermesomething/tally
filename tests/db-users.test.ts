@@ -115,6 +115,16 @@ describe("resolveAndApplySignIn - group-driven admin status", () => {
     const { user } = await resolveAndApplySignIn(ADMIN, "admin-sub", "Admin", ADMIN, ["not-admin-group"]);
     expect(user).toMatchObject({ isAdmin: true });
   });
+
+  it("OIDC_ADMIN_GROUP, when set, replaces 'admin' as the group that grants admin", async () => {
+    await inviteUser("sam@example.com");
+    // Plain "admin" no longer counts once a custom group is configured.
+    const notAdmin = await resolveAndApplySignIn("sam@example.com", "sam-sub", "Sam", ADMIN, ["admin"], "staff");
+    expect(notAdmin.user).toMatchObject({ isAdmin: false });
+    // The configured group does.
+    const isAdmin = await resolveAndApplySignIn("sam@example.com", "sam-sub", "Sam", ADMIN, ["staff"], "staff");
+    expect(isAdmin.user).toMatchObject({ isAdmin: true });
+  });
 });
 
 describe("deleteUser", () => {

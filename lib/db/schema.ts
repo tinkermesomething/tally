@@ -109,7 +109,7 @@ export const incomeSources = sqliteTable("income_sources", {
   name: text("name").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   // Null = active. Same year-relative treatment as categories.archivedAt -
-  // archiving a source must not rewrite what a past year's WAGES said.
+  // archiving a source must not rewrite what a past year's INCOME row said.
   archivedAt: integer("archived_at", { mode: "timestamp" }),
   // At most one source is the pay anchor at a time (enforced at the app
   // layer, not the schema). Logging an entry against this source is what

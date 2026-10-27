@@ -78,7 +78,7 @@ export function gridToCsv(data: GridData, view: GridCsvView, currency = "GBP"): 
     lines.push(line([csvText(label), "", "", ...(both ? [""] : []), ...cells.map((v) => csvAmount(v)), csvAmount(total), ""]));
   summary("SUBTOTAL", data.subtotalByMonth, data.yearTotal.subtotal);
   summary("BUDGETED", data.plannedByMonth, data.yearTotal.planned);
-  summary("WAGES", data.wagesByMonth, data.yearTotal.wages);
+  summary("INCOME", data.wagesByMonth, data.yearTotal.wages);
   summary("AVAILABLE", data.availableByMonth, data.yearTotal.available);
   summary("ACTUALLY SPENT", data.actuallySpentByMonth, data.yearTotal.actuallySpent);
   summary("LEFT TO SPEND", data.leftToSpendByMonth, data.yearTotal.leftToSpend);
