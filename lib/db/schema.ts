@@ -118,10 +118,11 @@ export const incomeSources = sqliteTable("income_sources", {
   // "#rrggbb" - the colour of this source's row in the Grid's income table
   // (set in Settings > Income). Null = a palette colour picked by position.
   color: text("color"),
-  // Whole-source sharing, all months past and future - income_entries is a
-  // monthly aggregate (one row per source per month, no per-transaction
-  // fields at all), so unlike expenses there's no per-entry override to
-  // offer. See lib/db/household-tags.ts.
+  // Whole-source sharing, all months past and future - a deliberate choice,
+  // not a structural limit (income_transactions does have per-entry fields
+  // now): unlike a category, an income source has no "children" and no
+  // natural finer-grained thing to share instead, so there's no per-entry
+  // override offered. See lib/db/household-tags.ts.
   sharedToHousehold: integer("shared_to_household", { mode: "boolean" }).notNull().default(false),
 });
 
@@ -144,6 +145,40 @@ export const incomeEntries = sqliteTable(
     ),
   ]
 );
+
+/** The real, per-transaction ledger - income_entries above is the BUDGETED
+ * figure only (one row per source/month, directly editable), same role
+ * category_entries has for expenses. This is expense_entries' own
+ * counterpart: logIncomeTransaction inserts here, never touches
+ * income_entries, exactly how logExpense never touches category_entries.
+ * No unique index - many rows per source/month, same as expense_entries. */
+export const incomeTransactions = sqliteTable("income_transactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  incomeSourceId: integer("income_source_id")
+    .notNull()
+    .references(() => incomeSources.id),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 1-12, derived from entryDate
+  amountPence: integer("amount_pence").notNull(),
+  note: text("note"),
+  entryDate: text("entry_date").notNull(), // ISO date, when the money actually landed
+  // This money is *also* a loan from this person - same relationship
+  // expenseEntries.debtPersonId has for a debt repayment.
+  debtPersonId: integer("debt_person_id").references(() => people.id),
+  // Set when this was created by categorizing a staged bank-sync row -
+  // same provenance-only field as expenseEntries.importedTransactionId,
+  // and the real reverse join that made importedTransactions.
+  // categorizedIncomeSourceId unnecessary.
+  importedTransactionId: integer("imported_transaction_id").references(
+    () => importedTransactions.id
+  ),
+  // "Pencilled in" from a pending-at-the-bank preview - same meaning as
+  // expenseEntries.provisional, see that column's own comment.
+  provisional: integer("provisional", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(current_timestamp)`),
+});
 
 /** A boundary created each time the designated "pay anchor" income source
  * gets a logged entry: `receivedDate` is when the money actually landed,
@@ -279,6 +314,11 @@ export const debtLedgerEntries = sqliteTable("debt_ledger_entries", {
   // leaving the ledger permanently wrong. Null for anything entered
   // directly on the Debt page.
   expenseEntryId: integer("expense_entry_id").references(() => expenseEntries.id),
+  // Same idea as expenseEntryId above, for a "this money is a loan FROM
+  // them" entry created alongside logging an income transaction (see
+  // logIncomeTransaction) - lets discarding a pencilled-in income entry
+  // clean up the matching loan it created.
+  incomeTransactionId: integer("income_transaction_id").references(() => incomeTransactions.id),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(current_timestamp)`),
@@ -481,7 +521,8 @@ export const bankAccounts = sqliteTable("bank_accounts", {
  * provider id to exact-match against those, unlike imported_id above) - the review UI surfaces it, the user decides;
  * it's never used to auto-ignore anything. Can go stale if that expense is
  * later edited/deleted, which is an acceptable imprecision for a "maybe",
- * not a correctness requirement. */
+ * not a correctness requirement. possibleDuplicateIncomeTransactionId is
+ * its exact mirror for a money-in row, against incomeTransactions. */
 export const importedTransactions = sqliteTable(
   "imported_transactions",
   {
@@ -505,16 +546,9 @@ export const importedTransactions = sqliteTable(
     // account (same amount, date within a day) - flagged in Review instead
     // of being silently dropped or auto-categorized.
     possibleDuplicateImportedId: integer("possible_duplicate_imported_id"),
-    // Set when this row was categorized as INCOME rather than an expense -
-    // income_entries is one aggregate row per (source, year, month), not
-    // one row per transaction like expenseEntries, so there's no
-    // equivalent of expenseEntries.importedTransactionId to join back
-    // through. A real FK (unlike possibleDuplicateExpenseEntryId) since income
-    // sources are only ever archived, never hard-deleted, so it can't go
-    // stale the same way.
-    categorizedIncomeSourceId: integer("categorized_income_source_id").references(
-      () => incomeSources.id
-    ),
+    // Money-in's exact mirror of possibleDuplicateExpenseEntryId - same
+    // suggestion-only, can-go-stale contract, just against incomeTransactions.
+    possibleDuplicateIncomeTransactionId: integer("possible_duplicate_income_transaction_id"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),

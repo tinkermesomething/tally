@@ -131,11 +131,10 @@ export async function setExpenseHouseholdShare(expenseEntryId: number, share: bo
   if (updated.length === 0) throw new Error("That entry no longer exists.");
 }
 
-/** Whole-source sharing - income_entries has no per-transaction row to
- * tag individually (see this file's own top comment), so this is the only
- * lever: on shares every month past and future, off stops sharing new
- * months (same "history stays, future doesn't" rule as the category
- * toggle above). */
+/** Whole-source sharing - a deliberate choice (see incomeSources.sharedToHousehold's
+ * own schema comment for why), not a structural limit: on shares every
+ * month past and future, off stops sharing new months (same "history
+ * stays, future doesn't" rule as the category toggle above). */
 export async function shareIncomeSource(incomeSourceId: number, share: boolean) {
   const updated = await db
     .update(incomeSources)

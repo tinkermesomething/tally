@@ -114,6 +114,8 @@ export async function addDebtEntry(input: {
   /** Set when created automatically alongside an expense (logExpense), so a
    * later discard of a provisional expense can remove this too. */
   expenseEntryId?: number;
+  /** Same idea, for an income transaction (logIncomeTransaction). */
+  incomeTransactionId?: number;
 }) {
   assertIsoDate(input.entryDate);
   await db.insert(debtLedgerEntries).values({
@@ -123,6 +125,7 @@ export async function addDebtEntry(input: {
     direction: input.direction,
     note: input.note || null,
     expenseEntryId: input.expenseEntryId,
+    incomeTransactionId: input.incomeTransactionId,
   });
 }
 
@@ -130,6 +133,11 @@ export async function addDebtEntry(input: {
  * it auto-created, if any. No-op if the expense never had a debt tag. */
 export async function deleteDebtEntriesForExpense(expenseEntryId: number) {
   await db.delete(debtLedgerEntries).where(eq(debtLedgerEntries.expenseEntryId, expenseEntryId));
+}
+
+/** Same cleanup, for discarding a pencilled-in income transaction. */
+export async function deleteDebtEntriesForIncome(incomeTransactionId: number) {
+  await db.delete(debtLedgerEntries).where(eq(debtLedgerEntries.incomeTransactionId, incomeTransactionId));
 }
 
 /** Edits a ledger entry's own fields (amount/direction/date/note) - doesn't

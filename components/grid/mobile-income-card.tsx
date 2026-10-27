@@ -20,6 +20,8 @@ export function MobileIncomeCard({
       <GridCell
         amountPence={cell?.amountPence}
         paid={true}
+        spentPence={cell?.spentPence}
+        spentLabel="Received"
         previousAmountPence={cell?.previousAmountPence}
         showPaidToggle={false}
         onCommitAmount={(pounds) => updateIncomeAmount({ incomeSourceId: source.id, year, month, pounds })}

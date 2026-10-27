@@ -101,7 +101,7 @@ export function ReviewList({
   // A provisional match (pencilled-in draft awaiting Confirm/Discard) needs
   // individual attention - bulk-ignoring or bulk-approving it alongside
   // other rows would skip that resolution and leave the draft orphaned.
-  const isBulkEligible = (t: ReviewRow) => !t.duplicateOf?.provisional;
+  const isBulkEligible = (t: ReviewRow) => !t.duplicateOf?.provisional && !t.incomeDuplicateOf?.provisional;
 
   // Filter: every row stays mounted (a category already picked on a row must
   // survive being filtered out), hidden ones just aren't shown. Best matches

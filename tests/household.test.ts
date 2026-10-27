@@ -24,7 +24,7 @@ function asSignedInUser(sub: string, email: string, fn: () => Promise<void>) {
 }
 import { db } from "@/lib/db";
 import { getSystemConn } from "@/lib/db/system-connection";
-import { categories, categoryEntries, expenseEntries, incomeEntries, incomeSources, users } from "@/lib/db/schema";
+import { categories, categoryEntries, expenseEntries, incomeTransactions, incomeSources, users } from "@/lib/db/schema";
 import { linkCategoryToHousehold, shareCategoryExpenses, shareIncomeSource, setExpenseHouseholdShare } from "@/lib/db/household-tags";
 import {
   getHouseholdCellDetail,
@@ -160,9 +160,9 @@ describe("reconcileHouseholdDataForUser", () => {
     const alice = await seedSignedInUser("alice-sub", "alice@example.com");
     await asSignedInUser("alice-sub", "alice@example.com", async () => {
       const [source] = await db.insert(incomeSources).values({ name: "Salary" }).returning();
-      await db.insert(incomeEntries).values([
-        { incomeSourceId: source.id, year: 2026, month: 8, amountPence: 250000 },
-        { incomeSourceId: source.id, year: 2026, month: 9, amountPence: 250000 },
+      await db.insert(incomeTransactions).values([
+        { incomeSourceId: source.id, year: 2026, month: 8, amountPence: 250000, entryDate: "2026-08-01" },
+        { incomeSourceId: source.id, year: 2026, month: 9, amountPence: 250000, entryDate: "2026-09-01" },
       ]);
       await shareIncomeSource(source.id, true);
       await reconcileHouseholdDataForUser(alice.id);
@@ -342,9 +342,9 @@ describe("getHouseholdIncomeGrid", () => {
     const alice = await seedSignedInUser("alice-sub", "alice@example.com");
     await asSignedInUser("alice-sub", "alice@example.com", async () => {
       const [source] = await db.insert(incomeSources).values({ name: "Salary" }).returning();
-      await db.insert(incomeEntries).values([
-        { incomeSourceId: source.id, year: 2026, month: 8, amountPence: 250000 },
-        { incomeSourceId: source.id, year: 2026, month: 9, amountPence: 250000 },
+      await db.insert(incomeTransactions).values([
+        { incomeSourceId: source.id, year: 2026, month: 8, amountPence: 250000, entryDate: "2026-08-01" },
+        { incomeSourceId: source.id, year: 2026, month: 9, amountPence: 250000, entryDate: "2026-09-01" },
       ]);
       await shareIncomeSource(source.id, true);
       await reconcileHouseholdDataForUser(alice.id);
@@ -364,13 +364,13 @@ describe("getHouseholdIncomeGrid", () => {
 
     await asSignedInUser("alice-sub", "alice@example.com", async () => {
       const [source] = await db.insert(incomeSources).values({ name: "Salary" }).returning();
-      await db.insert(incomeEntries).values({ incomeSourceId: source.id, year: 2026, month: 8, amountPence: 100000 });
+      await db.insert(incomeTransactions).values({ incomeSourceId: source.id, year: 2026, month: 8, amountPence: 100000, entryDate: "2026-08-01" });
       await shareIncomeSource(source.id, true);
       await reconcileHouseholdDataForUser(alice.id);
     })();
     await asSignedInUser("bob-sub", "bob@example.com", async () => {
       const [source] = await db.insert(incomeSources).values({ name: "Salary" }).returning();
-      await db.insert(incomeEntries).values({ incomeSourceId: source.id, year: 2026, month: 8, amountPence: 90000 });
+      await db.insert(incomeTransactions).values({ incomeSourceId: source.id, year: 2026, month: 8, amountPence: 90000, entryDate: "2026-08-01" });
       await shareIncomeSource(source.id, true);
       await reconcileHouseholdDataForUser(bob.id);
     })();

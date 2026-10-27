@@ -7,7 +7,7 @@ import {
   categories,
   expenseEntries,
   importedTransactions,
-  incomeEntries,
+  incomeTransactions,
   incomeSources,
   debtLedgerEntries,
   people,
@@ -120,13 +120,13 @@ describe("atomicity", () => {
       categorizeTransactionAsIncome(row.id, { incomeSourceId: src.id, debtPersonId: person.id })
     ).rejects.toThrow("boom");
 
-    expect(await db.select().from(incomeEntries)).toHaveLength(0); // no half-written income
+    expect(await db.select().from(incomeTransactions)).toHaveLength(0); // no half-written income
     expect((await db.select().from(importedTransactions))[0].status).toBe("pending_review");
 
     // And a retry must count it exactly once.
     debt.fail = false;
     await categorizeTransactionAsIncome(row.id, { incomeSourceId: src.id, debtPersonId: person.id });
-    const entries = await db.select().from(incomeEntries);
+    const entries = await db.select().from(incomeTransactions);
     expect(entries).toHaveLength(1);
     expect(entries[0].amountPence).toBe(5000);
   });

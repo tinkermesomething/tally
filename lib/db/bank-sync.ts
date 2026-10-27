@@ -1,8 +1,7 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db, inTransaction } from "./index";
 import { accountDisplayName } from "../accounts";
-import { logExpense, incrementIncomeEntry, confirmPencilledExpense } from "./queries";
-import { addDebtEntry } from "./debt";
+import { logExpense, logIncomeTransaction, confirmPencilledExpense, confirmPencilledIncome } from "./queries";
 import { addTagsToExpense } from "./retro-tags";
 import { recordAnchorForWage } from "./pay-period";
 import { parseIsoDate } from "../date";
@@ -14,6 +13,7 @@ import {
   expenseEntries,
   importedTransactions,
   incomeSources,
+  incomeTransactions,
   people,
   savingsBuckets,
   savingsEntries,
@@ -168,7 +168,7 @@ export async function syncBankAccount(bankAccountId: number): Promise<{ staged: 
   // fetched separately by the Review page - see the schema comment on
   // pendingPreviewJson for why a second live call per page view isn't
   // safe against this endpoint's own rate limit.
-  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName" | "pencilled" | "ruleMatch">[] = pending.map((t) => ({
+  const pendingPreview: Omit<PendingPreviewTransaction, "bankAccountId" | "bankAccountName" | "pencilled" | "ruleMatch" | "incomeRuleMatch">[] = pending.map((t) => ({
     amountPence: gcAmountToPence(t.transactionAmount.amount),
     date: t.bookingDate ?? t.valueDate ?? null,
     payeeRaw: payeeFromTransaction(t),
@@ -246,15 +246,18 @@ export type PendingPreviewTransaction = {
   // date GoCardless currently has for this", not a settled booking date.
   date: string | null;
   payeeRaw: string;
-  /** Already pencilled in as an expense (a provisional entry with this
+  /** Already pencilled in (a provisional expense or income entry with this
    * amount and payee exists) - the preview comes from the bank's cache, so
    * without this a refresh offered the pencil again. */
   pencilled: boolean;
-  /** An existing rule's conditions already match this row (money-out, so
-   * only ever an expense target) - lets Review default the Pencil-in picker
-   * to it instead of asking the user to categorize every single one by
-   * hand again. Still just a default: the picker can be changed. */
+  /** An existing rule's conditions already match this row as an expense
+   * target - lets Review default the Pencil-in picker to it instead of
+   * asking the user to categorize every single one by hand again. Still
+   * just a default: the picker can be changed. Only ever set for money-out
+   * rows - see incomeRuleMatch for money-in. */
   ruleMatch: { categoryId: number; categoryName: string; debtPersonId?: number; savingsBucketId?: number } | null;
+  /** Same idea as ruleMatch, for a money-in row matching an income rule. */
+  incomeRuleMatch: { incomeSourceId: number; incomeSourceName: string; debtPersonId?: number } | null;
 };
 
 /** Read-only preview of GoCardless's own "pending" transactions (not yet
@@ -277,14 +280,21 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
   const results: PendingPreviewTransaction[] = [];
   const rules = await getCategoryRules();
   const categoryNameById = new Map((await db.select({ id: categories.id, name: categories.name }).from(categories)).map((c) => [c.id, c.name]));
-  // pencilInExpense stores the preview's payee as the note and its amount as
-  // a positive figure. Each provisional entry covers ONE preview row, so two
-  // identical pending rows with one pencilled show one pencil.
+  const incomeSourceNameById = new Map((await db.select({ id: incomeSources.id, name: incomeSources.name }).from(incomeSources)).map((s) => [s.id, s.name]));
+  // pencilInExpense/pencilInIncome store the preview's payee as the note
+  // and its amount as a positive figure. Each provisional entry covers ONE
+  // preview row, so two identical pending rows with one pencilled show one
+  // pencil.
   const provisional = await db
     .select({ amountPence: expenseEntries.amountPence, note: expenseEntries.note })
     .from(expenseEntries)
     .where(eq(expenseEntries.provisional, true));
   const claimed = provisional.map((e) => ({ ...e, used: false }));
+  const provisionalIncome = await db
+    .select({ amountPence: incomeTransactions.amountPence, note: incomeTransactions.note })
+    .from(incomeTransactions)
+    .where(eq(incomeTransactions.provisional, true));
+  const claimedIncome = provisionalIncome.map((e) => ({ ...e, used: false }));
   for (const account of accounts) {
     if (!account.pendingPreviewJson) continue;
     let parsed: unknown;
@@ -306,12 +316,13 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
       const match =
         t.amountPence < 0
           ? claimed.find((e) => !e.used && e.amountPence === Math.abs(t.amountPence) && e.note === t.payeeRaw)
-          : undefined;
+          : claimedIncome.find((e) => !e.used && e.amountPence === t.amountPence && e.note === t.payeeRaw);
       if (match) match.used = true;
-      // Same matcher sync uses - direction-filtered the same way (an
-      // expense rule only ever matches money-out), so what this suggests
-      // is exactly what the rule would do once the real row settles.
+      // Same matcher sync uses - direction-filtered the same way, so what
+      // this suggests is exactly what the rule would do once the real row
+      // settles.
       const ruleMatch = t.amountPence < 0 ? matchCategoryRule({ payeeRaw: t.payeeRaw, payeeClean: null, amountPence: t.amountPence, bankAccountId: account.id }, rules) : null;
+      const incomeRuleMatch = t.amountPence > 0 ? matchCategoryRule({ payeeRaw: t.payeeRaw, payeeClean: null, amountPence: t.amountPence, bankAccountId: account.id }, rules) : null;
       results.push({
         bankAccountId: account.id,
         bankAccountName: accountDisplayName(account),
@@ -326,6 +337,14 @@ export async function getPendingPreview(): Promise<PendingPreviewTransaction[]> 
                 categoryName: categoryNameById.get(ruleMatch.categoryId) ?? "Unknown category",
                 debtPersonId: ruleMatch.debtPersonId ?? undefined,
                 savingsBucketId: ruleMatch.savingsBucketId ?? undefined,
+              }
+            : null,
+        incomeRuleMatch:
+          incomeRuleMatch && incomeRuleMatch.targetType === "income"
+            ? {
+                incomeSourceId: incomeRuleMatch.incomeSourceId,
+                incomeSourceName: incomeSourceNameById.get(incomeRuleMatch.incomeSourceId) ?? "Unknown source",
+                debtPersonId: incomeRuleMatch.debtPersonId ?? undefined,
               }
             : null,
       });
@@ -596,6 +615,57 @@ export async function findPossibleManualDuplicate(
   return eligible[0]?.e.id ?? null;
 }
 
+/** Money-in's exact mirror of findPossibleManualDuplicate - same windows,
+ * same ranking, same "a draft already claimed by another waiting row is
+ * skipped" rule, just against income_transactions and
+ * possibleDuplicateIncomeTransactionId. Needed for correctness, not just
+ * convenience: without it, a pencilled-in income guess is never cleared
+ * once the real transaction syncs in and gets auto-categorized by a rule,
+ * permanently double-counting it. */
+export async function findPossibleManualIncomeDuplicate(
+  amountPence: number,
+  bookingDate: string,
+  payeeRaw?: string
+): Promise<number | null> {
+  if (amountPence <= 0) return null;
+
+  const wide = shiftIsoDate(bookingDate, -PENCILLED_WINDOW_DAYS);
+  const wideEnd = shiftIsoDate(bookingDate, PENCILLED_WINDOW_DAYS);
+  const candidates = await db
+    .select()
+    .from(incomeTransactions)
+    .where(
+      and(
+        eq(incomeTransactions.amountPence, amountPence),
+        gte(incomeTransactions.entryDate, wide),
+        lte(incomeTransactions.entryDate, wideEnd),
+        isNull(incomeTransactions.importedTransactionId)
+      )
+    );
+  if (candidates.length === 0) return null;
+
+  const claimedRows = await db
+    .select({ id: importedTransactions.possibleDuplicateIncomeTransactionId })
+    .from(importedTransactions)
+    .where(and(eq(importedTransactions.status, "pending_review"), isNotNull(importedTransactions.possibleDuplicateIncomeTransactionId)));
+  const claimed = new Set(claimedRows.map((r) => r.id));
+
+  const bookingMs = isoToUtcMs(bookingDate);
+  const eligible = candidates
+    .map((e) => ({ e, distanceDays: Math.abs(isoToUtcMs(e.entryDate) - bookingMs) / DAY_MS }))
+    .filter(({ e, distanceDays }) =>
+      e.provisional ? !claimed.has(e.id) : distanceDays <= MANUAL_DUPLICATE_WINDOW_DAYS
+    );
+  eligible.sort(
+    (a, b) =>
+      Number(b.e.provisional) - Number(a.e.provisional) ||
+      Number(b.e.note === payeeRaw) - Number(a.e.note === payeeRaw) ||
+      a.distanceDays - b.distanceDays ||
+      a.e.id - b.e.id
+  );
+  return eligible[0]?.e.id ?? null;
+}
+
 // ---- Staging / review pool ----
 
 export type RawImportedTransaction = {
@@ -695,6 +765,21 @@ async function autoProcessStagedTransaction(row: typeof importedTransactions.$in
     return { ...row, possibleDuplicateExpenseEntryId: duplicateOf };
   }
 
+  // Money-in's exact mirror of the block above.
+  const incomeDuplicateOf = await findPossibleManualIncomeDuplicate(row.amountPence, row.bookingDate, row.payeeRaw);
+  if (incomeDuplicateOf !== null) {
+    const draft = await db.query.incomeTransactions.findFirst({ where: eq(incomeTransactions.id, incomeDuplicateOf) });
+    if (draft?.provisional && payeesMatch(draft.note, row.payeeRaw)) {
+      await confirmPencilledIncomeMatch(id, incomeDuplicateOf);
+      return (await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) }))!;
+    }
+    await db
+      .update(importedTransactions)
+      .set({ possibleDuplicateIncomeTransactionId: incomeDuplicateOf })
+      .where(eq(importedTransactions.id, id));
+    return { ...row, possibleDuplicateIncomeTransactionId: incomeDuplicateOf };
+  }
+
   const ruleMatch = matchCategoryRule(row, rules);
   if (ruleMatch) {
     if (ruleMatch.targetType === "ignore") {
@@ -792,6 +877,58 @@ export async function confirmPencilledMatch(importedTransactionId: number, expen
   });
 }
 
+/** Money-in's exact mirror of getPossibleDuplicateDetails. */
+export async function getPossibleIncomeDuplicateDetails(incomeTransactionId: number): Promise<{
+  id: number;
+  sourceName: string;
+  amountPence: number;
+  entryDate: string;
+  note: string | null;
+  provisional: boolean;
+} | null> {
+  const row = await db
+    .select({
+      id: incomeTransactions.id,
+      sourceName: incomeSources.name,
+      amountPence: incomeTransactions.amountPence,
+      entryDate: incomeTransactions.entryDate,
+      note: incomeTransactions.note,
+      provisional: incomeTransactions.provisional,
+    })
+    .from(incomeTransactions)
+    .innerJoin(incomeSources, eq(incomeTransactions.incomeSourceId, incomeSources.id))
+    .where(eq(incomeTransactions.id, incomeTransactionId))
+    .limit(1);
+  return row[0] ?? null;
+}
+
+/** Money-in's mirror of confirmPencilledMatch - plus one thing that one
+ * doesn't need: if the draft's source is the pay anchor, a pencilled-in
+ * guess is deliberately filed by plain calendar date, never the anchor
+ * period (see pencilInPendingIncome in app/review/actions.ts) - now that
+ * it's real, move it to the anchor period and re-file expenses, same as
+ * categorizeTransactionAsIncome's own anchor path already does for a
+ * fresh (never-pencilled) categorization. */
+export async function confirmPencilledIncomeMatch(importedTransactionId: number, incomeTransactionId: number) {
+  await inTransaction(async () => {
+    const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, importedTransactionId) });
+    const draft = await db.query.incomeTransactions.findFirst({ where: eq(incomeTransactions.id, incomeTransactionId) });
+    if (row && draft) {
+      const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, draft.incomeSourceId) });
+      if (source?.isPayAnchor) {
+        const { year, month } = await recordAnchorForWage(draft.incomeSourceId, row.bookingDate);
+        await db.update(incomeTransactions).set({ year, month, entryDate: row.bookingDate }).where(eq(incomeTransactions.id, incomeTransactionId));
+        // The pencilled guess's debt_ledger_entries row (if it was tagged
+        // with a debtPersonId) still has the old pre-anchor date - keep it
+        // in step with the income row it's linked to.
+        await db.update(debtLedgerEntries).set({ entryDate: row.bookingDate }).where(eq(debtLedgerEntries.incomeTransactionId, incomeTransactionId));
+      }
+    }
+    await confirmPencilledIncome(incomeTransactionId, importedTransactionId);
+    await ignoreTransaction(importedTransactionId);
+  });
+}
+
 /** A person must exist BEFORE anything is written for them: the loan/
  * repayment row is inserted after the income/expense one, so a bad id
  * would otherwise fail midway and leave the money recorded but the row
@@ -862,13 +999,14 @@ export async function categorizeTransaction(
   });
 }
 
-/** Income's equivalent of categorizeTransaction - but income_entries is one
- * aggregate row per (source, year, month), not one row per transaction, so
- * there's no insert-a-new-row step the way logExpense has. Adds into
- * whatever's already there for that month (incrementIncomeEntry), never
- * replaces it - a second incoming payment the same month must not clobber
- * the first. categorizedIncomeSourceId is the traceability record instead
- * of a reverse FK from income_entries (see the schema comment on it). */
+/** Income's equivalent of categorizeTransaction - inserts a real
+ * income_transactions row via logIncomeTransaction, exactly how
+ * categorizeTransaction delegates to logExpense (debt-tagging included,
+ * via logIncomeTransaction's own debtPersonId handling - not a separate
+ * call here, same reasoning as categorizeTransaction not making one
+ * either). The reverse join back to this row is
+ * income_transactions.importedTransactionId - no traceability column
+ * needed on this side anymore. */
 export async function categorizeTransactionAsIncome(
   id: number,
   // debtPersonId: this money is a LOAN from that person - recorded on the
@@ -893,26 +1031,20 @@ export async function categorizeTransactionAsIncome(
     const { year, month } = source?.isPayAnchor
       ? await recordAnchorForWage(input.incomeSourceId, row.bookingDate)
       : parseIsoDate(row.bookingDate);
-    await incrementIncomeEntry({
+    await logIncomeTransaction({
       incomeSourceId: input.incomeSourceId,
+      amountPence: row.amountPence,
+      entryDate: row.bookingDate,
       year,
       month,
-      amountPence: row.amountPence,
+      note: entryNoteFor(row),
+      debtPersonId: input.debtPersonId,
+      importedTransactionId: id,
     });
-
-    if (input.debtPersonId) {
-      await addDebtEntry({
-        personId: input.debtPersonId,
-        entryDate: row.bookingDate,
-        amountPence: row.amountPence,
-        direction: "loan",
-        note: entryNoteFor(row),
-      });
-    }
 
     await db
       .update(importedTransactions)
-      .set({ status: "categorized", categorizedIncomeSourceId: input.incomeSourceId })
+      .set({ status: "categorized" })
       .where(eq(importedTransactions.id, id));
   });
 }

@@ -15,8 +15,8 @@ import {
   getExpenseEntriesForCell,
   getGridData,
   getIncomeSource,
-  incrementIncomeEntry,
   logExpense as logExpenseQuery,
+  logIncomeTransaction,
   moveCategoryParent as moveCategoryParentQuery,
   renameCategory as renameCategoryQuery,
   setCategoryEntryPaid,
@@ -30,7 +30,6 @@ import {
   upsertCategoryEntry,
   upsertIncomeEntry,
 } from "@/lib/db/queries";
-import { addDebtEntry } from "@/lib/db/debt";
 import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
 import { renameIncomeSource as renameIncomeSourceQuery, reorderIncomeSourceTo } from "@/lib/db/income-order";
 import { getTagOptions, linkCategoryAndTag, listMissingTags, setExpenseTags, type MissingTagRow } from "@/lib/db/retro-tags";
@@ -241,12 +240,14 @@ export async function removeExpenseEntry(id: number) {
   });
 }
 
-/** Logs an actual income transaction (additive - matches how logExpense
- * accumulates rather than replaces) against an existing source. Optionally
- * also links it to a debt person as a "loan" - e.g. money someone lent you,
- * as opposed to a gift or wages, which don't touch the debt ledger. Mirrors
- * addLedgerEntry's own loan+incomeSourceId branch (app/debt/actions.ts),
- * just entered from the income side instead of the debt side. */
+/** Logs a real income_transactions row against an existing source - the
+ * actual-ledger counterpart to logExpense, same as logExpense never touches
+ * category_entries' budgeted amount, this never touches income_entries'.
+ * Optionally also links it to a debt person as a "loan" - e.g. money
+ * someone lent you, as opposed to a gift or wages, which don't touch the
+ * debt ledger. Mirrors addLedgerEntry's own loan+incomeSourceId branch
+ * (app/debt/actions.ts), just entered from the income side instead of the
+ * debt side. */
 export async function logIncome(input: {
   incomeSourceId: number;
   pounds: number;
@@ -289,15 +290,14 @@ export async function logIncome(input: {
           ({ year, month } = parseIsoDate(input.entryDate));
         }
 
-        await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
-        if (input.debtPersonId) {
-          await addDebtEntry({
-            personId: input.debtPersonId,
-            entryDate: input.entryDate,
-            amountPence,
-            direction: "loan",
-          });
-        }
+        await logIncomeTransaction({
+          incomeSourceId: input.incomeSourceId,
+          amountPence,
+          entryDate: input.entryDate,
+          year,
+          month,
+          debtPersonId: input.debtPersonId,
+        });
       });
       revalidatePath("/entries");
       revalidatePath("/grid");

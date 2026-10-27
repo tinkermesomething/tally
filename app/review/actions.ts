@@ -1,7 +1,7 @@
 "use server";
 
 import { assertPositivePence } from "@/lib/validate";
-import { localIsoDate } from "@/lib/date";
+import { localIsoDate, parseIsoDate } from "@/lib/date";
 import { requireSession } from "@/lib/session";
 import { revalidatePath } from "next/cache";
 import {
@@ -13,9 +13,10 @@ import {
   bulkCategorizeTransactionsAsExpense,
   bulkCategorizeTransactionsAsIncome,
   confirmPencilledMatch,
+  confirmPencilledIncomeMatch,
   setTransactionNote,
 } from "@/lib/db/bank-sync";
-import { pencilInExpense, discardPencilledExpense } from "@/lib/db/queries";
+import { pencilInExpense, discardPencilledExpense, pencilInIncome, discardPencilledIncome } from "@/lib/db/queries";
 
 export async function categorizeImportedTransaction(
   id: number,
@@ -133,6 +134,50 @@ export async function discardImportedTransactionMatch(expenseEntryId: number) {
     revalidatePath("/review");
     revalidatePath("/grid");
     revalidatePath("/entries");
+    revalidatePath("/debt");
+  });
+}
+
+/** Money-in's mirror of pencilInPendingExpense. Always files by the
+ * pending preview's own plain calendar date, even for the pay-anchor
+ * source - a guess shouldn't move the anchor boundary or re-file
+ * expenses; only confirmImportedTransactionIncomeMatch does that, once
+ * it's real (see confirmPencilledIncomeMatch in lib/db/bank-sync.ts). */
+export async function pencilInPendingIncome(input: {
+  incomeSourceId: number;
+  amountPence: number;
+  entryDate: string | null;
+  note?: string;
+  debtPersonId?: number;
+}) {
+  return requireSession(async () => {
+    assertPositivePence(input.amountPence);
+    const entryDate = input.entryDate ?? localIsoDate();
+    const { year, month } = parseIsoDate(entryDate);
+    await pencilInIncome({ ...input, entryDate, year, month });
+    revalidatePath("/review");
+    revalidatePath("/grid");
+    revalidatePath("/debt");
+  });
+}
+
+/** The booked transaction that just synced in matches a pencilled-in
+ * income guess - mirrors confirmImportedTransactionMatch. */
+export async function confirmImportedTransactionIncomeMatch(importedTransactionId: number, incomeTransactionId: number) {
+  return requireSession(async () => {
+    await confirmPencilledIncomeMatch(importedTransactionId, incomeTransactionId);
+    revalidatePath("/review");
+    revalidatePath("/grid");
+  });
+}
+
+/** The pencilled-in income guess was wrong - mirrors
+ * discardImportedTransactionMatch. */
+export async function discardImportedTransactionIncomeMatch(incomeTransactionId: number) {
+  return requireSession(async () => {
+    await discardPencilledIncome(incomeTransactionId);
+    revalidatePath("/review");
+    revalidatePath("/grid");
     revalidatePath("/debt");
   });
 }

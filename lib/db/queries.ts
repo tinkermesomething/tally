@@ -4,7 +4,7 @@ import { db, inTransaction } from "./index";
 import { assertIsoDate } from "../validate";
 import { markCellPaid, unpayCellIfNoExpenses } from "./cells";
 import { resolvePeriodForDate } from "./pay-period";
-import { addDebtEntry, deleteDebtEntriesForExpense } from "./debt";
+import { addDebtEntry, deleteDebtEntriesForExpense, deleteDebtEntriesForIncome } from "./debt";
 import { addSavingsEntry, deleteSavingsEntriesForExpense, syncSavingsEntriesForExpense } from "./savings";
 import { advanceBillsForExpense } from "./bills";
 import {
@@ -13,6 +13,7 @@ import {
   expenseEntries,
   incomeEntries,
   incomeSources,
+  incomeTransactions,
   reportPanels,
 } from "./schema";
 
@@ -421,6 +422,117 @@ export async function deleteIncomeEntry(input: {
   month: number;
 }) {
   await db.delete(incomeEntries).where(incomeEntryMatch(input.incomeSourceId, input.year, input.month));
+}
+
+/** income_transactions' own logExpense - the real, per-transaction ledger
+ * (income_entries above is the BUDGETED figure only, never touched here).
+ * Unlike logExpense, year/month are NOT derived internally: the pay-anchor
+ * source resolves its period specially (see recordAnchorForWage), every
+ * other source just from entryDate's own calendar month - callers
+ * (app/grid/actions.ts's logIncome, categorizeTransactionAsIncome) already
+ * do this resolution, so it isn't duplicated here. */
+async function logIncomeTransactionUnsafe(input: {
+  incomeSourceId: number;
+  amountPence: number;
+  entryDate: string; // ISO date, when the money actually landed
+  year: number;
+  month: number;
+  note?: string;
+  /** This money is also a loan FROM this person. */
+  debtPersonId?: number;
+  /** Set when created by categorizing a staged bank-sync row. */
+  importedTransactionId?: number;
+  /** Pencilled in from a pending-at-the-bank preview - see pencilInIncome. */
+  provisional?: boolean;
+}) {
+  assertIsoDate(input.entryDate);
+  const [created] = await db
+    .insert(incomeTransactions)
+    .values({
+      incomeSourceId: input.incomeSourceId,
+      year: input.year,
+      month: input.month,
+      amountPence: input.amountPence,
+      entryDate: input.entryDate,
+      note: input.note || null,
+      debtPersonId: input.debtPersonId,
+      importedTransactionId: input.importedTransactionId,
+      provisional: input.provisional ?? false,
+    })
+    .returning();
+
+  // Same reasoning as logExpense's own debtPersonId handling - must
+  // actually move the ledger, not just label the transaction.
+  if (input.debtPersonId) {
+    await addDebtEntry({
+      personId: input.debtPersonId,
+      entryDate: input.entryDate,
+      amountPence: input.amountPence,
+      direction: "loan",
+      note: input.note,
+      incomeTransactionId: created.id,
+    });
+  }
+
+  return created;
+}
+
+export function logIncomeTransaction(input: Parameters<typeof logIncomeTransactionUnsafe>[0]) {
+  return inTransaction(() => logIncomeTransactionUnsafe(input));
+}
+
+/** "Pencil in" a pending-at-the-bank credit as real income ahead of it
+ * settling - counts immediately, same reasoning as pencilInExpense. */
+export async function pencilInIncome(input: {
+  incomeSourceId: number;
+  amountPence: number;
+  entryDate: string;
+  year: number;
+  month: number;
+  note?: string;
+  debtPersonId?: number;
+}) {
+  return logIncomeTransaction({ ...input, provisional: true });
+}
+
+/** Undo for a pencilled-in income entry that turned out wrong - mirrors
+ * discardPencilledExpense exactly, including the same provisional-only guard. */
+export async function discardPencilledIncome(id: number) {
+  const entry = await db.query.incomeTransactions.findFirst({ where: eq(incomeTransactions.id, id) });
+  if (!entry) return;
+  if (!entry.provisional) {
+    throw new Error("Not a provisional entry - use the regular delete instead.");
+  }
+  await deleteIncomeTransaction(id);
+}
+
+/** The real transaction settled matching what was pencilled in - mirrors
+ * confirmPencilledExpense (no bills-advance equivalent for income, so just
+ * the flag flip and the traceability link). */
+export async function confirmPencilledIncome(id: number, importedTransactionId: number) {
+  const entry = await db.query.incomeTransactions.findFirst({ where: eq(incomeTransactions.id, id) });
+  if (!entry) return;
+  if (!entry.provisional) {
+    throw new Error("Not a provisional entry.");
+  }
+  await db
+    .update(incomeTransactions)
+    .set({ provisional: false, importedTransactionId })
+    .where(eq(incomeTransactions.id, id));
+}
+
+/** Real, permanent delete - same reasoning as deleteExpenseEntry: a logged
+ * income transaction is a record, not something soft-deleted. Cleans up
+ * any loan ledger entry it auto-created. */
+export function deleteIncomeTransaction(id: number) {
+  return inTransaction(() => deleteIncomeTransactionUnsafe(id));
+}
+
+async function deleteIncomeTransactionUnsafe(id: number) {
+  const entry = await db.query.incomeTransactions.findFirst({ where: eq(incomeTransactions.id, id) });
+  if (!entry) return;
+  await deleteDebtEntriesForIncome(id);
+  await db.delete(incomeTransactions).where(eq(incomeTransactions.id, id));
 }
 
 /** Next free sortOrder for a table, used when appending a new row to the end

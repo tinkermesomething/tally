@@ -1,6 +1,7 @@
 import {
   getPendingTransactions,
   getPossibleDuplicateDetails,
+  getPossibleIncomeDuplicateDetails,
   getBankAccounts,
   getPendingPreview,
   getImportedDuplicateDetails,
@@ -17,6 +18,7 @@ import { accountDisplayName, accountLabels } from "@/lib/accounts";
 import { formatDate } from "@/lib/date-format";
 import type { ReviewRow } from "@/components/review/review-transaction-row";
 import { PencilInButton } from "@/components/review/pencil-in-button";
+import { PencilInIncomeButton } from "@/components/review/pencil-in-income-button";
 import { ImportCsvDialog } from "@/components/review/import-csv-dialog";
 import { CSV_PROVIDER } from "@/lib/db/bank-sync";
 import { isCsvMapping } from "@/lib/csv-import";
@@ -77,6 +79,10 @@ export default async function ReviewPage({
       duplicateOf:
         t.possibleDuplicateExpenseEntryId !== null
           ? await getPossibleDuplicateDetails(t.possibleDuplicateExpenseEntryId)
+          : null,
+      incomeDuplicateOf:
+        t.possibleDuplicateIncomeTransactionId !== null
+          ? await getPossibleIncomeDuplicateDetails(t.possibleDuplicateIncomeTransactionId)
           : null,
     }))
   );
@@ -142,8 +148,8 @@ export default async function ReviewPage({
       {pendingPreview.length > 0 && (
         <div className="space-y-1.5 rounded-xl border border-dashed border-border p-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Pending at the bank - not yet settled, so not categorizable yet. Money-out rows can be
-            pencilled in as an expense ahead of settling; everything else is for visibility only.
+            Pending at the bank - not yet settled, so not categorizable yet. Either direction can be
+            pencilled in ahead of settling.
           </p>
           <div className="space-y-1">
             {pendingPreview.map((t, i) => (
@@ -160,6 +166,15 @@ export default async function ReviewPage({
                   {t.pencilled && <span className="text-xs">Pencilled in</span>}
                   {t.amountPence < 0 && !t.pencilled && (
                     <PencilInButton amountPence={t.amountPence} date={t.date} payeeRaw={t.payeeRaw} categories={flatCategories} ruleMatch={t.ruleMatch} />
+                  )}
+                  {t.amountPence > 0 && !t.pencilled && (
+                    <PencilInIncomeButton
+                      amountPence={t.amountPence}
+                      date={t.date}
+                      payeeRaw={t.payeeRaw}
+                      incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+                      ruleMatch={t.incomeRuleMatch}
+                    />
                   )}
                 </div>
               </div>

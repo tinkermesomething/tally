@@ -23,6 +23,7 @@ export function GridCell({
   amountPence,
   paid,
   spentPence = 0,
+  spentLabel = "Paid",
   previousAmountPence,
   showPaidToggle = true,
   overdueItems = [],
@@ -37,6 +38,10 @@ export function GridCell({
   amountPence: number | undefined;
   paid: boolean;
   spentPence?: number;
+  /** The word before the spentPence sub-line's figure - "Paid" for an
+   * expense cell, "Received" for an income one (components/grid/income-
+   * table.tsx). */
+  spentLabel?: string;
   previousAmountPence?: number;
   showPaidToggle?: boolean;
   /** What the red alert is about (see overdueItemsFor) - empty means no
@@ -220,11 +225,11 @@ export function GridCell({
             className="pr-7 text-xs tabular-nums text-primary underline-offset-2 hover:underline"
             title="View logged entries"
           >
-            Paid {formatPence(spentPence, currency)}
+            {spentLabel} {formatPence(spentPence, currency)}
           </button>
         ) : (
           <span className="pr-7 text-xs tabular-nums text-primary">
-            Paid {formatPence(spentPence, currency)}
+            {spentLabel} {formatPence(spentPence, currency)}
           </span>
         )
       )}

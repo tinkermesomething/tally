@@ -267,6 +267,13 @@
       "when": 1791633773225,
       "tag": "0037_show_bills_tab",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791633873225,
+      "tag": "0038_income_transactions",
+      "breakpoints": true
     }
   ]
 }

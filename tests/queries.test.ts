@@ -7,6 +7,7 @@ import {
   deleteExpenseEntry,
   incrementIncomeEntry,
   logExpense,
+  pencilInIncome,
   upsertCategoryEntry,
   upsertIncomeEntry,
 } from "@/lib/db/queries";
@@ -162,5 +163,24 @@ describe("category tree + grid grouping", () => {
     const tree = await getCategoryTree();
     expect(tree.map((c) => c.name).sort()).toEqual(["Food", "Home", "Rent"]);
     expect(tree.find((c) => c.name === "Home")!.children).toEqual([]);
+  });
+});
+
+describe("wagesByMonth reflects actual income_transactions, not the budgeted income_entries figure", () => {
+  it("a budgeted-only month (no transaction logged) contributes nothing to wages/available", async () => {
+    const [wages] = await db.insert(incomeSources).values({ name: "Wages", sortOrder: 0 }).returning();
+    await db.insert(incomeEntries).values({ incomeSourceId: wages.id, year: 2026, month: 10, amountPence: 300000 });
+    const grid = await getGridData(2026);
+    expect(grid.wagesByMonth[9]).toBe(0); // index 9 = October
+  });
+
+  it("a pencilled-in (provisional) income transaction counts immediately, same as a confirmed one", async () => {
+    const [wages] = await db.insert(incomeSources).values({ name: "Wages", sortOrder: 0 }).returning();
+    await pencilInIncome({ incomeSourceId: wages.id, amountPence: 2000, entryDate: "2026-10-13", year: 2026, month: 10 });
+    const grid = await getGridData(2026);
+    expect(grid.wagesByMonth[9]).toBe(2000);
+    expect(grid.availableByMonth[9]).toBe(2000); // nothing budgeted this month, so available == wages
+    const wagesRow = grid.incomeSources.find((s) => s.name === "Wages")!;
+    expect(wagesRow.months[10].spentPence).toBe(2000); // the cell's own "Received" figure
   });
 });

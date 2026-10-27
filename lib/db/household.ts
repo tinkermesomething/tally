@@ -5,8 +5,8 @@ import {
   categories,
   categoryEntries,
   expenseEntries,
-  incomeEntries,
   incomeSources,
+  incomeTransactions,
   householdSettings,
   householdExpenseEntries,
   householdIncomeEntries,
@@ -91,17 +91,22 @@ export async function reconcileHouseholdDataForUser(userId: number) {
     .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
     .where(eq(expenseEntries.sharedToHousehold, true));
 
+  // Real received income, not the budgeted figure - income_transactions is
+  // the actual per-transaction ledger now (income_entries is the BUDGETED
+  // half, same role category_entries has for expenses, mirrored below as
+  // sharedBudgets instead). Confirmed + provisional both count, same
+  // "counts immediately" rule sharedExpenses above already follows.
   const sharedIncome = await db
     .select({
-      id: incomeEntries.id,
-      incomeSourceId: incomeEntries.incomeSourceId,
-      year: incomeEntries.year,
-      month: incomeEntries.month,
-      amountPence: incomeEntries.amountPence,
+      id: incomeTransactions.id,
+      incomeSourceId: incomeTransactions.incomeSourceId,
+      year: incomeTransactions.year,
+      month: incomeTransactions.month,
+      amountPence: incomeTransactions.amountPence,
       sourceName: incomeSources.name,
     })
-    .from(incomeEntries)
-    .innerJoin(incomeSources, eq(incomeEntries.incomeSourceId, incomeSources.id))
+    .from(incomeTransactions)
+    .innerJoin(incomeSources, eq(incomeTransactions.incomeSourceId, incomeSources.id))
     .where(eq(incomeSources.sharedToHousehold, true));
 
   // Budgeted figures - a category/month thing, not per-entry, so this
@@ -333,9 +338,10 @@ export type HouseholdIncomeGridRow = {
   contributors: string[];
 };
 
-/** Income has no separate "planned" figure in this app even for a single
- * user (income_entries already IS the plan, not a forecast of it) - same
- * here, amount only, no budgeted/spent split. */
+/** Amount only, no budgeted/received split - reconcileHouseholdDataForUser
+ * already resolved that (it mirrors income_transactions, the actual
+ * ledger, not income_entries' budgeted figure - see its own comment),
+ * same as household_expense_entries only ever holding real spend. */
 export async function getHouseholdIncomeGrid(year: number): Promise<HouseholdIncomeGridRow[]> {
   const rows = await sysDb()
     .select({

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "./helpers/db";
 import { db } from "@/lib/db";
-import { categories, categoryEntries, incomeEntries, incomeSources } from "@/lib/db/schema";
+import { categories, categoryEntries, incomeEntries, incomeSources, incomeTransactions } from "@/lib/db/schema";
 import { getGridData, logExpense } from "@/lib/db/queries";
 import { parseCsv } from "@/lib/csv";
 import { csvAmount, csvText, gridCsvFilename, gridToCsv } from "@/lib/grid-csv";
@@ -22,6 +22,9 @@ async function seed() {
     { categoryId: b.id, year: YEAR, month: 1, amountPence: 500, paid: false },
   ]);
   await db.insert(incomeEntries).values([{ incomeSourceId: wages.id, year: YEAR, month: 1, amountPence: 400000 }]);
+  // Actual received, same role logExpense plays for the categories above -
+  // WAGES/Received now come from here, not the budgeted row.
+  await db.insert(incomeTransactions).values([{ incomeSourceId: wages.id, year: YEAR, month: 1, amountPence: 400000, entryDate: `${YEAR}-01-01` }]);
   await logExpense({ categoryId: rent.id, amountPence: 90000, entryDate: `${YEAR}-01-01` });
   await logExpense({ categoryId: a.id, amountPence: 350, entryDate: `${YEAR}-01-09` });
   return { rent, subs, a, b };
@@ -89,6 +92,19 @@ describe("gridToCsv", () => {
     expect(byName("Rent")[3]).toBe("900.00");
     expect(byName("Apple")[3]).toBe("3.50"); // logged 350p against a 299p plan
     expect(byName("Rent")[15]).toBe("900.00");
+  });
+  it("spent: income shows what was actually received, not budgeted", async () => {
+    await seed();
+    const rows = parseCsv(gridToCsv(await getGridData(YEAR), "spent"));
+    const wages = rows.find((r) => r[0] === "Income - Wages")!;
+    expect(wages[3]).toBe("4000.00");
+    expect(wages[15]).toBe("4000.00");
+  });
+  it("both: income gets a Budgeted row and a Received row", async () => {
+    await seed();
+    const rows = parseCsv(gridToCsv(await getGridData(YEAR), "both"));
+    const wagesRows = rows.filter((r) => r[0] === "Income - Wages");
+    expect(wagesRows.map((r) => r[3])).toEqual(["Budgeted", "Received"]);
   });
   it("both: two rows per category with a Type column", async () => {
     await seed();

@@ -86,17 +86,37 @@ export function gridToCsv(data: GridData, view: GridCsvView, currency = "GBP"): 
   if (data.incomeSources.length > 0) {
     lines.push("");
     for (const s of data.incomeSources) {
-      lines.push(
-        line([
-          csvText(`Income - ${s.name}`),
-          "",
-          "",
-          ...(both ? ["Income"] : []),
-          ...Array.from({ length: 12 }, (_, i) => csvAmount(s.months[i + 1]?.amountPence)),
-          csvAmount(s.yearTotalPence),
-          csvAmount(s.monthlyAveragePence),
-        ])
-      );
+      // Budgeted (amountPence) and Received (spentPence) are the income
+      // table's own counterpart to a category's Budgeted/Spent - same
+      // view gating, same shape.
+      if (view === "budgeted" || both) {
+        lines.push(
+          line([
+            csvText(`Income - ${s.name}`),
+            "",
+            "",
+            ...(both ? ["Budgeted"] : []),
+            ...Array.from({ length: 12 }, (_, i) => csvAmount(s.months[i + 1]?.amountPence)),
+            csvAmount(s.yearTotalPence),
+            csvAmount(s.monthlyAveragePence),
+          ])
+        );
+      }
+      if (view === "spent" || both) {
+        const receivedByMonth = Array.from({ length: 12 }, (_, i) => s.months[i + 1]?.spentPence ?? 0);
+        const t = spentTotals(receivedByMonth);
+        lines.push(
+          line([
+            csvText(`Income - ${s.name}`),
+            "",
+            "",
+            ...(both ? ["Received"] : []),
+            ...receivedByMonth.map(csvAmount),
+            csvAmount(t.total),
+            csvAmount(t.average),
+          ])
+        );
+      }
     }
   }
   lines.push("", csvText(`Amounts in ${currency}, for ${data.year}. Exported from Tally.`));

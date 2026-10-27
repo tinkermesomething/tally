@@ -9,6 +9,7 @@ import {
   expenseEntries,
   incomeEntries,
   incomeSources,
+  incomeTransactions,
 } from "./schema";
 
 export type MonthCell = {
@@ -271,6 +272,17 @@ export async function getGridData(year: number): Promise<GridData> {
     .from(incomeEntries)
     .where(eq(incomeEntries.year, year));
 
+  // The real, per-transaction ledger - income above is the BUDGETED figure
+  // only now (see schema.ts's own comment on income_transactions). This is
+  // what wagesByMonth and each income cell's "Received" sub-line actually
+  // come from - confirmed + provisional both count immediately, same rule
+  // expenses' own spentPence already follows (confirmedSpentPence reads it
+  // with no provisional filter - see buildDirectMonths above).
+  const incomeActual = await db
+    .select()
+    .from(incomeTransactions)
+    .where(eq(incomeTransactions.year, year));
+
   // Same year-relative visibility as categories - see the comment on cats above.
   const sources = await db.query.incomeSources.findMany({
     where: or(isNull(incomeSources.archivedAt), gte(incomeSources.archivedAt, startOfNextYear)),
@@ -309,7 +321,11 @@ export async function getGridData(year: number): Promise<GridData> {
   const actuallySpentByMonth = Array(12).fill(0);
   const wagesByMonth = Array(12).fill(0);
 
-  for (const entry of income) {
+  // wagesByMonth feeds availableByMonth/leftToSpendByMonth - the real
+  // "Left to spend" numbers - so it sums actual (confirmed + provisional)
+  // income, not the budgeted figure, same as actuallySpentByMonth sums
+  // actual spend rather than what's planned.
+  for (const entry of incomeActual) {
     wagesByMonth[entry.month - 1] += entry.amountPence;
   }
 
@@ -503,6 +519,11 @@ export async function getGridData(year: number): Promise<GridData> {
         computed: false,
         overdue: false,
       };
+    }
+    for (const t of incomeActual.filter((e) => e.incomeSourceId === source.id)) {
+      const existing = months[t.month];
+      if (existing) existing.spentPence += t.amountPence;
+      else months[t.month] = { amountPence: undefined, paid: false, spentPence: t.amountPence, computed: false, overdue: false };
     }
     attachPreviousMonthHints(months, prevDecByIncomeSource.get(source.id));
     return {

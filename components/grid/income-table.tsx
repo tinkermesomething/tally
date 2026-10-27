@@ -135,6 +135,8 @@ export function IncomeTable({
                       <GridCell
                         amountPence={cell?.amountPence}
                         paid={true}
+                        spentPence={cell?.spentPence}
+                        spentLabel="Received"
                         previousAmountPence={cell?.previousAmountPence}
                         showPaidToggle={false}
                         onCommitAmount={(pounds) =>

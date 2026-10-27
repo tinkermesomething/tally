@@ -13,7 +13,7 @@ import {
   unarchivePerson as unarchivePersonQuery,
   updateDebtEntry,
 } from "@/lib/db/debt";
-import { incrementIncomeEntry, logExpense as logExpenseQuery } from "@/lib/db/queries";
+import { logExpense as logExpenseQuery, logIncomeTransaction } from "@/lib/db/queries";
 import { resolvePeriodForDate } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { inTransaction } from "@/lib/db";
@@ -92,9 +92,11 @@ export async function addLedgerEntry(input: {
         // Respects an existing pay-period boundary (if any) the same as every
         // other logged entry - but doesn't create a new one; only the primary
         // Add Income flow can do that, since it's the only place with a
-        // "counts toward" picker for the anchor source itself.
+        // "counts toward" picker for the anchor source itself. debtPersonId
+        // is NOT passed through here - the debt ledger entry was already
+        // written above; logIncomeTransaction would otherwise add a second one.
         const { year, month } = await resolvePeriodForDate(input.entryDate);
-        await incrementIncomeEntry({ incomeSourceId: input.incomeSourceId, year, month, amountPence });
+        await logIncomeTransaction({ incomeSourceId: input.incomeSourceId, amountPence, entryDate: input.entryDate, year, month });
       }
 
       if (input.direction === "repayment" && input.categoryId) {

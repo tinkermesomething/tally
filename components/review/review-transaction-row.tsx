@@ -21,6 +21,8 @@ import {
   ignoreImportedTransaction,
   confirmImportedTransactionMatch,
   discardImportedTransactionMatch,
+  confirmImportedTransactionIncomeMatch,
+  discardImportedTransactionIncomeMatch,
   saveImportedTransactionNote,
 } from "@/app/review/actions";
 import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
@@ -43,6 +45,15 @@ export type ReviewRow = {
   duplicateOf: {
     id: number;
     categoryName: string;
+    amountPence: number;
+    entryDate: string;
+    note: string | null;
+    provisional: boolean;
+  } | null;
+  /** Money-in's exact mirror of duplicateOf, against income_transactions. */
+  incomeDuplicateOf: {
+    id: number;
+    sourceName: string;
     amountPence: number;
     entryDate: string;
     note: string | null;
@@ -169,7 +180,7 @@ export function ReviewTransactionRow({
   }
 
   // A provisional match is resolved with Confirm/Discard, never approved.
-  const isProvisional = !!transaction.duplicateOf?.provisional;
+  const isProvisional = !!transaction.duplicateOf?.provisional || !!transaction.incomeDuplicateOf?.provisional;
   const pick = isIncome ? incomeSourceId : categoryId;
   useEffect(() => {
     onPick(transaction.id, !isProvisional && !!pick);
@@ -199,10 +210,21 @@ export function ReviewTransactionRow({
     startTransition(() => discardImportedTransactionMatch(transaction.duplicateOf!.id));
   }
 
+  function handleConfirmIncomeMatch() {
+    if (!transaction.incomeDuplicateOf) return;
+    startTransition(() => confirmImportedTransactionIncomeMatch(transaction.id, transaction.incomeDuplicateOf!.id));
+  }
+
+  function handleDiscardIncomeMatch() {
+    if (!transaction.incomeDuplicateOf) return;
+    startTransition(() => discardImportedTransactionIncomeMatch(transaction.incomeDuplicateOf!.id));
+  }
+
   // A provisional match is your own deliberate pencilled-in guess, not a
   // generic "might be a coincidental dupe" warning - different mental
   // model, different controls (Confirm/Discard instead of pick-a-category).
   const provisionalMatch = transaction.duplicateOf?.provisional ? transaction.duplicateOf : null;
+  const provisionalIncomeMatch = transaction.incomeDuplicateOf?.provisional ? transaction.incomeDuplicateOf : null;
 
   const duplicateTitle = provisionalMatch
     ? `Pencilled in as ${provisionalMatch.categoryName}, ${formatPence(
@@ -258,6 +280,60 @@ export function ReviewTransactionRow({
     );
   }
 
+  const incomeDuplicateTitle = provisionalIncomeMatch
+    ? `Pencilled in as ${provisionalIncomeMatch.sourceName}, ${formatPence(
+        provisionalIncomeMatch.amountPence,
+        currency
+      )} on ${formatDate(provisionalIncomeMatch.entryDate, dateFormat)}. Confirm if this is it, Discard if not.`
+    : transaction.incomeDuplicateOf
+      ? `Might already be logged as ${transaction.incomeDuplicateOf.sourceName}, ${formatPence(
+          transaction.incomeDuplicateOf.amountPence,
+          currency
+        )} on ${formatDate(transaction.incomeDuplicateOf.entryDate, dateFormat)}${
+          transaction.incomeDuplicateOf.note ? ` ("${transaction.incomeDuplicateOf.note}")` : ""
+        }. Only a suggestion.`
+      : undefined;
+
+  if (provisionalIncomeMatch) {
+    return (
+      <TableRow className={hidden ? "hidden" : undefined}>
+        <TableCell>
+          <Checkbox checked={false} disabled aria-label="Resolve this match first" title="Resolve this match first" />
+        </TableCell>
+        <TableCell className="text-xs text-muted-foreground">
+          {formatDate(transaction.bookingDate, dateFormat)}
+          {showAccount && <span className={`block truncate ${FIELD_COLOR.account}`} data-testid="row-account">{transaction.accountName}</span>}
+        </TableCell>
+        <TableCell className="max-w-48 min-w-0 whitespace-normal">
+          <div className="flex items-center gap-1.5">
+            <span title={incomeDuplicateTitle}>
+              <Pencil className="size-3.5 shrink-0 text-chart-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{transaction.payeeClean ?? transaction.payeeRaw}</p>
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className="text-right font-semibold tabular-nums text-status-good">
+          +{formatPence(Math.abs(transaction.amountPence), currency)}
+        </TableCell>
+        <TableCell className="text-sm text-muted-foreground" colSpan={2}>
+          Pencilled in: {provisionalIncomeMatch.sourceName}
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-1">
+            <Button size="icon-xs" variant="outline" className="border-status-good/50 hover:bg-status-good/10" onClick={handleConfirmIncomeMatch} disabled={pending} title="Confirm match">
+              <Check className="size-3.5 text-status-good" />
+            </Button>
+            <Button size="icon-xs" variant="outline" className="border-status-critical/50 hover:bg-status-critical/10" onClick={handleDiscardIncomeMatch} disabled={pending} title="Discard - wasn't a match">
+              <X className="size-3.5 text-status-critical" />
+            </Button>
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  }
+
   return (
     <TableRow data-state={selected ? "selected" : undefined} className={hidden ? "hidden" : undefined}>
       <TableCell>
@@ -278,7 +354,12 @@ export function ReviewTransactionRow({
               <TriangleAlert className="size-3.5 shrink-0 text-status-critical" />
             </span>
           )}
-          {!transaction.duplicateOf && transaction.importedDuplicate && (
+          {!transaction.duplicateOf && transaction.incomeDuplicateOf && (
+            <span title={incomeDuplicateTitle}>
+              <TriangleAlert className="size-3.5 shrink-0 text-status-critical" />
+            </span>
+          )}
+          {!transaction.duplicateOf && !transaction.incomeDuplicateOf && transaction.importedDuplicate && (
             <span
               title={`Looks like ${transaction.importedDuplicate.payee} on ${formatDate(transaction.importedDuplicate.bookingDate, dateFormat)}, already imported (${transaction.importedDuplicate.status.replace("_", " ")}). If it is the same transaction, ignore this row.`}
               data-testid="imported-duplicate"
