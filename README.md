@@ -5,15 +5,19 @@
   <img src="docs/brand/logo-light.svg" alt="Tally" width="160">
 </picture>
 
-**A personal budget app that replaces a spreadsheet, not a bank.**
+**Self-hosted personal and household budgeting - the spreadsheet you've outgrown, not a bank.**
 
-Multi-user, self-hosted, LAN-only by default. Each account's data lives in its own encrypted SQLite file, unlocked automatically by their own OIDC login - nobody, including an admin, can read another account's data without their key.
+Multi-user and self-hosted: each person's account is its own encrypted SQLite file, unlocked automatically by their own login. Nobody - not even an admin - can read another account's data without their key. You decide how exposed it is; nothing about Tally makes that choice for you.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 </div>
 
-Tally started as a replacement for a spreadsheet that had outgrown itself: a monthly category grid with real rollups, a debt ledger instead of a mutable "amount owed" cell, and (as of v2.0) automatic bank transaction import. It stays out of the way the rest of the time - no subscription, no cloud account, no telemetry.
+Tally started as a replacement for a spreadsheet that had outgrown itself: a monthly category grid with real rollups, a debt ledger instead of a mutable "amount owed" cell, and automatic bank transaction import. It stays out of the way the rest of the time - no subscription, no cloud account, no telemetry, no "upgrade to Pro."
+
+It's built for one household (or one person) at a time, run on hardware you own. It is **not** a business accounting tool - no invoicing, no tax reporting, no multi-entity support, no double-entry bookkeeping. If you need any of that, Tally isn't it.
+
+**Bank sync is EU/UK-only.** It connects through [GoCardless Bank Account Data](https://gocardless.com/bank-account-data/), which only reaches banks on the EU/UK Open Banking (PSD2) network - there's no path to US, Canadian, or other banks outside that network, and that's not a Tally limitation to fix, it's the scope of the one provider it integrates with. Everywhere else, CSV import covers the gap. The budgeting itself (currencies, categories, reports) isn't region-locked at all - only automatic bank sync is.
 
 <p align="center">
   <img src="docs/screenshots/11-reports-trend.png" alt="Reports: spend trend over the year, stacked by category">
@@ -98,8 +102,8 @@ Tally started as a replacement for a spreadsheet that had outgrown itself: a mon
 - **Net worth**: assets and linked bank accounts combined into one figure, tracked over time with a trend chart
 - **Bills**: recurring bills with a due day, auto-populated into the grid each month so they're never forgotten
 - **Reports**: category spend grouped and charted by year/month - budgeted vs. spent, compare, trend, variance - exportable to PDF (landscape by default) for the whole page or a single panel
-- **Bank sync**: connects real accounts via GoCardless Bank Account Data (one shared credential pair, admin-managed in Settings > Admin), stages imported transactions for review, auto-categorizes via explicit rules plus a learned-pattern fallback, flags possible duplicates against manual entries (suggestion only, never automatic); unsettled pending transactions can be "pencilled in" as a guess before they clear
-- **CSV import**: for accounts not on GoCardless, or backfilling history
+- **Bank sync** (EU/UK only - see above): connects real accounts via GoCardless Bank Account Data (one shared credential pair, admin-managed in Settings > Admin), stages imported transactions for review, auto-categorizes via explicit rules plus a learned-pattern fallback, flags possible duplicates against manual entries (suggestion only, never automatic); unsettled pending transactions can be "pencilled in" as a guess before they clear
+- **CSV import**: for any account GoCardless can't reach - including every bank outside the EU/UK - or for backfilling history
 - **Backups**: automatic scheduled backups (admin-configured folder/password), plus every account gets its own scoped "download/restore my data" pair
 - **Accounts**: invite people by email; admin status comes from an OIDC group claim (with a bootstrap-email fallback so a group misconfiguration can never lock every admin out), disable an account or delete it (a non-admin can delete their own; an admin can't self-delete), re-link a broken OIDC identity; a profile picture is generated from initials by default, or upload/link your own image (10MB cap)
 - **Token-authed API** (see [API.md](API.md)) for a script or agent to read/write budget data without a browser session
@@ -124,9 +128,13 @@ mv .env.example .env   # then fill it in
 docker compose up -d
 ```
 
-Open `http://<host>:3000`. The container pulls a pre-built multi-arch image (`linux/amd64`, `linux/arm64`) from GHCR - nothing to build locally. Put it behind your own reverse proxy for TLS; there's no built-in rate limiting or network-layer protection, that's expected to live in front of it.
+Open `http://<host>:3000`. The container pulls a pre-built multi-arch image (`linux/amd64`, `linux/arm64`) from GHCR - nothing to build locally.
+
+The compose file above publishes port 3000 on every network interface, same as any other container - **Tally itself doesn't restrict who can reach it to your LAN.** Whether that ends up LAN-only, VPN-only, or exposed to the internet is entirely down to your own router/firewall/reverse-proxy setup. There's no built-in rate limiting or other network-layer protection either, so put it behind a reverse proxy with TLS, and don't expose it directly to the internet without one.
 
 Migrations run automatically on boot - no separate migrate step needed, including on first run.
+
+**On OIDC providers:** auth is built against [pocket-id](https://github.com/pocket-id/pocket-id) and tested only against it - that's the one the comments in `auth.config.ts` reference by name. The flow underneath (authorization code + PKCE, a `sub`/`email`/`groups` claim) is standard OIDC, so Authentik, Authelia, Keycloak, and similar should work, but none of them have actually been tried. If you use one of those and hit a snag, an issue with what broke is genuinely useful - this just hasn't been verified yet.
 
 ## Documentation
 
@@ -135,9 +143,11 @@ Migrations run automatically on boot - no separate migrate step needed, includin
 
 ## Tech stack
 
-Next.js 15 (App Router, Turbopack) · TypeScript · Drizzle ORM + better-sqlite3 (SQLCipher-compatible fork) · Auth.js v5 (generic OIDC) · Tailwind · Base UI · recharts
+Next.js 15 (App Router, Turbopack) · TypeScript · Drizzle ORM + better-sqlite3 (SQLCipher-compatible fork) · Auth.js v5 (OIDC, built against pocket-id) · Tailwind · Base UI · recharts
 
 One container, one SQLite file per account - each encrypted with a key sealed to that account's own OIDC identity, plus a small shared, unencrypted keystore file (account metadata and the GoCardless credential pair - never budget data).
+
+Translated into English, German, French, Italian, Polish, and Portuguese ([CONTRIBUTING.md](CONTRIBUTING.md) if you want to add another).
 
 ## Structure
 
@@ -146,7 +156,7 @@ One container, one SQLite file per account - each encrypted with a key sealed to
 - `lib/gocardless.ts` - the bank-sync API client
 - `components/` - grouped by the route that owns them, plus `ui/` for the shared primitives
 
-Money is always stored as integer pence, never float.
+Money is always stored as an integer in the currency's smallest unit (pence, cents, etc.), never a float.
 
 ## License
 
