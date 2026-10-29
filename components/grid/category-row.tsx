@@ -25,15 +25,41 @@ import { MONTH_ABBREVIATIONS as MONTH_NAMES, MONTH_NUMBERS } from "@/lib/months"
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 
 /** A total or average with, underneath, what was actually spent - the same
- * "Paid" line the month cells show, so the year columns tell the whole story. */
-function TotalWithPaid({ budgeted, paid, currency, label = "Paid" }: { budgeted: number; paid: number | undefined; currency: string; label?: string }) {
+ * "Paid" line the month cells show, so the year columns tell the whole story.
+ * `onToggleExpand`, when given (a parent's own year-total/average columns
+ * only - see CategoryRow), makes that sub-line do the same thing the
+ * chevron does, same reasoning as ComputedCell's own version below. */
+function TotalWithPaid({
+  budgeted,
+  paid,
+  currency,
+  label = "Paid",
+  onToggleExpand,
+}: {
+  budgeted: number;
+  paid: number | undefined;
+  currency: string;
+  label?: string;
+  onToggleExpand?: () => void;
+}) {
   return (
     <>
       <div>{formatPence(budgeted, currency)}</div>
       {paid !== undefined && paid > 0 && (
-        <div className="text-xs font-normal tabular-nums text-primary" data-testid="paid-total">
-          {label} {formatPence(paid, currency)}
-        </div>
+        onToggleExpand ? (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            data-testid="paid-total"
+            className="text-xs font-normal tabular-nums text-primary underline-offset-2 hover:underline"
+          >
+            {label} {formatPence(paid, currency)}
+          </button>
+        ) : (
+          <div className="text-xs font-normal tabular-nums text-primary" data-testid="paid-total">
+            {label} {formatPence(paid, currency)}
+          </div>
+        )
       )}
     </>
   );
@@ -61,12 +87,19 @@ function ComputedCell({
   overdueItems,
   year,
   month,
+  onToggleExpand,
 }: {
   amountPence: number | undefined;
   spentPence: number;
   overdueItems: OverdueItem[];
   year: number;
   month: number;
+  /** A computed cell only ever happens for a category WITH children (see
+   * lib/db/grid.ts) - so this is always the parent's own chevron toggle,
+   * never gated here. Clicking "Paid £X" does the same thing the chevron
+   * does instead of opening a (non-existent, since this is a rollup of
+   * several children, not one entries list) breakdown popup. */
+  onToggleExpand: () => void;
 }) {
   const { currency } = useAppSettings();
   return (
@@ -78,7 +111,13 @@ function ComputedCell({
         </span>
       </div>
       {spentPence > 0 && (
-        <span className="text-xs tabular-nums text-primary">Paid {formatPence(spentPence, currency)}</span>
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="text-xs tabular-nums text-primary underline-offset-2 hover:underline"
+        >
+          Paid {formatPence(spentPence, currency)}
+        </button>
       )}
     </div>
   );
@@ -88,10 +127,15 @@ export function CategoryMonthCell({
   category,
   year,
   month,
+  onToggleExpand,
 }: {
   category: GridCategory;
   year: number;
   month: number;
+  /** Only meaningful when this category has children (a computed cell never
+   * happens otherwise - see ComputedCell) - omit for a child's own cells,
+   * which can't have children themselves. */
+  onToggleExpand?: () => void;
 }) {
   const cell = category.months[month];
   const overdueItems = overdueItemsFor(category, month);
@@ -103,6 +147,7 @@ export function CategoryMonthCell({
         overdueItems={overdueItems}
         year={year}
         month={month}
+        onToggleExpand={onToggleExpand ?? (() => {})}
       />
     );
   }
@@ -229,20 +274,30 @@ export function CategoryRow({
         </td>
         {MONTH_NUMBERS.map((month) => (
           <td key={month} className="px-1 py-1">
-            <CategoryMonthCell category={category} year={year} month={month} />
+            <CategoryMonthCell category={category} year={year} month={month} onToggleExpand={() => setExpanded((v) => !v)} />
           </td>
         ))}
         <td
           style={{ right: summaryColWidth, backgroundColor: floatingPanelFill("--card") }}
           className={cn("sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums", FLOATING_PANEL_EDGE)}
         >
-          <TotalWithPaid budgeted={category.yearTotalPence} paid={spentTotals(category.actualByMonth).total} currency={currency} />
+          <TotalWithPaid
+            budgeted={category.yearTotalPence}
+            paid={spentTotals(category.actualByMonth).total}
+            currency={currency}
+            onToggleExpand={hasChildren ? () => setExpanded((v) => !v) : undefined}
+          />
         </td>
         <td
           style={{ right: 0, backgroundColor: floatingPanelFill("--card") }}
           className="sticky z-10 px-3 py-1.5 text-right font-bold tabular-nums"
         >
-          <TotalWithPaid budgeted={category.monthlyAveragePence} paid={spentTotals(category.actualByMonth).average} currency={currency} />
+          <TotalWithPaid
+            budgeted={category.monthlyAveragePence}
+            paid={spentTotals(category.actualByMonth).average}
+            currency={currency}
+            onToggleExpand={hasChildren ? () => setExpanded((v) => !v) : undefined}
+          />
         </td>
       </tr>
       {expanded &&

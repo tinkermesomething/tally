@@ -57,7 +57,7 @@ export function MobileCategoryCard({
             className="font-medium uppercase"
           />
         </div>
-        <CategoryMonthCell category={category} year={year} month={month} />
+        <CategoryMonthCell category={category} year={year} month={month} onToggleExpand={hasChildren ? () => setExpanded((v) => !v) : undefined} />
       </div>
       <div className="flex items-center gap-1 pl-[18px]">
         <EditableGroupTag

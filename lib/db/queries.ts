@@ -535,6 +535,56 @@ async function deleteIncomeTransactionUnsafe(id: number) {
   await db.delete(incomeTransactions).where(eq(incomeTransactions.id, id));
 }
 
+export type IncomeTransactionRow = {
+  id: number;
+  incomeSourceId: number;
+  sourceName: string;
+  year: number;
+  month: number;
+  amountPence: number;
+  note: string | null;
+  entryDate: string;
+  provisional: boolean;
+};
+
+/** Individual logged income transactions for one source/month - the
+ * breakdown behind a grid cell's "Received £X" total, mirrors
+ * getExpenseEntriesForCell exactly (minus the debt/savings/household
+ * columns that query has - income has no retro-tags system to show here). */
+export async function getIncomeTransactionsForCell(
+  incomeSourceId: number,
+  year: number,
+  month: number
+): Promise<IncomeTransactionRow[]> {
+  return db
+    .select({
+      id: incomeTransactions.id,
+      incomeSourceId: incomeTransactions.incomeSourceId,
+      sourceName: incomeSources.name,
+      year: incomeTransactions.year,
+      month: incomeTransactions.month,
+      amountPence: incomeTransactions.amountPence,
+      note: incomeTransactions.note,
+      entryDate: incomeTransactions.entryDate,
+      provisional: incomeTransactions.provisional,
+    })
+    .from(incomeTransactions)
+    .innerJoin(incomeSources, eq(incomeTransactions.incomeSourceId, incomeSources.id))
+    .where(and(eq(incomeTransactions.incomeSourceId, incomeSourceId), eq(incomeTransactions.year, year), eq(incomeTransactions.month, month)))
+    .orderBy(incomeTransactions.entryDate);
+}
+
+/** Amount/note only - unlike updateExpenseEntry, entryDate is deliberately
+ * not editable here: the pay-anchor source resolves its period specially
+ * (see confirmPencilledIncomeMatch), and the popover UI this backs mirrors
+ * ExpenseEntriesPopover's own fields exactly, which also stops at amount/note. */
+export async function updateIncomeTransaction(id: number, input: { amountPence?: number; note?: string | null }) {
+  const set: Partial<typeof incomeTransactions.$inferInsert> = {};
+  if (input.amountPence !== undefined) set.amountPence = input.amountPence;
+  if (input.note !== undefined) set.note = input.note;
+  await db.update(incomeTransactions).set(set).where(eq(incomeTransactions.id, id));
+}
+
 /** Next free sortOrder for a table, used when appending a new row to the end
  * of a manually-orderable list (categories, income sources, report panels).
  * Table and column are passed separately, rather than typing this generic

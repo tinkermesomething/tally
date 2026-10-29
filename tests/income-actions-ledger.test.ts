@@ -10,7 +10,7 @@ import { incomeTransactions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { addIncomeSource, getGridData } from "@/lib/db/queries";
 import { addPerson } from "@/lib/db/debt";
-import { logIncome } from "@/app/grid/actions";
+import { logIncome, listIncomeTransactions, editIncomeTransaction, removeIncomeTransaction } from "@/app/grid/actions";
 import { addLedgerEntry } from "@/app/debt/actions";
 
 const YEAR = 2026;
@@ -65,6 +65,25 @@ describe("addLedgerEntry's loan branch writes a real income_transactions row too
 
       const grid = await getGridData(YEAR);
       expect(grid.wagesByMonth[9]).toBe(2000);
+    })
+  );
+});
+
+describe("the Received £X breakdown popover's own actions", () => {
+  it(
+    "lists, edits, and deletes a logged income transaction",
+    asSignedInUser("test-sub", "t@t", async () => {
+      const source = await addIncomeSource("Gifts");
+      await logIncome({ incomeSourceId: source.id, pounds: 20, entryDate: `${YEAR}-10-05` });
+      const [row] = await listIncomeTransactions(source.id, YEAR, 10);
+      expect(row).toMatchObject({ amountPence: 2000, sourceName: "Gifts" });
+
+      await editIncomeTransaction(row.id, { pounds: 25, note: "corrected" });
+      const [edited] = await listIncomeTransactions(source.id, YEAR, 10);
+      expect(edited).toMatchObject({ amountPence: 2500, note: "corrected" });
+
+      await removeIncomeTransaction(row.id);
+      expect(await listIncomeTransactions(source.id, YEAR, 10)).toHaveLength(0);
     })
   );
 });

@@ -3,7 +3,14 @@ import { eq } from "drizzle-orm";
 import { resetDb } from "./helpers/db";
 import { db } from "@/lib/db";
 import { bankAccounts, incomeSources, incomeTransactions, importedTransactions, debtLedgerEntries, people, payPeriodAnchors } from "@/lib/db/schema";
-import { pencilInIncome, discardPencilledIncome, confirmPencilledIncome, logIncomeTransaction } from "@/lib/db/queries";
+import {
+  pencilInIncome,
+  discardPencilledIncome,
+  confirmPencilledIncome,
+  logIncomeTransaction,
+  getIncomeTransactionsForCell,
+  updateIncomeTransaction,
+} from "@/lib/db/queries";
 import { stageImportedTransactions, confirmPencilledIncomeMatch, findPossibleManualIncomeDuplicate } from "@/lib/db/bank-sync";
 
 let acctId: number;
@@ -132,5 +139,25 @@ describe("pencilling in the pay-anchor source never shifts the anchor - only con
     const anchors = await db.select().from(payPeriodAnchors);
     expect(anchors).toHaveLength(1);
     expect(anchors[0]).toMatchObject({ receivedDate: "2026-09-30", year: 2026, month: 10 });
+  });
+});
+
+describe("getIncomeTransactionsForCell / updateIncomeTransaction - the Received £X breakdown popover", () => {
+  it("lists every transaction for that source/month, oldest first, with the source name joined in", async () => {
+    await logIncomeTransaction({ incomeSourceId: srcId, amountPence: 2000, entryDate: "2026-10-13", year: 2026, month: 10, note: "second" });
+    await logIncomeTransaction({ incomeSourceId: srcId, amountPence: 1500, entryDate: "2026-10-01", year: 2026, month: 10, note: "first" });
+    // A different month must not leak in.
+    await logIncomeTransaction({ incomeSourceId: srcId, amountPence: 999, entryDate: "2026-09-01", year: 2026, month: 9 });
+
+    const rows = await getIncomeTransactionsForCell(srcId, 2026, 10);
+    expect(rows.map((r) => r.note)).toEqual(["first", "second"]);
+    expect(rows[0]).toMatchObject({ sourceName: "Gifts", amountPence: 1500 });
+  });
+
+  it("updateIncomeTransaction edits amount and/or note only - never the date", async () => {
+    const row = await logIncomeTransaction({ incomeSourceId: srcId, amountPence: 2000, entryDate: "2026-10-13", year: 2026, month: 10 });
+    await updateIncomeTransaction(row.id, { amountPence: 2500, note: "corrected" });
+    const [updated] = await getIncomeTransactionsForCell(srcId, 2026, 10);
+    expect(updated).toMatchObject({ amountPence: 2500, note: "corrected", entryDate: "2026-10-13" });
   });
 });

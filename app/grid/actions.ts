@@ -12,9 +12,11 @@ import {
   deleteCategoryEntry,
   deleteExpenseEntry as deleteExpenseEntryQuery,
   deleteIncomeEntry,
+  deleteIncomeTransaction as deleteIncomeTransactionQuery,
   getExpenseEntriesForCell,
   getGridData,
   getIncomeSource,
+  getIncomeTransactionsForCell,
   logExpense as logExpenseQuery,
   logIncomeTransaction,
   moveCategoryParent as moveCategoryParentQuery,
@@ -27,6 +29,7 @@ import {
   bulkUpdateCategoryGroup as bulkUpdateCategoryGroupQuery,
   updateCategoryGroup as updateCategoryGroupQuery,
   updateExpenseEntry as updateExpenseEntryQuery,
+  updateIncomeTransaction as updateIncomeTransactionQuery,
   upsertCategoryEntry,
   upsertIncomeEntry,
 } from "@/lib/db/queries";
@@ -235,6 +238,33 @@ export async function removeExpenseEntry(id: number) {
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
     revalidatePath("/entries");
+    revalidatePath("/debt");
+    revalidatePath("/household");
+  });
+}
+
+export async function listIncomeTransactions(incomeSourceId: number, year: number, month: number) {
+  return requireSession(() => getIncomeTransactionsForCell(incomeSourceId, year, month));
+}
+
+export async function editIncomeTransaction(id: number, input: { pounds?: number; note?: string }) {
+  return requireSession(async (user) => {
+    if (input.pounds !== undefined) assertPositivePounds(input.pounds);
+    await updateIncomeTransactionQuery(id, {
+      amountPence: input.pounds !== undefined ? poundsToPence(input.pounds) : undefined,
+      note: input.note !== undefined ? input.note || null : undefined,
+    });
+    await reconcileHouseholdDataForUser(user.id);
+    revalidatePath("/grid");
+    revalidatePath("/household");
+  });
+}
+
+export async function removeIncomeTransaction(id: number) {
+  return requireSession(async (user) => {
+    await deleteIncomeTransactionQuery(id);
+    await reconcileHouseholdDataForUser(user.id);
+    revalidatePath("/grid");
     revalidatePath("/debt");
     revalidatePath("/household");
   });

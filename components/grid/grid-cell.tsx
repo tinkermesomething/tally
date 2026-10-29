@@ -9,6 +9,7 @@ import { cn, budgetValueColorClass } from "@/lib/utils";
 import { formatPence, getCurrencySymbol } from "@/lib/money";
 import { defaultEntryDateFor } from "@/lib/date";
 import { ExpenseEntriesPopover } from "@/components/grid/expense-entries-popover";
+import { IncomeTransactionsPopover } from "@/components/grid/income-transactions-popover";
 import { OverdueAlert } from "@/components/grid/overdue-alert";
 import type { OverdueItem } from "@/lib/overdue";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -28,6 +29,7 @@ export function GridCell({
   showPaidToggle = true,
   overdueItems = [],
   categoryId,
+  incomeSourceId,
   year,
   month,
   onCommitAmount,
@@ -47,10 +49,15 @@ export function GridCell({
   /** What the red alert is about (see overdueItemsFor) - empty means no
    * alert. Needs year/month too, to say when it was due. */
   overdueItems?: OverdueItem[];
-  /** Set on leaf category cells only (not income, not computed rollup
-   * cells) - lets "Paid £X" open the individual logged-entries breakdown.
-   * Omitting any of the three just hides that affordance. */
+  /** Set on leaf category cells only (not computed rollup cells, which get
+   * their own click-to-expand behaviour instead - see category-row.tsx) -
+   * lets "Paid £X" open the individual logged-entries breakdown. Omitting
+   * categoryId/incomeSourceId (never both at once) and year/month just
+   * hides that affordance. */
   categoryId?: number;
+  /** Same affordance, income side - "Received £X" opens the breakdown of
+   * that source's own income_transactions for the month instead. */
+  incomeSourceId?: number;
   year?: number;
   month?: number;
   onCommitAmount: (pounds: number) => void;
@@ -73,7 +80,7 @@ export function GridCell({
   );
   const [confirming, setConfirming] = useState(false);
   const [viewingEntries, setViewingEntries] = useState(false);
-  const canViewEntries = categoryId !== undefined && year !== undefined && month !== undefined;
+  const canViewEntries = (categoryId !== undefined || incomeSourceId !== undefined) && year !== undefined && month !== undefined;
   const [confirmValue, setConfirmValue] = useState("");
   const [confirmDate, setConfirmDate] = useState("");
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -234,13 +241,23 @@ export function GridCell({
         )
       )}
       {viewingEntries && canViewEntries && (
-        <ExpenseEntriesPopover
-          anchorRef={paidButtonAnchorRef}
-          categoryId={categoryId!}
-          year={year!}
-          month={month!}
-          onClose={() => setViewingEntries(false)}
-        />
+        categoryId !== undefined ? (
+          <ExpenseEntriesPopover
+            anchorRef={paidButtonAnchorRef}
+            categoryId={categoryId}
+            year={year!}
+            month={month!}
+            onClose={() => setViewingEntries(false)}
+          />
+        ) : (
+          <IncomeTransactionsPopover
+            anchorRef={paidButtonAnchorRef}
+            incomeSourceId={incomeSourceId!}
+            year={year!}
+            month={month!}
+            onClose={() => setViewingEntries(false)}
+          />
+        )
       )}
       {amountPence === undefined && previousAmountPence !== undefined && (
         <button

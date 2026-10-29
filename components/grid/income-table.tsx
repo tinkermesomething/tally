@@ -139,6 +139,9 @@ export function IncomeTable({
                         spentLabel="Received"
                         previousAmountPence={cell?.previousAmountPence}
                         showPaidToggle={false}
+                        incomeSourceId={source.id}
+                        year={year}
+                        month={month}
                         onCommitAmount={(pounds) =>
                           updateIncomeAmount({ incomeSourceId: source.id, year, month, pounds })
                         }
