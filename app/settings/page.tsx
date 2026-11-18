@@ -285,6 +285,7 @@ export default async function SettingsPage({
                 id={source.id}
                 name={source.name}
                 isPayAnchor={source.isPayAnchor}
+                requiresDebtPerson={source.requiresDebtPerson}
                 color={source.color}
                 fallbackColor={GROUP_PALETTE[index % GROUP_PALETTE.length]}
                 sharedToHousehold={source.sharedToHousehold}

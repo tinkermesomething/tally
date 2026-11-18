@@ -6,24 +6,32 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-/** Builds a copy of drizzle/ with everything EXCEPT the migration(s) named
- * in `exclude` - lets a test land a database exactly at "migrated up to
- * 0038, nothing past it" before applying the real folder (0039 included)
- * on top, the same two-step shape a real pre-4.9.3 instance's database is
- * actually in: already migrated through 0038, about to see 0039 for the
- * first time. */
-function migrationsFolderExcluding(exclude: string[]): string {
+/** Builds a copy of drizzle/ truncated to end at `lastTag` (inclusive) -
+ * lets a test land a database exactly at "migrated up to 0038, nothing past
+ * it" before applying the real folder on top. Truncating by POSITION, not
+ * by excluding a named file: drizzle's migrator picks up new migrations by
+ * comparing each one's journal timestamp against the latest one already
+ * applied, not by per-file hash - so excluding just 0039 while leaving a
+ * LATER migration in place would let that later one apply first, pushing
+ * the watermark past 0039 and permanently skipping it. Truncating avoids
+ * that regardless of how many migrations exist after `lastTag`. */
+function migrationsFolderUpTo(lastTag: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-migrations-"));
   const real = path.join(process.cwd(), "drizzle");
   fs.cpSync(real, dir, { recursive: true });
-  for (const name of exclude) fs.rmSync(path.join(dir, name), { force: true });
   const journalPath = path.join(dir, "meta", "_journal.json");
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
-  journal.entries = journal.entries.filter((e: { tag: string }) => !exclude.some((name) => name.startsWith(e.tag)));
+  const cutoffIdx = journal.entries.find((e: { tag: string }) => e.tag === lastTag)?.idx;
+  if (cutoffIdx === undefined) throw new Error(`No migration tagged "${lastTag}"`);
+  const dropped = journal.entries.filter((e: { idx: number }) => e.idx > cutoffIdx);
+  journal.entries = journal.entries.filter((e: { idx: number }) => e.idx <= cutoffIdx);
   fs.writeFileSync(journalPath, JSON.stringify(journal));
   const metaDir = path.join(dir, "meta");
-  for (const file of fs.readdirSync(metaDir)) {
-    if (exclude.some((name) => file.startsWith(name.replace(/\.sql$/, "")))) fs.rmSync(path.join(metaDir, file));
+  for (const { tag } of dropped) {
+    fs.rmSync(path.join(dir, `${tag}.sql`), { force: true });
+    for (const file of fs.readdirSync(metaDir)) {
+      if (file.startsWith(tag.split("_")[0])) fs.rmSync(path.join(metaDir, file));
+    }
   }
   return dir;
 }
@@ -36,7 +44,7 @@ describe("0039_backfill_income_transactions - the v4.9.2 WAGES regression fix", 
 
     // Land the database exactly where a real pre-4.9.3 instance is: fully
     // migrated through 0038 (income_transactions exists, but empty).
-    const upTo38 = migrationsFolderExcluding(["0039_backfill_income_transactions.sql"]);
+    const upTo38 = migrationsFolderUpTo("0038_income_transactions");
     migrate(drizzle(sqlite), { migrationsFolder: upTo38 });
 
     const now = new Date();

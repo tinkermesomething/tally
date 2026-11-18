@@ -1,4 +1,4 @@
-import { getAvailableYears, getExpenseEntriesForMonth } from "@/lib/db/queries";
+import { getAvailableYears, getEntriesForMonth } from "@/lib/db/queries";
 import { resolvePeriodForDate } from "@/lib/db/pay-period";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthSelect } from "@/components/reports/month-select";
@@ -25,14 +25,14 @@ export default async function EntriesPage({
   const month = monthParam ?? String(nowPeriod.month);
 
   const [entries, years] = await Promise.all([
-    getExpenseEntriesForMonth(year, month === "all" ? undefined : parseInt(month, 10)),
+    getEntriesForMonth(year, month === "all" ? undefined : parseInt(month, 10)),
     getAvailableYears(),
   ]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">Logged entries</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Entries</h1>
         <div className="flex items-center gap-2">
           <YearSwitcher year={year} years={years} basePath="/entries" extraParams={{ month }} />
           <MonthSelect year={year} month={month} basePath="/entries" />

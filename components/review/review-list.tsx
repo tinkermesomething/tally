@@ -39,7 +39,7 @@ export function ReviewList({
   transactions: ReviewRow[];
   accounts?: { id: number; name: string }[];
   categories: { id: number; name: string }[];
-  incomeSources: { id: number; name: string }[];
+  incomeSources: { id: number; name: string; requiresDebtPerson: boolean }[];
   people: { id: number; name: string }[];
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -196,8 +196,13 @@ export function ReviewList({
 
   const allSelectedExpense = selectedTransactions.length > 0 && selectedTransactions.every((t) => t.amountPence < 0);
   const allSelectedIncome = selectedTransactions.length > 0 && selectedTransactions.every((t) => t.amountPence > 0);
+  const bulkRequiredSource = allSelectedIncome && !!incomeSources.find((s) => String(s.id) === bulkIncomeSourceId)?.requiresDebtPerson;
+  useEffect(() => {
+    if (bulkRequiredSource) setBulkTagDebt(true);
+  }, [bulkRequiredSource]);
 
   function handleBulkTagChange(next: boolean) {
+    if (bulkRequiredSource) return;
     setBulkTagDebt(next);
     setBulkError(null);
     // Same suggestion as on a single row: a loan defaults to the loans
@@ -229,18 +234,19 @@ export function ReviewList({
   function bulkApprove() {
     if (!bulkValue) return approveEachOwn();
     const ids = selectedTransactions.map((t) => t.id);
-    if (bulkTagDebt && !bulkPerson.personId) {
-      setBulkError(allSelectedIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
+    const bulkTagged = bulkTagDebt || bulkRequiredSource;
+    if (bulkTagged && !bulkPerson.personId) {
+      setBulkError(bulkRequiredSource ? "This source requires who the money is from." : allSelectedIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
       return;
     }
-    if (bulkTagDebt && bulkPerson.personId === NEW_PERSON && !bulkPerson.newPersonName.trim()) {
+    if (bulkTagged && bulkPerson.personId === NEW_PERSON && !bulkPerson.newPersonName.trim()) {
       setBulkError("Enter their name.");
       return;
     }
     setBulkError(null);
     startTransition(async () => {
       try {
-        const debtPersonId = bulkTagDebt ? await bulkPerson.resolvePersonId() : undefined;
+        const debtPersonId = bulkTagged ? await bulkPerson.resolvePersonId() : undefined;
         if (allSelectedExpense) {
           await bulkCategorizeImportedTransactionsAsExpense(ids, { categoryId: parseInt(bulkCategoryId, 10), debtPersonId });
           setBulkCategoryId("");
@@ -377,6 +383,7 @@ export function ReviewList({
               onPersonIdChange={bulkPerson.setPersonId}
               newPersonName={bulkPerson.newPersonName}
               onNewPersonNameChange={bulkPerson.setNewPersonName}
+              required={bulkRequiredSource}
             />
           )}
           <Button size="sm" onClick={bulkApprove} disabled={pending || !(bulkValue || allSelectedPicked)}>

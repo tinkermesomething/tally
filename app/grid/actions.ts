@@ -35,7 +35,7 @@ import {
 } from "@/lib/db/queries";
 import { moveCategoryOrder, reorderCategoryTo } from "@/lib/db/category-tree";
 import { renameIncomeSource as renameIncomeSourceQuery, reorderIncomeSourceTo } from "@/lib/db/income-order";
-import { getTagOptions, linkCategoryAndTag, listMissingTags, setExpenseTags, type MissingTagRow } from "@/lib/db/retro-tags";
+import { getTagOptions, linkCategoryAndTag, listMissingTags, setExpenseTags, setIncomeEntryDebtTag, type MissingTagRow } from "@/lib/db/retro-tags";
 import {
   bulkShareCategoriesToHousehold,
   linkCategoryToHousehold,
@@ -45,7 +45,7 @@ import {
   type HouseholdShareRow,
 } from "@/lib/db/household-tags";
 import { isHouseholdEnabled, reconcileHouseholdDataForUser } from "@/lib/db/household";
-import { setIncomeSourceColor } from "@/lib/db/queries";
+import { setIncomeSourceColor, setIncomeSourceRequiresDebtPerson } from "@/lib/db/queries";
 import { recordPayPeriodAnchor, refileExpensesFromAnchor, setPayAnchorSource } from "@/lib/db/pay-period";
 import { poundsToPence } from "@/lib/money";
 import { parseIsoDate } from "@/lib/date";
@@ -256,6 +256,7 @@ export async function editIncomeTransaction(id: number, input: { pounds?: number
     });
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
+    revalidatePath("/entries");
     revalidatePath("/household");
   });
 }
@@ -265,6 +266,7 @@ export async function removeIncomeTransaction(id: number) {
     await deleteIncomeTransactionQuery(id);
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
+    revalidatePath("/entries");
     revalidatePath("/debt");
     revalidatePath("/household");
   });
@@ -582,6 +584,17 @@ export async function setIncomeColor(incomeSourceId: number, color: string | nul
   );
 }
 
+export async function setRequiresDebtPerson(incomeSourceId: number, value: boolean): Promise<ActionResult> {
+  return requireSession(() =>
+    toResult(async () => {
+      await setIncomeSourceRequiresDebtPerson(incomeSourceId, value);
+      revalidatePath("/grid");
+      revalidatePath("/settings");
+      revalidatePath("/review");
+    })
+  );
+}
+
 // ---- tags on existing expenses (debt repayment / savings) ----
 
 function refreshTagged() {
@@ -634,6 +647,16 @@ export async function setEntryTags(expenseEntryId: number, changes: { debtPerson
 /** The people and buckets an entry can be tagged with. */
 export async function getEntryTagOptions() {
   return requireSession(() => getTagOptions());
+}
+
+/** Sets (or clears, with null) who ONE income transaction is a loan from. */
+export async function setIncomeDebtTag(incomeTransactionId: number, debtPersonId: number | null): Promise<ActionResult> {
+  return requireSession(() =>
+    toResult(async () => {
+      await setIncomeEntryDebtTag(incomeTransactionId, debtPersonId);
+      refreshTagged();
+    })
+  );
 }
 
 // ---- household sharing (lib/db/household-tags.ts) ----

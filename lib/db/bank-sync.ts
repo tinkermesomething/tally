@@ -225,11 +225,14 @@ async function syncEachAccount(): Promise<SyncResult[]> {
       const { staged } = await syncBankAccount(account.id);
       results.push({ bankAccountId: account.id, displayName: account.displayName, ok: true, staged });
     } catch (err) {
+      // err.cause has the real reason behind "fetch failed" (ECONNRESET etc) - don't swallow it.
+      const cause = err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined;
+      const message = err instanceof Error ? err.message : "Sync failed";
       results.push({
         bankAccountId: account.id,
         displayName: account.displayName,
         ok: false,
-        error: err instanceof Error ? err.message : "Sync failed",
+        error: cause ? `${message}: ${cause}` : message,
       });
     }
   }
@@ -390,8 +393,10 @@ async function assertRuleTargetExists(t: RuleTarget) {
       throw new Error("That category no longer exists.");
     }
   } else if (t.targetType === "income") {
-    if (!(await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, t.incomeSourceId) }))) {
-      throw new Error("That income source no longer exists.");
+    const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, t.incomeSourceId) });
+    if (!source) throw new Error("That income source no longer exists.");
+    if (source.requiresDebtPerson && t.debtPersonId === undefined) {
+      throw new Error("This income source requires pinning who the money is from - choose a person for this rule.");
     }
   }
   await assertPersonExists(t.targetType === "ignore" ? undefined : t.debtPersonId);

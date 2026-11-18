@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Popover, PopoverPortal, PopoverPositioner, PopoverPopup } from "@/components/ui/popover";
 import { pencilInPendingIncome } from "@/app/review/actions";
+import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
 
 export type PendingIncomeRuleMatch = { incomeSourceId: number; incomeSourceName: string; debtPersonId?: number };
 
@@ -24,36 +25,54 @@ export function PencilInIncomeButton({
   date,
   payeeRaw,
   incomeSources,
+  people,
   ruleMatch,
 }: {
   amountPence: number;
   date: string | null;
   payeeRaw: string;
-  incomeSources: { id: number; name: string }[];
+  incomeSources: { id: number; name: string; requiresDebtPerson: boolean }[];
+  people: { id: number; name: string }[];
   ruleMatch?: PendingIncomeRuleMatch | null;
 }) {
   const [open, setOpen] = useState(false);
   const [incomeSourceId, setIncomeSourceId] = useState("");
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { personId, setPersonId, newPersonName, setNewPersonName, resolvePersonId } = usePersonSelection();
   const anchorRef = useRef<HTMLButtonElement>(null);
+  const requiredSource = !!incomeSources.find((s) => String(s.id) === incomeSourceId)?.requiresDebtPerson;
 
   if (done) {
     return <span className="text-xs text-muted-foreground">Pencilled in</span>;
   }
 
-  function pencilIn(incomeSourceId: number, debtPersonId?: number) {
+  function pencilIn(sourceId: number, debtPersonId?: number) {
+    setError(null);
     startTransition(async () => {
-      await pencilInPendingIncome({
-        incomeSourceId,
-        amountPence: Math.abs(amountPence),
-        entryDate: date,
-        note: payeeRaw,
-        debtPersonId,
-      });
-      setDone(true);
-      setOpen(false);
+      try {
+        await pencilInPendingIncome({
+          incomeSourceId: sourceId,
+          amountPence: Math.abs(amountPence),
+          entryDate: date,
+          note: payeeRaw,
+          debtPersonId,
+        });
+        setDone(true);
+        setOpen(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't pencil this in.");
+      }
     });
+  }
+
+  async function submit() {
+    if (!incomeSourceId) return;
+    if (requiredSource && !personId) return setError("This source requires who the money is from.");
+    if (requiredSource && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter their name.");
+    const debtPersonId = personId ? await resolvePersonId() : undefined;
+    pencilIn(parseInt(incomeSourceId, 10), debtPersonId);
   }
 
   return (
@@ -103,10 +122,23 @@ export function PencilInIncomeButton({
                     ))}
                   </SelectContent>
                 </Select>
+                {requiredSource && (
+                  <PersonPickerField
+                    idPrefix="pencil-in-income"
+                    label="Borrowed from"
+                    placeholder="Choose who"
+                    people={people}
+                    personId={personId}
+                    onPersonIdChange={setPersonId}
+                    newPersonName={newPersonName}
+                    onNewPersonNameChange={setNewPersonName}
+                  />
+                )}
+                {error && <p className="text-xs text-status-critical">{error}</p>}
                 <Button
                   size="sm"
                   className="w-full"
-                  onClick={() => incomeSourceId && pencilIn(parseInt(incomeSourceId, 10))}
+                  onClick={submit}
                   disabled={pending || !incomeSourceId}
                 >
                   Pencil in

@@ -1,11 +1,19 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Anchor, Archive, Home } from "lucide-react";
+import { Anchor, Archive, Home, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverPopup, PopoverPortal, PopoverPositioner } from "@/components/ui/popover";
 import { SwatchRow, nativePickerActive } from "@/components/swatch-row";
-import { archiveIncomeSource, moveIncomeSourceToIndex, renameIncomeSource, setIncomeColor, setPayAnchor, shareIncomeSourceAction } from "@/app/grid/actions";
+import {
+  archiveIncomeSource,
+  moveIncomeSourceToIndex,
+  renameIncomeSource,
+  setIncomeColor,
+  setPayAnchor,
+  setRequiresDebtPerson,
+  shareIncomeSourceAction,
+} from "@/app/grid/actions";
 import { InlineEditText } from "@/components/inline-edit-text";
 import { useRowDrag } from "@/components/grid/use-row-drag";
 import { runAction } from "@/lib/action-result";
@@ -15,6 +23,7 @@ export function IncomeSourceSettingsRow({
   id,
   name,
   isPayAnchor,
+  requiresDebtPerson = false,
   color = null,
   fallbackColor = "var(--chart-1)",
   sharedToHousehold = false,
@@ -23,6 +32,9 @@ export function IncomeSourceSettingsRow({
   id: number;
   name: string;
   isPayAnchor: boolean;
+  /** Requires a person pinned on every entry logged against this source -
+   * see lib/db/queries.ts' logIncomeTransactionUnsafe. */
+  requiresDebtPerson?: boolean;
   /** The colour chosen for this source's Grid row ("#rrggbb"), or null for automatic. */
   color?: string | null;
   /** The automatic colour shown when none is chosen (what the Grid uses). */
@@ -36,7 +48,16 @@ export function IncomeSourceSettingsRow({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [householdError, setHouseholdError] = useState<string | null>(null);
+  const [debtPersonError, setDebtPersonError] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
+
+  function toggleRequiresDebtPerson() {
+    setDebtPersonError(null);
+    startTransition(async () => {
+      const failure = await runAction(() => setRequiresDebtPerson(id, !requiresDebtPerson));
+      if (failure) setDebtPersonError(failure);
+    });
+  }
 
   function toggleHousehold() {
     setHouseholdError(null);
@@ -127,6 +148,29 @@ export function IncomeSourceSettingsRow({
           <Anchor className="size-3" />
           {isPayAnchor ? "Pay anchor" : "Set as pay anchor"}
         </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={toggleRequiresDebtPerson}
+          title={
+            requiresDebtPerson
+              ? "Every entry here must be tagged with who the money is from - click to make tagging optional again"
+              : "Require every entry here to be tagged with who the money is from"
+          }
+          className={
+            requiresDebtPerson
+              ? "inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.65rem] text-primary"
+              : "shrink-0 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[0.65rem] text-muted-foreground hover:border-muted-foreground"
+          }
+        >
+          <UserRound className="size-3" />
+          {requiresDebtPerson ? "Requires person" : "Require person"}
+        </button>
+        {debtPersonError && (
+          <span role="alert" className="text-[0.65rem] text-status-critical">
+            {debtPersonError}
+          </span>
+        )}
         {householdEnabled && (
           <>
             <button

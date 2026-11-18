@@ -61,7 +61,9 @@ describe("addLedgerEntry's loan branch writes a real income_transactions row too
       expect(rows[0].amountPence).toBe(2000);
 
       const { debtLedgerEntries } = await import("@/lib/db/schema");
-      expect(await db.select().from(debtLedgerEntries)).toHaveLength(1); // not double-counted
+      const ledger = await db.select().from(debtLedgerEntries);
+      expect(ledger).toHaveLength(1); // not double-counted
+      expect(ledger[0].incomeTransactionId).toBe(rows[0].id);
 
       const grid = await getGridData(YEAR);
       expect(grid.wagesByMonth[9]).toBe(2000);

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db, inTransaction } from "./index";
 import { addDebtEntry } from "./debt";
 import { addSavingsEntry, linkCategoryToBucket } from "./savings";
-import { categories, debtLedgerEntries, expenseEntries, people, savingsBuckets, savingsEntries } from "./schema";
+import { categories, debtLedgerEntries, expenseEntries, incomeSources, incomeTransactions, people, savingsBuckets, savingsEntries } from "./schema";
 
 /** Adding (or changing) the debt-repayment and savings tags on expenses that
  * already exist: for a whole category (linking it to a person or a bucket), a
@@ -157,6 +157,34 @@ export function setExpenseTags(expenseEntryId: number, changes: { debtPersonId?:
           await addSavingsEntry({ bucketId: changes.savingsBucketId, entryDate: entry.entryDate, amountPence: entry.amountPence, direction: "deposit", note: entry.note, expenseEntryId });
         }
       }
+    }
+  });
+}
+
+/** Same as setExpenseTags' debt branch, for an income transaction instead -
+ * sets, moves, or clears (null) who it's a loan from. Clearing is refused
+ * when the source requiresDebtPerson. */
+export function setIncomeEntryDebtTag(incomeTransactionId: number, debtPersonId: number | null) {
+  return inTransaction(async () => {
+    const entry = await db.query.incomeTransactions.findFirst({ where: eq(incomeTransactions.id, incomeTransactionId) });
+    if (!entry) throw new Error("That entry no longer exists.");
+
+    if (debtPersonId !== null) {
+      const person = await db.query.people.findFirst({ where: eq(people.id, debtPersonId) });
+      if (!person || person.archived) throw new Error("They're not available.");
+    } else {
+      const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, entry.incomeSourceId) });
+      if (source?.requiresDebtPerson) throw new Error("This income source requires tagging who the money is from.");
+    }
+
+    const ledger = await db.select().from(debtLedgerEntries).where(eq(debtLedgerEntries.incomeTransactionId, incomeTransactionId));
+    const unchanged = debtPersonId !== null && entry.debtPersonId === debtPersonId && ledger.length > 0;
+    if (unchanged) return;
+
+    await db.delete(debtLedgerEntries).where(eq(debtLedgerEntries.incomeTransactionId, incomeTransactionId));
+    await db.update(incomeTransactions).set({ debtPersonId }).where(eq(incomeTransactions.id, incomeTransactionId));
+    if (debtPersonId !== null) {
+      await addDebtEntry({ personId: debtPersonId, entryDate: entry.entryDate, amountPence: entry.amountPence, direction: "loan", note: entry.note ?? undefined, incomeTransactionId });
     }
   });
 }

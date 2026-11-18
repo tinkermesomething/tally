@@ -43,7 +43,7 @@ export type RuleContext = {
 type Lists = {
   accounts?: { id: number; name: string }[];
   categories: { id: number; name: string }[];
-  incomeSources: { id: number; name: string }[];
+  incomeSources: { id: number; name: string; requiresDebtPerson: boolean }[];
   people: { id: number; name: string }[];
   /** Savings buckets an expense rule can also pay into. */
   buckets?: { id: number; name: string }[];
@@ -119,7 +119,13 @@ function RuleDialogBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const requiredSource = !ignoring && isIncome && !!incomeSources.find((s) => String(s.id) === incomeSourceId)?.requiresDebtPerson;
+  useEffect(() => {
+    if (requiredSource) setTagDebt(true);
+  }, [requiredSource]);
+
   function handleTagDebtChange(next: boolean) {
+    if (requiredSource) return;
     setTagDebt(next);
     // no people yet: go straight to naming the first one
     if (next && people.length === 0 && !personId) setPersonId(NEW_PERSON);
@@ -156,16 +162,17 @@ function RuleDialogBody({
   function submit(apply: boolean) {
     if (!parsed.ok) return setError(parsed.error);
     if (!hasTarget) return setError(isIncome ? "Pick an income source." : "Pick a category.");
-    if (!ignoring && tagDebt && !personId) {
-      return setError(isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
+    const tagged = !ignoring && (tagDebt || requiredSource);
+    if (tagged && !personId) {
+      return setError(requiredSource ? "This source requires who the money is from." : isIncome ? "Pick who you borrowed this from, or turn off the loan tag." : "Pick who this repayment is to, or turn off the debt tag.");
     }
-    if (!ignoring && tagDebt && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter their name.");
+    if (tagged && personId === NEW_PERSON && !newPersonName.trim()) return setError("Enter their name.");
     if (!ignoring && !isIncome && toSavings && !bucketId) return setError("Pick a savings bucket (or create one), or untick \"Tag as savings\".");
     if (!ignoring && !isIncome && toSavings && bucketId === NEW_BUCKET && !newBucketName.trim()) return setError("Enter a name for the new savings bucket.");
     setError(null);
     startSaving(async () => {
       try {
-        const debtPersonId = !ignoring && tagDebt ? await resolvePersonId() : undefined;
+        const debtPersonId = tagged ? await resolvePersonId() : undefined;
         const target = ignoring
           ? ({ targetType: "ignore" } as const)
           : isIncome
@@ -276,7 +283,8 @@ function RuleDialogBody({
               </SelectContent>
             </Select>
           )}
-          {!ignoring && (
+          {!ignoring && requiredSource && <p className="text-xs text-muted-foreground">This source requires who the money is from.</p>}
+          {!ignoring && !requiredSource && (
           <div className="flex items-center gap-2">
             <Checkbox aria-label={isIncome ? "Tag as a loan" : "Tag as a debt repayment"} checked={tagDebt} onCheckedChange={(c) => handleTagDebtChange(c === true)} />
             <Label className="font-normal">
@@ -287,7 +295,7 @@ function RuleDialogBody({
           {!ignoring && !isIncome && (
             <SavingsTagField buckets={buckets} checked={toSavings} onCheckedChange={setToSavings} bucketId={bucketId} onBucketIdChange={setBucketId} newBucketName={newBucketName} onNewBucketNameChange={setNewBucketName} />
           )}
-          {!ignoring && tagDebt && (
+          {!ignoring && (tagDebt || requiredSource) && (
             <PersonPickerField
               idPrefix="rule-dialog"
               label={isIncome ? "Borrowed from" : "Paying back"}

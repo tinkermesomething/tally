@@ -77,7 +77,7 @@ export function ReviewTransactionRow({
 }: {
   transaction: ReviewRow;
   categories: { id: number; name: string }[];
-  incomeSources: { id: number; name: string }[];
+  incomeSources: { id: number; name: string; requiresDebtPerson: boolean }[];
   people: { id: number; name: string }[];
   selected: boolean;
   onToggleSelected: (id: number) => void;
@@ -132,8 +132,13 @@ export function ReviewTransactionRow({
   // carry a person: an expense as a repayment to them, income as a loan
   // from them (both land on the Debt ledger).
   const isIncome = transaction.amountPence > 0;
+  const requiredSource = isIncome && !!incomeSources.find((s) => String(s.id) === incomeSourceId)?.requiresDebtPerson;
+  useEffect(() => {
+    if (requiredSource) setTagDebt(true);
+  }, [requiredSource]);
 
   function handleTagDebtChange(next: boolean) {
+    if (requiredSource) return;
     setTagDebt(next);
     // Tagging incoming money as a loan suggests the loans income source,
     // but only when nothing is chosen yet - never overrides a deliberate pick.
@@ -149,16 +154,19 @@ export function ReviewTransactionRow({
     if (isIncome ? !incomeSourceId : !categoryId) {
       return isIncome ? "Pick an income source first." : "Pick a category first.";
     }
-    if (tagDebt && !personId) {
+    const tagged = tagDebt || requiredSource;
+    if (tagged && !personId) {
       return isIncome
-        ? "Pick who you borrowed this from, or turn off the loan tag."
+        ? requiredSource
+          ? "This source requires who the money is from."
+          : "Pick who you borrowed this from, or turn off the loan tag."
         : "Pick who this repayment is to, or turn off the debt tag.";
     }
-    if (tagDebt && personId === NEW_PERSON && !newPersonName.trim()) {
+    if (tagged && personId === NEW_PERSON && !newPersonName.trim()) {
       return "Enter their name.";
     }
     try {
-      const debtPersonId = tagDebt ? await resolvePersonId() : undefined;
+      const debtPersonId = tagged ? await resolvePersonId() : undefined;
       if (isIncome) {
         await categorizeImportedTransactionAsIncome(transaction.id, {
           incomeSourceId: parseInt(incomeSourceId, 10),
@@ -480,7 +488,7 @@ export function ReviewTransactionRow({
               isIncome,
               initialCategoryId: categoryId,
               initialIncomeSourceId: incomeSourceId,
-              initialTagDebt: tagDebt && !!personId && personId !== NEW_PERSON,
+              initialTagDebt: (tagDebt || requiredSource) && !!personId && personId !== NEW_PERSON,
               initialPersonId: personId !== NEW_PERSON ? personId : "",
             })
           }
@@ -501,6 +509,7 @@ export function ReviewTransactionRow({
           onPersonIdChange={setPersonId}
           newPersonName={newPersonName}
           onNewPersonNameChange={setNewPersonName}
+          required={requiredSource}
         />
       </TableCell>
       <TableCell>

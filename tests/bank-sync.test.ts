@@ -197,6 +197,15 @@ describe("rules", () => {
     await expect(addCategoryRule({ conditions: cond, targetType: "expense", categoryId: cat.id, debtPersonId: 999 })).rejects.toThrow("no longer exist");
     await expect(addCategoryRule({ conditions: [{ field: "account", operator: "is", value: "999" }], targetType: "ignore" })).rejects.toThrow("bank account");
   });
+
+  it("refuses an income rule with no debtPersonId when the source requires one", async () => {
+    const [source] = await db.insert(incomeSources).values({ name: "Loans", requiresDebtPerson: true }).returning();
+    const [bob] = await db.insert(people).values({ name: "Bob" }).returning();
+    const cond = [{ field: "payee" as const, operator: "contains" as const, value: "roberto" }];
+    await expect(addCategoryRule({ conditions: cond, targetType: "income", incomeSourceId: source.id })).rejects.toThrow("requires pinning");
+    const rule = await addCategoryRule({ conditions: cond, targetType: "income", incomeSourceId: source.id, debtPersonId: bob.id });
+    expect(rule.debtPersonId).toBe(bob.id);
+  });
 });
 
 describe("rules that count towards savings", () => {

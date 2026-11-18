@@ -7,6 +7,20 @@
 
 const BASE_URL = "https://bankaccountdata.gocardless.com/api/v2";
 
+/** This origin is idle for hours between syncs - the pooled connection goes
+ * stale and the next request dies with a bare "fetch failed". One retry
+ * opens a fresh connection and succeeds. */
+async function fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    if (err instanceof TypeError && err.message === "fetch failed") {
+      return await fetch(url, init);
+    }
+    throw err;
+  }
+}
+
 /** GoCardless's own redirect back to our `redirect` URL carries no query
  * params we can rely on - some banks' Open Banking implementations strip
  * query strings from the redirect entirely (a known community-documented
@@ -49,7 +63,7 @@ async function getAccessToken(): Promise<string> {
   if (tokenCache && tokenCache.secretId === creds.secretId && tokenCache.expiresAt > Date.now()) {
     return tokenCache.token;
   }
-  const res = await fetch(`${BASE_URL}/token/new/`, {
+  const res = await fetchWithRetry(`${BASE_URL}/token/new/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ secret_id: creds.secretId, secret_key: creds.secretKey }),
@@ -65,7 +79,7 @@ async function getAccessToken(): Promise<string> {
 
 async function gcFetch(path: string, init?: RequestInit) {
   const token = await getAccessToken();
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetchWithRetry(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       ...init?.headers,

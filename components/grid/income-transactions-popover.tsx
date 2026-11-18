@@ -8,11 +8,11 @@ import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { Popover, PopoverPortal, PopoverPositioner, PopoverPopup } from "@/components/ui/popover";
 import type { IncomeTransactionRow } from "@/lib/db/queries";
+import { EntryTagsControl } from "@/components/entries/entry-tags-control";
 
 /** The breakdown behind a grid cell's "Received £X" total - individually
  * editable/deletable, mirrors ExpenseEntriesPopover exactly (same portal
- * reasoning - never clipped by the grid's own scroll container), minus the
- * tags control: income has no retro-tags system to show here. */
+ * reasoning - never clipped by the grid's own scroll container). */
 export function IncomeTransactionsPopover({
   anchorRef,
   incomeSourceId,
@@ -111,6 +111,20 @@ export function IncomeTransactionsPopover({
                         if (e.key === "Enter") e.currentTarget.blur();
                       }}
                       className="w-full rounded border border-transparent bg-transparent px-1 text-xs text-muted-foreground hover:border-input focus:border-input focus:bg-background focus:text-foreground focus:outline-none"
+                    />
+                    <EntryTagsControl
+                      entryId={entry.id}
+                      kind="income"
+                      requiresDebtPerson={entry.requiresDebtPerson}
+                      label={`${entry.sourceName} on ${formatDate(entry.entryDate, dateFormat)}`}
+                      tags={{
+                        debtPersonId: entry.debtPersonId,
+                        debtPersonName: entry.debtPersonName,
+                        savingsBucketId: null,
+                        savingsBucketName: null,
+                        sharedToHousehold: false,
+                      }}
+                      onChanged={refresh}
                     />
                   </div>
                   <button

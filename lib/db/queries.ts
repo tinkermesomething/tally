@@ -14,6 +14,7 @@ import {
   incomeEntries,
   incomeSources,
   incomeTransactions,
+  people,
   reportPanels,
 } from "./schema";
 
@@ -294,6 +295,101 @@ export async function getExpenseEntriesForMonth(
   return rows;
 }
 
+/** All logged income transactions for a year, optionally narrowed to one
+ * month - income's mirror of getExpenseEntriesForMonth, backing the unified
+ * Entries ledger. `month` undefined means the full year. */
+export async function getIncomeTransactionsForMonth(
+  year: number,
+  month?: number
+): Promise<IncomeTransactionRow[]> {
+  return db
+    .select({
+      id: incomeTransactions.id,
+      incomeSourceId: incomeTransactions.incomeSourceId,
+      sourceName: incomeSources.name,
+      year: incomeTransactions.year,
+      month: incomeTransactions.month,
+      amountPence: incomeTransactions.amountPence,
+      note: incomeTransactions.note,
+      entryDate: incomeTransactions.entryDate,
+      provisional: incomeTransactions.provisional,
+      debtPersonId: incomeTransactions.debtPersonId,
+      debtPersonName: people.name,
+      requiresDebtPerson: incomeSources.requiresDebtPerson,
+    })
+    .from(incomeTransactions)
+    .innerJoin(incomeSources, eq(incomeTransactions.incomeSourceId, incomeSources.id))
+    .leftJoin(people, eq(incomeTransactions.debtPersonId, people.id))
+    .where(month === undefined ? eq(incomeTransactions.year, year) : and(eq(incomeTransactions.year, year), eq(incomeTransactions.month, month)))
+    .orderBy(desc(incomeTransactions.entryDate));
+}
+
+/** One row of the unified Entries ledger - an expense or an income
+ * transaction, told apart by `kind`. `amountPence` is SIGNED (income
+ * positive, expense negative) so a mixed list can be summed directly into a
+ * net total. Fields the other kind doesn't have are always null/false. */
+export type EntryRow = {
+  id: number;
+  kind: "expense" | "income";
+  label: string;
+  year: number;
+  month: number;
+  amountPence: number;
+  note: string | null;
+  entryDate: string;
+  provisional: boolean;
+  debtPersonId: number | null;
+  debtPersonName: string | null;
+  savingsBucketId: number | null;
+  savingsBucketName: string | null;
+  sharedToHousehold: boolean;
+  requiresDebtPerson: boolean;
+};
+
+/** The unified ledger behind the Entries tab: every expense AND income
+ * transaction for the period, one sorted list. `month` undefined means the
+ * full year (mirrors getExpenseEntriesForMonth/getIncomeTransactionsForMonth). */
+export async function getEntriesForMonth(year: number, month?: number): Promise<EntryRow[]> {
+  const [expenses, income] = await Promise.all([getExpenseEntriesForMonth(year, month), getIncomeTransactionsForMonth(year, month)]);
+  const rows: EntryRow[] = [
+    ...expenses.map((e) => ({
+      id: e.id,
+      kind: "expense" as const,
+      label: e.categoryName,
+      year: e.year,
+      month: e.month,
+      amountPence: -e.amountPence,
+      note: e.note,
+      entryDate: e.entryDate,
+      provisional: e.provisional,
+      debtPersonId: e.debtPersonId,
+      debtPersonName: e.debtPersonName,
+      savingsBucketId: e.savingsBucketId,
+      savingsBucketName: e.savingsBucketName,
+      sharedToHousehold: e.sharedToHousehold,
+      requiresDebtPerson: false,
+    })),
+    ...income.map((i) => ({
+      id: i.id,
+      kind: "income" as const,
+      label: i.sourceName,
+      year: i.year,
+      month: i.month,
+      amountPence: i.amountPence,
+      note: i.note,
+      entryDate: i.entryDate,
+      provisional: i.provisional,
+      debtPersonId: i.debtPersonId,
+      debtPersonName: i.debtPersonName,
+      savingsBucketId: null,
+      savingsBucketName: null,
+      sharedToHousehold: false,
+      requiresDebtPerson: i.requiresDebtPerson,
+    })),
+  ];
+  return rows.sort((a, b) => (a.entryDate < b.entryDate ? 1 : a.entryDate > b.entryDate ? -1 : b.id - a.id));
+}
+
 export async function updateExpenseEntry(
   id: number,
   input: { amountPence?: number; note?: string | null; entryDate?: string }
@@ -446,6 +542,13 @@ async function logIncomeTransactionUnsafe(input: {
   provisional?: boolean;
 }) {
   assertIsoDate(input.entryDate);
+
+  // Every caller funnels through here, so this is the one place to enforce it.
+  const source = await db.query.incomeSources.findFirst({ where: eq(incomeSources.id, input.incomeSourceId) });
+  if (source?.requiresDebtPerson && !input.debtPersonId) {
+    throw new Error("This income source requires tagging who the money is from.");
+  }
+
   const [created] = await db
     .insert(incomeTransactions)
     .values({
@@ -545,12 +648,14 @@ export type IncomeTransactionRow = {
   note: string | null;
   entryDate: string;
   provisional: boolean;
+  debtPersonId: number | null;
+  debtPersonName: string | null;
+  requiresDebtPerson: boolean;
 };
 
 /** Individual logged income transactions for one source/month - the
  * breakdown behind a grid cell's "Received £X" total, mirrors
- * getExpenseEntriesForCell exactly (minus the debt/savings/household
- * columns that query has - income has no retro-tags system to show here). */
+ * getExpenseEntriesForCell. */
 export async function getIncomeTransactionsForCell(
   incomeSourceId: number,
   year: number,
@@ -567,9 +672,13 @@ export async function getIncomeTransactionsForCell(
       note: incomeTransactions.note,
       entryDate: incomeTransactions.entryDate,
       provisional: incomeTransactions.provisional,
+      debtPersonId: incomeTransactions.debtPersonId,
+      debtPersonName: people.name,
+      requiresDebtPerson: incomeSources.requiresDebtPerson,
     })
     .from(incomeTransactions)
     .innerJoin(incomeSources, eq(incomeTransactions.incomeSourceId, incomeSources.id))
+    .leftJoin(people, eq(incomeTransactions.debtPersonId, people.id))
     .where(and(eq(incomeTransactions.incomeSourceId, incomeSourceId), eq(incomeTransactions.year, year), eq(incomeTransactions.month, month)))
     .orderBy(incomeTransactions.entryDate);
 }
@@ -697,7 +806,7 @@ export async function getArchivedCategories() {
 
 /** Lightweight active income source list (no months/amounts) for Settings. */
 export async function getIncomeSourceList(): Promise<
-  { id: number; name: string; isPayAnchor: boolean; color: string | null; sharedToHousehold: boolean }[]
+  { id: number; name: string; isPayAnchor: boolean; requiresDebtPerson: boolean; color: string | null; sharedToHousehold: boolean }[]
 > {
   return db.query.incomeSources.findMany({
     where: (s, { isNull }) => isNull(s.archivedAt),
@@ -767,5 +876,19 @@ export async function setIncomeSourceColor(id: number, color: string | null) {
   const value = color === null || color === "" ? null : color.trim();
   if (value !== null && !/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error("Colour must look like #1a2b3c.");
   const updated = await db.update(incomeSources).set({ color: value }).where(eq(incomeSources.id, id)).returning({ id: incomeSources.id });
+  if (updated.length === 0) throw new Error("That income source no longer exists.");
+}
+
+/** Turning this on would make every future import through an active rule
+ * targeting this source throw (no debtPersonId pinned) - refuse up front
+ * instead of breaking the next sync. */
+export async function setIncomeSourceRequiresDebtPerson(id: number, value: boolean) {
+  if (value) {
+    const unpinned = await db.query.categoryRules.findFirst({
+      where: (r, { and, eq: eqc, isNull }) => and(eqc(r.active, true), eqc(r.incomeSourceId, id), isNull(r.debtPersonId)),
+    });
+    if (unpinned) throw new Error("A rule targeting this source has no person pinned - fix or disable it first.");
+  }
+  const updated = await db.update(incomeSources).set({ requiresDebtPerson: value }).where(eq(incomeSources.id, id)).returning({ id: incomeSources.id });
   if (updated.length === 0) throw new Error("That income source no longer exists.");
 }

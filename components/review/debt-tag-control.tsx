@@ -37,6 +37,7 @@ export function DebtTagControl({
   onPersonIdChange,
   newPersonName,
   onNewPersonNameChange,
+  required = false,
 }: {
   kind: DebtKind;
   idPrefix: string;
@@ -47,19 +48,23 @@ export function DebtTagControl({
   onPersonIdChange: (id: string) => void;
   newPersonName: string;
   onNewPersonNameChange: (name: string) => void;
+  /** The chosen source requires a person on every entry - the checkbox is
+   * hidden (there's nothing to turn off) and the picker always shows. */
+  required?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const copy = COPY[kind];
+  const title = required ? "This source requires who the money is from" : tagDebt ? copy.on : copy.off;
 
   return (
     <>
       <Button
         ref={anchorRef}
         size="icon-xs"
-        variant={tagDebt ? "secondary" : "ghost"}
-        title={tagDebt ? copy.on : copy.off}
-        aria-label={tagDebt ? copy.on : copy.off}
+        variant={tagDebt || required ? "secondary" : "ghost"}
+        title={title}
+        aria-label={title}
         onClick={() => setOpen((v) => !v)}
       >
         <UserRound className="size-3.5" />
@@ -68,11 +73,15 @@ export function DebtTagControl({
         <PopoverPortal>
           <PopoverPositioner anchor={anchorRef} align="start" sideOffset={4}>
             <PopoverPopup>
-              <div className="flex items-center gap-2 pb-2">
-                <Checkbox checked={tagDebt} onCheckedChange={(checked) => onTagDebtChange(checked === true)} />
-                <span className="text-sm">{copy.check}</span>
-              </div>
-              {tagDebt && (
+              {required ? (
+                <p className="pb-2 text-sm">Required: who is this from?</p>
+              ) : (
+                <div className="flex items-center gap-2 pb-2">
+                  <Checkbox checked={tagDebt} onCheckedChange={(checked) => onTagDebtChange(checked === true)} />
+                  <span className="text-sm">{copy.check}</span>
+                </div>
+              )}
+              {(tagDebt || required) && (
                 <PersonPickerField
                   idPrefix={idPrefix}
                   label={copy.picker}

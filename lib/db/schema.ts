@@ -124,6 +124,10 @@ export const incomeSources = sqliteTable("income_sources", {
   // natural finer-grained thing to share instead, so there's no per-entry
   // override offered. See lib/db/household-tags.ts.
   sharedToHousehold: integer("shared_to_household", { mode: "boolean" }).notNull().default(false),
+  // Requires a debtPersonId on every transaction logged against this source
+  // (enforced in logIncomeTransactionUnsafe) - unlike categories.linkedDebtPersonId,
+  // no single fixed person to default to, so it's mandatory instead.
+  requiresDebtPerson: integer("requires_debt_person", { mode: "boolean" }).notNull().default(false),
 });
 
 export const incomeEntries = sqliteTable(

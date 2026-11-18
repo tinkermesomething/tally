@@ -80,23 +80,28 @@ export async function addLedgerEntry(input: {
     const amountPence = poundsToPence(input.pounds);
 
     await inTransaction(async () => {
-      await addDebtEntry({
-        personId: input.personId,
-        entryDate: input.entryDate,
-        amountPence,
-        direction: input.direction,
-        note: input.note,
-      });
-
       if (input.direction === "loan" && input.incomeSourceId) {
-        // Respects an existing pay-period boundary (if any) the same as every
-        // other logged entry - but doesn't create a new one; only the primary
-        // Add Income flow can do that, since it's the only place with a
-        // "counts toward" picker for the anchor source itself. debtPersonId
-        // is NOT passed through here - the debt ledger entry was already
-        // written above; logIncomeTransaction would otherwise add a second one.
+        // Pass debtPersonId through so logIncomeTransaction writes the debt
+        // ledger row itself, linked to the transaction - a separate
+        // addDebtEntry call here would bypass requiresDebtPerson enforcement.
         const { year, month } = await resolvePeriodForDate(input.entryDate);
-        await logIncomeTransaction({ incomeSourceId: input.incomeSourceId, amountPence, entryDate: input.entryDate, year, month });
+        await logIncomeTransaction({
+          incomeSourceId: input.incomeSourceId,
+          amountPence,
+          entryDate: input.entryDate,
+          year,
+          month,
+          note: input.note,
+          debtPersonId: input.personId,
+        });
+      } else {
+        await addDebtEntry({
+          personId: input.personId,
+          entryDate: input.entryDate,
+          amountPence,
+          direction: input.direction,
+          note: input.note,
+        });
       }
 
       if (input.direction === "repayment" && input.categoryId) {

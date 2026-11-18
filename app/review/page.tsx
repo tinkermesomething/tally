@@ -172,7 +172,8 @@ export default async function ReviewPage({
                       amountPence={t.amountPence}
                       date={t.date}
                       payeeRaw={t.payeeRaw}
-                      incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+                      incomeSources={incomeSources}
+                      people={people.map((p) => ({ id: p.id, name: p.name }))}
                       ruleMatch={t.incomeRuleMatch}
                     />
                   )}
@@ -187,7 +188,7 @@ export default async function ReviewPage({
         transactions={transactions}
         accounts={accounts}
         categories={flatCategories}
-        incomeSources={incomeSources.map((s) => ({ id: s.id, name: s.name }))}
+        incomeSources={incomeSources}
         people={people.map((p) => ({ id: p.id, name: p.name }))}
         buckets={savingsBuckets.map((b) => ({ id: b.id, name: b.name }))}
       />

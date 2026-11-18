@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Home, PiggyBank, UserRound } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { getEntryTagOptions, getHouseholdEnabledFlag, setEntryHouseholdShare, setEntryTags } from "@/app/grid/actions";
+import { getEntryTagOptions, getHouseholdEnabledFlag, setEntryHouseholdShare, setEntryTags, setIncomeDebtTag } from "@/app/grid/actions";
 import { runAction } from "@/lib/action-result";
 
 const NONE = "none";
@@ -52,11 +52,19 @@ const pill = (set: boolean) =>
  * ledger row / deposit it made goes with it). */
 export function EntryTagsControl({
   entryId,
+  kind = "expense",
+  requiresDebtPerson = false,
   label,
   tags,
   onChanged,
 }: {
   entryId: number;
+  /** Income entries have no savings or household tag - only who the money
+   * is from. */
+  kind?: "expense" | "income";
+  /** The income source requires a person - the "Not a debt repayment"
+   * option is hidden, there's nothing to clear it to. Ignored for expense. */
+  requiresDebtPerson?: boolean;
   /** For screen readers, e.g. "Rent on 3 Sep". */
   label: string;
   tags: EntryTagState;
@@ -86,16 +94,18 @@ export function EntryTagsControl({
     });
   }
 
-  function change(kind: "debt" | "savings", value: string | null) {
+  function change(tagKind: "debt" | "savings", value: string | null) {
     const id = !value || value === NONE ? null : parseInt(value, 10);
-    const current = kind === "debt" ? tags.debtPersonId : tags.savingsBucketId;
+    const current = tagKind === "debt" ? tags.debtPersonId : tags.savingsBucketId;
     if (id === current) return;
     setError(null);
-    const name = id === null ? null : ((kind === "debt" ? options?.people : options?.buckets)?.find((o) => o.id === id)?.name ?? null);
+    const name = id === null ? null : ((tagKind === "debt" ? options?.people : options?.buckets)?.find((o) => o.id === id)?.name ?? null);
     const next: EntryTagState =
-      kind === "debt" ? { ...tags, debtPersonId: id, debtPersonName: name } : { ...tags, savingsBucketId: id, savingsBucketName: name };
+      tagKind === "debt" ? { ...tags, debtPersonId: id, debtPersonName: name } : { ...tags, savingsBucketId: id, savingsBucketName: name };
     startTransition(async () => {
-      const failure = await runAction(() => setEntryTags(entryId, kind === "debt" ? { debtPersonId: id } : { savingsBucketId: id }));
+      const failure = await runAction(() =>
+        kind === "income" ? setIncomeDebtTag(entryId, id) : setEntryTags(entryId, tagKind === "debt" ? { debtPersonId: id } : { savingsBucketId: id })
+      );
       if (failure) return setError(failure);
       onChanged(next);
     });
@@ -104,11 +114,11 @@ export function EntryTagsControl({
   return (
     <span className="inline-flex flex-wrap items-center gap-1" data-testid="entry-tags">
       <Select value={tags.debtPersonId !== null ? String(tags.debtPersonId) : NONE} onValueChange={(v) => change("debt", v)}>
-        <SelectTrigger size="sm" aria-label={`Debt repayment for ${label}`} className={pill(tags.debtPersonId !== null)}>
+        <SelectTrigger size="sm" aria-label={`${kind === "income" ? "Loan from" : "Debt repayment"} for ${label}`} className={pill(tags.debtPersonId !== null)}>
           <SelectValue>
             {(v: string) =>
               v === NONE ? (
-                "+ debt repayment"
+                kind === "income" ? "+ loan from" : "+ debt repayment"
               ) : (
                 <span className="inline-flex items-center gap-1">
                   <UserRound className="size-3" />
@@ -119,7 +129,7 @@ export function EntryTagsControl({
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={NONE}>Not a debt repayment</SelectItem>
+          {!(kind === "income" && requiresDebtPerson) && <SelectItem value={NONE}>Not a debt repayment</SelectItem>}
           {(options?.people ?? []).map((p) => (
             <SelectItem key={p.id} value={String(p.id)}>
               {p.name}
@@ -127,6 +137,7 @@ export function EntryTagsControl({
           ))}
         </SelectContent>
       </Select>
+      {kind === "expense" && (
       <Select value={tags.savingsBucketId !== null ? String(tags.savingsBucketId) : NONE} onValueChange={(v) => change("savings", v)}>
         <SelectTrigger size="sm" aria-label={`Savings for ${label}`} className={pill(tags.savingsBucketId !== null)}>
           <SelectValue>
@@ -151,7 +162,8 @@ export function EntryTagsControl({
           ))}
         </SelectContent>
       </Select>
-      {householdEnabled && (
+      )}
+      {kind === "expense" && householdEnabled && (
         <button
           type="button"
           onClick={toggleHousehold}

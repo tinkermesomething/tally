@@ -3,72 +3,84 @@
 import { parsePounds } from "@/lib/money-input";
 import { useMemo, useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
-import { editExpenseEntry, removeExpenseEntry } from "@/app/grid/actions";
+import { editExpenseEntry, removeExpenseEntry, editIncomeTransaction, removeIncomeTransaction } from "@/app/grid/actions";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
-import type { ExpenseEntryRow } from "@/lib/db/queries";
+import type { EntryRow } from "@/lib/db/queries";
 import { amountText, fuzzyScore } from "@/lib/fuzzy";
 import { FIELD_COLOR } from "@/lib/field-colors";
 import { EntryTagsControl } from "@/components/entries/entry-tags-control";
+import { cn } from "@/lib/utils";
 
-export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
+type Filter = "all" | "income" | "expense";
+
+export function EntriesTable({ entries }: { entries: EntryRow[] }) {
   const { currency, dateFormat } = useAppSettings();
   const [rows, setRows] = useState(entries);
   const [, startTransition] = useTransition();
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+
+  const filtered = useMemo(() => (filter === "all" ? rows : rows.filter((r) => r.kind === filter)), [rows, filter]);
 
   // Best matches first while searching; original order when not. Only this
   // period's loaded entries are searched.
   const shown = useMemo(() => {
-    if (query.trim() === "") return rows;
-    return rows
-      .map((r, i) => ({ r, i, s: fuzzyScore(query, [r.categoryName, r.note, amountText(r.amountPence), r.entryDate]) }))
+    if (query.trim() === "") return filtered;
+    return filtered
+      .map((r, i) => ({ r, i, s: fuzzyScore(query, [r.label, r.note, amountText(r.amountPence), r.entryDate]) }))
       .filter((x) => x.s > 0)
       .sort((a, b) => b.s - a.s || a.i - b.i)
       .map((x) => x.r);
-  }, [rows, query]);
+  }, [filtered, query]);
 
   /** Returns the canonical "10.00"-formatted value to redisplay on a valid
    * edit, or null on invalid input - the input is uncontrolled (defaultValue
    * only applies once, at mount), so without this the box would keep
    * showing whatever raw text was typed ("10") forever instead of settling
    * on the formatted amount. Null tells the caller to revert instead. */
-  function commitAmount(id: number, raw: string): string | null {
+  function commitAmount(entry: EntryRow, raw: string): string | null {
     const pounds = (parsePounds(raw) ?? NaN);
     if (Number.isNaN(pounds) || pounds <= 0) return null;
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, amountPence: Math.round(pounds * 100) } : r)));
+    const signed = entry.kind === "income" ? Math.round(pounds * 100) : -Math.round(pounds * 100);
+    setRows((rs) => rs.map((r) => (r.id === entry.id && r.kind === entry.kind ? { ...r, amountPence: signed } : r)));
     startTransition(async () => {
-      await editExpenseEntry(id, { pounds });
+      if (entry.kind === "income") await editIncomeTransaction(entry.id, { pounds });
+      else await editExpenseEntry(entry.id, { pounds });
     });
     return pounds.toFixed(2);
   }
 
-  function commitNote(id: number, note: string) {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, note: note || null } : r)));
+  function commitNote(entry: EntryRow, note: string) {
+    setRows((rs) => rs.map((r) => (r.id === entry.id && r.kind === entry.kind ? { ...r, note: note || null } : r)));
     startTransition(async () => {
-      await editExpenseEntry(id, { note });
+      if (entry.kind === "income") await editIncomeTransaction(entry.id, { note });
+      else await editExpenseEntry(entry.id, { note });
     });
   }
 
-  function remove(id: number) {
-    setRows((rs) => rs.filter((r) => r.id !== id));
+  function remove(entry: EntryRow) {
+    setRows((rs) => rs.filter((r) => !(r.id === entry.id && r.kind === entry.kind)));
     startTransition(async () => {
-      await removeExpenseEntry(id);
+      if (entry.kind === "income") await removeIncomeTransaction(entry.id);
+      else await removeExpenseEntry(entry.id);
     });
   }
+
+  const filterLabel: Record<Filter, string> = { all: "All", income: "Incoming", expense: "Outgoing" };
 
   if (rows.length === 0) {
     return (
       <p className="rounded-xl border border-border bg-card p-6 text-center text-sm text-muted-foreground">
-        No expenses logged for this period.
+        Nothing logged for this period.
       </p>
     );
   }
 
   return (
     <div className="space-y-2">
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <input
         type="search"
         value={query}
@@ -77,7 +89,23 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
         aria-label="Search entries"
         className="h-8 w-64 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring"
       />
-      {query.trim() !== "" && (
+      <div className="flex items-center gap-1" role="group" aria-label="Filter by direction">
+        {(["all", "income", "expense"] as const).map((f) => (
+          <button
+            key={f}
+            type="button"
+            aria-pressed={filter === f}
+            onClick={() => setFilter(f)}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-xs",
+              filter === f ? "border-foreground text-foreground" : "border-border text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {filterLabel[f]}
+          </button>
+        ))}
+      </div>
+      {(query.trim() !== "" || filter !== "all") && (
         <span className="text-xs text-muted-foreground" data-testid="entries-filter-count">
           Showing {shown.length} of {rows.length}
         </span>
@@ -88,7 +116,7 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
         <thead>
           <tr className="border-b border-border bg-muted text-left">
             <th className={`px-3 py-2 font-medium ${FIELD_COLOR.date}`}>Date</th>
-            <th className={`px-3 py-2 font-medium ${FIELD_COLOR.category}`}>Category</th>
+            <th className={`px-3 py-2 font-medium ${FIELD_COLOR.category}`}>Category / Source</th>
             <th className={`px-3 py-2 text-right font-medium ${FIELD_COLOR.amount}`}>Amount</th>
             <th className={`px-3 py-2 font-medium ${FIELD_COLOR.note}`}>Note</th>
             <th className="px-3 py-2 font-medium">Counts towards</th>
@@ -104,10 +132,10 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
             </tr>
           )}
           {shown.map((entry) => (
-            <tr key={entry.id} className={`row-line border-t border-border ${entry.provisional ? "bg-muted/40" : ""}`}>
+            <tr key={`${entry.kind}-${entry.id}`} className={`row-line border-t border-border ${entry.provisional ? "bg-muted/40" : ""}`}>
               <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(entry.entryDate, dateFormat)}</td>
               <td className="px-3 py-2 font-medium">
-                {entry.categoryName}
+                {entry.label}
                 {entry.provisional && (
                   <span
                     className="ml-1.5 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[0.65rem] font-normal text-muted-foreground"
@@ -117,44 +145,46 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
                   </span>
                 )}
               </td>
-              <td className="px-3 py-2 text-right">
+              <td className={cn("px-3 py-2 text-right", entry.kind === "income" && "text-status-good")}>
                 <input
-                  defaultValue={(entry.amountPence / 100).toFixed(2)}
+                  defaultValue={(Math.abs(entry.amountPence) / 100).toFixed(2)}
                   inputMode="decimal"
                   onBlur={(e) => {
-                    e.target.value = commitAmount(entry.id, e.target.value) ?? (entry.amountPence / 100).toFixed(2);
+                    e.target.value = commitAmount(entry, e.target.value) ?? (Math.abs(entry.amountPence) / 100).toFixed(2);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                   }}
                   className="w-20 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-right tabular-nums hover:border-input focus:border-input focus:bg-background focus:outline-none"
-                  aria-label={`Amount for ${entry.categoryName} on ${entry.entryDate}`}
+                  aria-label={`Amount for ${entry.label} on ${entry.entryDate}`}
                 />
               </td>
               <td className="px-3 py-2">
                 <input
                   defaultValue={entry.note ?? ""}
                   placeholder="Add a note…"
-                  onBlur={(e) => commitNote(entry.id, e.target.value)}
+                  onBlur={(e) => commitNote(entry, e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") e.currentTarget.blur();
                   }}
                   className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-muted-foreground hover:border-input focus:border-input focus:bg-background focus:text-foreground focus:outline-none"
-                  aria-label={`Note for ${entry.categoryName} on ${entry.entryDate}`}
+                  aria-label={`Note for ${entry.label} on ${entry.entryDate}`}
                 />
               </td>
               <td className="px-3 py-2">
                 <EntryTagsControl
                   entryId={entry.id}
-                  label={`${entry.categoryName} on ${entry.entryDate}`}
+                  kind={entry.kind}
+                  requiresDebtPerson={entry.requiresDebtPerson}
+                  label={`${entry.label} on ${entry.entryDate}`}
                   tags={entry}
-                  onChanged={(next) => setRows((rs) => rs.map((r) => (r.id === entry.id ? { ...r, ...next } : r)))}
+                  onChanged={(next) => setRows((rs) => rs.map((r) => (r.id === entry.id && r.kind === entry.kind ? { ...r, ...next } : r)))}
                 />
               </td>
               <td className="px-2 py-2 text-right">
                 <button
                   type="button"
-                  onClick={() => remove(entry.id)}
+                  onClick={() => remove(entry)}
                   className="rounded p-1 text-muted-foreground hover:bg-status-critical/10 hover:text-status-critical"
                   title="Delete this entry"
                 >
@@ -167,7 +197,8 @@ export function EntriesTable({ entries }: { entries: ExpenseEntryRow[] }) {
         <tfoot>
           <tr className="border-t border-border bg-secondary font-medium">
             <td className="px-3 py-2" colSpan={2}>
-              Total{shown.length !== rows.length ? ` (${shown.length} of ${rows.length} shown)` : ""}
+              {filter === "all" ? "Net" : "Total"}
+              {shown.length !== rows.length ? ` (${shown.length} of ${rows.length} shown)` : ""}
             </td>
             <td className="px-3 py-2 text-right tabular-nums">
               {formatPence(shown.reduce((sum, r) => sum + r.amountPence, 0), currency)}
