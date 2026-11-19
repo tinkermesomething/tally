@@ -54,7 +54,6 @@ export async function importCsv(input: {
       });
       revalidatePath("/review");
       revalidatePath("/grid");
-      revalidatePath("/entries");
       revalidatePath("/debt");
       revalidatePath("/settings");
       return { ok: true, ...done };

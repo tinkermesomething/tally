@@ -2,7 +2,7 @@
 
 import { formatPence } from "@/lib/money";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
-import type { VarianceRow } from "@/lib/report-view";
+import { totalOverspend, type VarianceRow } from "@/lib/report-view";
 
 // Polarity is the job here (over vs under a target), so it uses a diverging
 // pair - warm for over, cool for under - from the chart tokens, never the
@@ -23,6 +23,7 @@ export function VarianceChart({ rows }: { rows: VarianceRow[] }) {
   const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.diffPence)));
   const totalBudgeted = rows.reduce((s, r) => s + r.budgetedPence, 0);
   const totalSpent = rows.reduce((s, r) => s + r.spentPence, 0);
+  const overspend = totalOverspend(rows);
 
   return (
     <div className="space-y-2" data-testid="variance-chart">
@@ -99,14 +100,17 @@ export function VarianceChart({ rows }: { rows: VarianceRow[] }) {
         })}
       </ul>
 
-      <div className="variance-row border-t border-border px-1 pt-2 text-sm font-medium">
+      <div
+        className="variance-row border-t border-border px-1 pt-2 text-sm font-medium"
+        title={overspend > 0 ? "Total overspend - summed only across groups that are over, an underspent group never offsets it" : undefined}
+      >
         <span>Total</span>
         <span className="hidden whitespace-nowrap text-right tabular-nums md:block">{formatPence(totalBudgeted, currency)}</span>
         <span className="hidden whitespace-nowrap text-right tabular-nums md:block">{formatPence(totalSpent, currency)}</span>
         <span className="hidden md:block" />
         <span className="whitespace-nowrap text-right tabular-nums">
-          {totalSpent - totalBudgeted > 0 ? "+" : totalSpent - totalBudgeted < 0 ? "−" : ""}
-          {formatPence(Math.abs(totalSpent - totalBudgeted), currency)}
+          {overspend > 0 ? `+${formatPence(overspend, currency)}` : formatPence(0, currency)}
+          <span className="ml-1 text-xs font-normal text-muted-foreground">{overspend > 0 ? "overspent" : "on budget"}</span>
         </span>
       </div>
     </div>

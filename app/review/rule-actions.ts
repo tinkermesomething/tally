@@ -48,7 +48,7 @@ export async function saveRule(input: {
       // it itself once it has closed (see ReviewList.closeRule).
       revalidatePath("/settings");
       revalidatePath("/grid");
-      revalidatePath("/entries");
+      revalidatePath("/review");
       revalidatePath("/debt");
       revalidatePath("/savings");
       return { ok: true, result };
@@ -72,7 +72,6 @@ export async function saveRuleChanges(
       revalidatePath("/settings");
       revalidatePath("/review");
       revalidatePath("/grid");
-      revalidatePath("/entries");
       revalidatePath("/debt");
       revalidatePath("/savings");
       return { ok: true, result };

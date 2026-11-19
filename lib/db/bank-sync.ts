@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db, inTransaction } from "./index";
 import { accountDisplayName } from "../accounts";
-import { logExpense, logIncomeTransaction, confirmPencilledExpense, confirmPencilledIncome } from "./queries";
+import { logExpense, logIncomeTransaction, confirmPencilledExpense, confirmPencilledIncome, type SplitPart } from "./queries";
 import { addTagsToExpense } from "./retro-tags";
 import { recordAnchorForWage } from "./pay-period";
 import { parseIsoDate } from "../date";
@@ -1001,6 +1001,42 @@ export async function categorizeTransaction(
       .update(importedTransactions)
       .set({ status: "categorized" })
       .where(eq(importedTransactions.id, id));
+  });
+}
+
+/** Split version of categorizeTransaction - one pending transaction becomes
+ * several expense entries across different categories (e.g. one Amazon
+ * order = pets + household), all sharing this transaction's importedTransactionId.
+ * No debt/savings tagging here - tag the resulting entries afterward from
+ * the Entries tab, same as a split made there. */
+export async function categorizeTransactionSplit(id: number, parts: SplitPart[]) {
+  const row = await db.query.importedTransactions.findFirst({ where: eq(importedTransactions.id, id) });
+  if (!row) throw new Error(`Staged transaction ${id} not found.`);
+  if (row.status !== "pending_review") {
+    throw new Error("This transaction was already handled.");
+  }
+  if (row.amountPence >= 0) {
+    throw new Error("Only money-out (negative amount) transactions can be categorized as an expense.");
+  }
+  if (parts.length < 2) throw new Error("Split into at least 2 categories.");
+  for (const p of parts) {
+    if (p.amountPence <= 0) throw new Error("Each part must be a positive amount.");
+  }
+  if (parts.reduce((s, p) => s + p.amountPence, 0) !== Math.abs(row.amountPence)) {
+    throw new Error("The parts must add up to the original amount.");
+  }
+
+  await inTransaction(async () => {
+    for (const p of parts) {
+      await logExpense({
+        categoryId: p.categoryId,
+        amountPence: p.amountPence,
+        entryDate: row.bookingDate,
+        note: p.note ?? entryNoteFor(row),
+        importedTransactionId: id,
+      });
+    }
+    await db.update(importedTransactions).set({ status: "categorized" }).where(eq(importedTransactions.id, id));
   });
 }
 

@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import {
   categorizeTransaction,
   categorizeTransactionAsIncome,
+  categorizeTransactionSplit,
   ignoreTransaction,
   restoreTransaction,
   bulkIgnoreTransactions,
@@ -17,6 +18,7 @@ import {
   setTransactionNote,
 } from "@/lib/db/bank-sync";
 import { pencilInExpense, discardPencilledExpense, pencilInIncome, discardPencilledIncome } from "@/lib/db/queries";
+import { poundsToPence } from "@/lib/money";
 
 export async function categorizeImportedTransaction(
   id: number,
@@ -26,7 +28,18 @@ export async function categorizeImportedTransaction(
     await categorizeTransaction(id, { categoryId: input.categoryId, debtPersonId: input.debtPersonId });
     revalidatePath("/review");
     revalidatePath("/grid");
-    revalidatePath("/entries");
+  });
+}
+
+export async function categorizeImportedTransactionSplit(
+  id: number,
+  parts: { categoryId: number; pounds: number; note?: string }[]
+) {
+  return requireSession(async () => {
+    for (const p of parts) assertPositivePence(poundsToPence(p.pounds));
+    await categorizeTransactionSplit(id, parts.map((p) => ({ categoryId: p.categoryId, amountPence: poundsToPence(p.pounds), note: p.note })));
+    revalidatePath("/review");
+    revalidatePath("/grid");
   });
 }
 
@@ -77,7 +90,6 @@ export async function bulkCategorizeImportedTransactionsAsExpense(
     await bulkCategorizeTransactionsAsExpense(ids, input);
     revalidatePath("/review");
     revalidatePath("/grid");
-    revalidatePath("/entries");
     revalidatePath("/debt");
   });
 }
@@ -110,7 +122,6 @@ export async function pencilInPendingExpense(input: {
     await pencilInExpense({ ...input, entryDate: input.entryDate ?? localIsoDate() });
     revalidatePath("/review");
     revalidatePath("/grid");
-    revalidatePath("/entries");
     revalidatePath("/debt");
   });
 }
@@ -122,7 +133,6 @@ export async function confirmImportedTransactionMatch(importedTransactionId: num
     await confirmPencilledMatch(importedTransactionId, expenseEntryId);
     revalidatePath("/review");
     revalidatePath("/grid");
-    revalidatePath("/entries");
   });
 }
 
@@ -133,7 +143,6 @@ export async function discardImportedTransactionMatch(expenseEntryId: number) {
     await discardPencilledExpense(expenseEntryId);
     revalidatePath("/review");
     revalidatePath("/grid");
-    revalidatePath("/entries");
     revalidatePath("/debt");
   });
 }

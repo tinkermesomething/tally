@@ -16,6 +16,7 @@ import {
   incomeTransactions,
   people,
   reportPanels,
+  savingsEntries,
 } from "./schema";
 
 // The grid rollup and the category tree live in their own files; re-exported so
@@ -428,6 +429,76 @@ async function deleteExpenseEntryUnsafe(id: number) {
   await db.delete(expenseEntries).where(eq(expenseEntries.id, id));
 
   await unpayCellIfNoExpenses(entry.categoryId, entry.year, entry.month);
+}
+
+export type SplitPart = { categoryId: number; amountPence: number; note?: string };
+
+/** Replaces one logged expense with several, across different categories
+ * (e.g. one Amazon order = pets + household). The parts must add up to the
+ * original amount exactly - this redistributes it, not partially recategorizes
+ * it. A debt/savings/household tag on the original is real money-tracking
+ * state, not metadata - there's no single piece to hand it to, so it's
+ * dropped, but only with acknowledgeTagLoss explicitly true (the caller's
+ * UI surfaces the tag and makes the user confirm first; this is the actual
+ * enforcement, not just a client-side nicety). Returns the new rows fully
+ * joined (ExpenseEntryRow, same shape as getExpenseEntriesForMonth) - the
+ * caller needs category/debt/savings names to patch its own list, not just
+ * the raw inserted columns. */
+export function splitExpenseEntry(
+  entryId: number,
+  parts: SplitPart[],
+  acknowledgeTagLoss: boolean = false
+): Promise<ExpenseEntryRow[]> {
+  return inTransaction(() => splitExpenseEntryUnsafe(entryId, parts, acknowledgeTagLoss));
+}
+
+async function splitExpenseEntryUnsafe(
+  entryId: number,
+  parts: SplitPart[],
+  acknowledgeTagLoss: boolean
+): Promise<ExpenseEntryRow[]> {
+  const entry = await db.query.expenseEntries.findFirst({ where: eq(expenseEntries.id, entryId) });
+  if (!entry) throw new Error("That entry no longer exists.");
+  if (entry.provisional) throw new Error("Confirm or discard this pencilled-in entry before splitting it.");
+  if (parts.length < 2) throw new Error("Split into at least 2 categories.");
+  for (const p of parts) {
+    if (p.amountPence <= 0) throw new Error("Each part must be a positive amount.");
+    if (!(await db.query.categories.findFirst({ where: eq(categories.id, p.categoryId) }))) {
+      throw new Error("One of the categories no longer exists.");
+    }
+  }
+  if (parts.reduce((s, p) => s + p.amountPence, 0) !== entry.amountPence) {
+    throw new Error("The parts must add up to the original amount.");
+  }
+
+  const hasSavingsTag = !!(await db.query.savingsEntries.findFirst({ where: eq(savingsEntries.expenseEntryId, entryId) }));
+  if ((entry.debtPersonId !== null || entry.sharedToHousehold || hasSavingsTag) && !acknowledgeTagLoss) {
+    throw new Error("This entry is tagged - confirm to split it anyway and drop the tag.");
+  }
+
+  await deleteDebtEntriesForExpense(entryId);
+  await deleteSavingsEntriesForExpense(entryId);
+  await db.delete(expenseEntries).where(eq(expenseEntries.id, entryId));
+  await unpayCellIfNoExpenses(entry.categoryId, entry.year, entry.month);
+
+  const createdIds: number[] = [];
+  for (const p of parts) {
+    const row = await logExpense({
+      categoryId: p.categoryId,
+      amountPence: p.amountPence,
+      entryDate: entry.entryDate,
+      note: p.note ?? entry.note ?? undefined,
+      importedTransactionId: entry.importedTransactionId ?? undefined,
+    });
+    createdIds.push(row.id);
+  }
+
+  return db
+    .select(expenseRowColumns)
+    .from(expenseEntries)
+    .innerJoin(categories, eq(expenseEntries.categoryId, categories.id))
+    .where(inArray(expenseEntries.id, createdIds))
+    .orderBy(expenseEntries.id);
 }
 
 /** "Pencil in" a pending-at-the-bank transaction as a real expense ahead of

@@ -22,6 +22,7 @@ import {
   moveCategoryParent as moveCategoryParentQuery,
   renameCategory as renameCategoryQuery,
   setCategoryEntryPaid,
+  splitExpenseEntry as splitExpenseEntryQuery,
   unarchiveCategory as unarchiveCategoryQuery,
   unarchiveIncomeSource as unarchiveIncomeSourceQuery,
   updateCategoryDueDay as updateCategoryDueDayQuery,
@@ -227,7 +228,7 @@ export async function editExpenseEntry(
     });
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
-    revalidatePath("/entries");
+    revalidatePath("/review");
     revalidatePath("/household");
   });
 }
@@ -237,9 +238,36 @@ export async function removeExpenseEntry(id: number) {
     await deleteExpenseEntryQuery(id);
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
-    revalidatePath("/entries");
+    revalidatePath("/review");
     revalidatePath("/debt");
     revalidatePath("/household");
+  });
+}
+
+/** Replaces one expense with several across different categories - see
+ * splitExpenseEntry in lib/db/queries.ts for the actual rules (parts must
+ * add up, a tagged entry needs acknowledgeTagLoss). Returns the created
+ * rows (not wrapped in ActionResult) because the caller - EntriesTable -
+ * keeps its own local copy of the list and needs the new rows to patch it,
+ * the same reason createPerson returns the person instead of just ok/error. */
+export async function splitExpenseEntry(
+  entryId: number,
+  parts: { categoryId: number; pounds: number; note?: string }[],
+  acknowledgeTagLoss?: boolean
+) {
+  return requireSession(async (user) => {
+    for (const p of parts) assertPositivePounds(p.pounds, "Each part must be greater than zero.");
+    const created = await splitExpenseEntryQuery(
+      entryId,
+      parts.map((p) => ({ categoryId: p.categoryId, amountPence: poundsToPence(p.pounds), note: p.note })),
+      acknowledgeTagLoss ?? false
+    );
+    await reconcileHouseholdDataForUser(user.id);
+    revalidatePath("/grid");
+    revalidatePath("/review");
+    revalidatePath("/debt");
+    revalidatePath("/household");
+    return created;
   });
 }
 
@@ -256,7 +284,7 @@ export async function editIncomeTransaction(id: number, input: { pounds?: number
     });
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
-    revalidatePath("/entries");
+    revalidatePath("/review");
     revalidatePath("/household");
   });
 }
@@ -266,7 +294,7 @@ export async function removeIncomeTransaction(id: number) {
     await deleteIncomeTransactionQuery(id);
     await reconcileHouseholdDataForUser(user.id);
     revalidatePath("/grid");
-    revalidatePath("/entries");
+    revalidatePath("/review");
     revalidatePath("/debt");
     revalidatePath("/household");
   });
@@ -331,7 +359,7 @@ export async function logIncome(input: {
           debtPersonId: input.debtPersonId,
         });
       });
-      revalidatePath("/entries");
+      revalidatePath("/review");
       revalidatePath("/grid");
       revalidatePath("/debt");
     })
@@ -395,7 +423,7 @@ export async function moveCategoryToIndex(categoryId: number, toIndex: number, y
       revalidatePath("/grid");
       revalidatePath("/settings");
       revalidatePath("/reports");
-      revalidatePath("/entries");
+      revalidatePath("/review");
     })
   );
 }
@@ -438,7 +466,7 @@ export async function reorderCategory(
       revalidatePath("/grid");
       revalidatePath("/settings");
       revalidatePath("/reports");
-      revalidatePath("/entries");
+      revalidatePath("/review");
     })
   );
 }

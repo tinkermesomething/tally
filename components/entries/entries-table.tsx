@@ -7,15 +7,16 @@ import { editExpenseEntry, removeExpenseEntry, editIncomeTransaction, removeInco
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
-import type { EntryRow } from "@/lib/db/queries";
+import type { EntryRow, ExpenseEntryRow } from "@/lib/db/queries";
 import { amountText, fuzzyScore } from "@/lib/fuzzy";
 import { FIELD_COLOR } from "@/lib/field-colors";
 import { EntryTagsControl } from "@/components/entries/entry-tags-control";
+import { SplitExpenseDialog } from "@/components/entries/split-expense-dialog";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "income" | "expense";
 
-export function EntriesTable({ entries }: { entries: EntryRow[] }) {
+export function EntriesTable({ entries, categories }: { entries: EntryRow[]; categories: { id: number; name: string }[] }) {
   const { currency, dateFormat } = useAppSettings();
   const [rows, setRows] = useState(entries);
   const [, startTransition] = useTransition();
@@ -66,6 +67,37 @@ export function EntriesTable({ entries }: { entries: EntryRow[] }) {
       if (entry.kind === "income") await removeIncomeTransaction(entry.id);
       else await removeExpenseEntry(entry.id);
     });
+  }
+
+  function expenseRowToEntryRow(row: ExpenseEntryRow): EntryRow {
+    return {
+      id: row.id,
+      kind: "expense",
+      label: row.categoryName,
+      year: row.year,
+      month: row.month,
+      amountPence: -row.amountPence,
+      note: row.note,
+      entryDate: row.entryDate,
+      provisional: row.provisional,
+      debtPersonId: row.debtPersonId,
+      debtPersonName: row.debtPersonName,
+      savingsBucketId: row.savingsBucketId,
+      savingsBucketName: row.savingsBucketName,
+      sharedToHousehold: row.sharedToHousehold,
+      requiresDebtPerson: false,
+    };
+  }
+
+  /** The action already did the real work (and re-queried the new rows fully
+   * joined) - this just mirrors that into local state, same as every other
+   * mutation here, so the old entry vanishes and the new ones appear with no
+   * page reload. */
+  function handleSplit(original: EntryRow, created: ExpenseEntryRow[]) {
+    setRows((rs) => [
+      ...created.map(expenseRowToEntryRow),
+      ...rs.filter((r) => !(r.id === original.id && r.kind === "expense")),
+    ]);
   }
 
   const filterLabel: Record<Filter, string> = { all: "All", income: "Incoming", expense: "Outgoing" };
@@ -182,14 +214,19 @@ export function EntriesTable({ entries }: { entries: EntryRow[] }) {
                 />
               </td>
               <td className="px-2 py-2 text-right">
-                <button
-                  type="button"
-                  onClick={() => remove(entry)}
-                  className="rounded p-1 text-muted-foreground hover:bg-status-critical/10 hover:text-status-critical"
-                  title="Delete this entry"
-                >
-                  <Trash2 className="size-3.5 text-status-critical" />
-                </button>
+                <div className="flex items-center justify-end gap-0.5">
+                  {entry.kind === "expense" && !entry.provisional && (
+                    <SplitExpenseDialog entry={entry} categories={categories} onSplit={(created) => handleSplit(entry, created)} />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => remove(entry)}
+                    className="rounded p-1 text-muted-foreground hover:bg-status-critical/10 hover:text-status-critical"
+                    title="Delete this entry"
+                  >
+                    <Trash2 className="size-3.5 text-status-critical" />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

@@ -28,6 +28,7 @@ import {
 import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
 import type { RuleContext } from "@/components/review/rule-dialog";
 import { DebtTagControl } from "@/components/review/debt-tag-control";
+import { SplitTransactionDialog } from "@/components/review/split-transaction-dialog";
 import { findLoansSourceId } from "@/lib/loans";
 import { FIELD_COLOR } from "@/lib/field-colors";
 
@@ -496,6 +497,7 @@ export function ReviewTransactionRow({
           <Zap className="size-3 text-chart-4" />
           Rule
         </Button>
+        {!isIncome && <SplitTransactionDialog transactionId={transaction.id} amountPence={Math.abs(transaction.amountPence)} categories={categories} />}
         </div>
       </TableCell>
       <TableCell>

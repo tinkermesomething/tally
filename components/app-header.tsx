@@ -37,7 +37,6 @@ const NAV_ITEMS = [
   { href: "/bills", labelKey: "bills" },
   { href: "/reports", labelKey: "reports" },
   { href: "/review", labelKey: "review" },
-  { href: "/entries", labelKey: "entries" },
 ] as const;
 
 // Same threshold bank-account-settings-row.tsx uses for its own "Expires in

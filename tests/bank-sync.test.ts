@@ -38,6 +38,7 @@ import {
   syncAllBankAccounts,
   categorizeTransaction,
   categorizeTransactionAsIncome,
+  categorizeTransactionSplit,
   ignoreTransaction,
   restoreTransaction,
   createRuleAndCategorize,
@@ -205,6 +206,50 @@ describe("rules", () => {
     await expect(addCategoryRule({ conditions: cond, targetType: "income", incomeSourceId: source.id })).rejects.toThrow("requires pinning");
     const rule = await addCategoryRule({ conditions: cond, targetType: "income", incomeSourceId: source.id, debtPersonId: bob.id });
     expect(rule.debtPersonId).toBe(bob.id);
+  });
+});
+
+describe("categorizeTransactionSplit", () => {
+  it("creates one expense entry per part, all sharing the transaction's importedTransactionId", async () => {
+    const acct = await seedAccount();
+    const row = await stageOne(acct.id, -5000);
+    const [pets] = await db.insert(categories).values({ name: "Pets" }).returning();
+    const [household] = await db.insert(categories).values({ name: "Household" }).returning();
+
+    await categorizeTransactionSplit(row.id, [
+      { categoryId: pets.id, amountPence: 2000 },
+      { categoryId: household.id, amountPence: 3000 },
+    ]);
+
+    const created = await db.select().from(expenseEntries);
+    expect(created).toHaveLength(2);
+    expect(created.every((e) => e.importedTransactionId === row.id)).toBe(true);
+    expect((await db.select().from(importedTransactions).where(eq(importedTransactions.id, row.id)))[0].status).toBe("categorized");
+  });
+
+  it("refuses when the parts don't add up to the transaction's amount", async () => {
+    const acct = await seedAccount();
+    const row = await stageOne(acct.id, -5000);
+    const [cat] = await db.insert(categories).values({ name: "Pets" }).returning();
+    await expect(
+      categorizeTransactionSplit(row.id, [
+        { categoryId: cat.id, amountPence: 2000 },
+        { categoryId: cat.id, amountPence: 2000 },
+      ])
+    ).rejects.toThrow("add up");
+  });
+
+  it("refuses a transaction that was already handled", async () => {
+    const acct = await seedAccount();
+    const row = await stageOne(acct.id, -5000);
+    const [cat] = await db.insert(categories).values({ name: "Pets" }).returning();
+    await categorizeTransaction(row.id, { categoryId: cat.id });
+    await expect(
+      categorizeTransactionSplit(row.id, [
+        { categoryId: cat.id, amountPence: 2000 },
+        { categoryId: cat.id, amountPence: 3000 },
+      ])
+    ).rejects.toThrow("already handled");
   });
 });
 

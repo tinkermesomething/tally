@@ -67,3 +67,12 @@ export function buildVarianceRows(budgeted: SliceLike[], spent: SliceLike[]): Va
     .map((r) => ({ ...r, diffPence: r.spentPence - r.budgetedPence }))
     .sort((a, b) => b.budgetedPence - a.budgetedPence || b.spentPence - a.spentPence);
 }
+
+/** How much you're over budget right now, summed only across groups that
+ * ARE over - an underspent group never offsets this. Netting the two (what
+ * spent-minus-budgeted across every row would give) hides a real overspend
+ * behind an unrelated saving elsewhere, which is the opposite of what this
+ * number is for. */
+export function totalOverspend(rows: VarianceRow[]): number {
+  return rows.filter((r) => r.diffPence > 0).reduce((s, r) => s + r.diffPence, 0);
+}

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { categories, categoryEntries } from "@/lib/db/schema";
 import { getGridData } from "@/lib/db/queries";
 import { logExpense } from "@/lib/db/queries";
-import { buildVarianceRows, parseReportView } from "@/lib/report-view";
+import { buildVarianceRows, parseReportView, totalOverspend } from "@/lib/report-view";
 
 beforeEach(() => resetDb());
 
@@ -34,6 +34,20 @@ describe("variance rows", () => {
   it("drops rows with nothing on either side; orders by budget", () => {
     const rows = buildVarianceRows([s("Zero", 0), s("Small", 100), s("Big", 900)], []);
     expect(rows.map((r) => r.key)).toEqual(["Big", "Small"]);
+  });
+});
+
+describe("totalOverspend", () => {
+  const s = (group: string, amountPence: number) => ({ group, amountPence, color: "#000" });
+  it("sums only groups that are over - an underspent group never offsets it", () => {
+    // Housing +15000 over, Food -10000 under: net would be +5000, but the
+    // real complaint was "overspend" silently absorbing an unrelated saving.
+    const rows = buildVarianceRows([s("Housing", 50000), s("Food", 20000)], [s("Housing", 65000), s("Food", 10000)]);
+    expect(totalOverspend(rows)).toBe(15000);
+  });
+  it("is 0 when nothing is over budget", () => {
+    const rows = buildVarianceRows([s("Housing", 50000)], [s("Housing", 40000)]);
+    expect(totalOverspend(rows)).toBe(0);
   });
 });
 
