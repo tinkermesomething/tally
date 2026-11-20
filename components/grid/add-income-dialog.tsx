@@ -28,6 +28,8 @@ import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/
 import { parseIsoDate } from "@/lib/date";
 import { MONTH_NAMES } from "@/lib/months";
 
+const NEW_SOURCE = "__new_source__";
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -57,6 +59,7 @@ export function AddIncomeDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [sourceId, setSourceId] = useState("");
+  const [newSourceName, setNewSourceName] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
   const [isLoan, setIsLoan] = useState(false);
@@ -71,6 +74,7 @@ export function AddIncomeDialog({
 
   function reset() {
     setSourceId("");
+    setNewSourceName("");
     setAmount("");
     setDate(todayIso());
     setIsLoan(false);
@@ -89,9 +93,18 @@ export function AddIncomeDialog({
     e.preventDefault();
     const pounds = (parsePounds(amount) ?? NaN);
     if (!sourceId) {
-      setError("Pick an income source.");
+      setError("Pick an income source, or add a new one.");
       return;
     }
+    const creating = sourceId === NEW_SOURCE;
+    if (creating && !newSourceName.trim()) {
+      setError("Enter a name for the new income source.");
+      return;
+    }
+    // Typing a name that already exists means "that one", not a duplicate.
+    const existing = creating
+      ? incomeSources.find((s) => s.name.toLowerCase() === newSourceName.trim().toLowerCase())
+      : undefined;
     if (Number.isNaN(pounds) || pounds <= 0) {
       setError("Enter an amount greater than zero.");
       return;
@@ -104,16 +117,19 @@ export function AddIncomeDialog({
       setError("Enter their name.");
       return;
     }
+    const pickedSource = existing ?? selectedSource;
     setError(null);
     startTransition(async () => {
       const debtPersonId = isLoan ? await resolvePersonId() : undefined;
       const failure = await runAction(() =>
         logIncome({
-          incomeSourceId: parseInt(sourceId, 10),
+          ...(creating && !existing
+            ? { newSourceName }
+            : { incomeSourceId: existing ? existing.id : parseInt(sourceId, 10) }),
           pounds,
           entryDate: date,
-          periodYear: selectedSource?.isPayAnchor ? period.year : undefined,
-          periodMonth: selectedSource?.isPayAnchor ? period.month : undefined,
+          periodYear: pickedSource?.isPayAnchor ? period.year : undefined,
+          periodMonth: pickedSource?.isPayAnchor ? period.month : undefined,
           debtPersonId,
         })
       );
@@ -153,7 +169,11 @@ export function AddIncomeDialog({
               <SelectTrigger id="income-source" className="w-full">
                 <SelectValue>
                   {(value: string) =>
-                    value ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value) : "Choose a source"
+                    value === NEW_SOURCE
+                      ? "+ New income source…"
+                      : value
+                        ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value)
+                        : "Choose a source"
                   }
                 </SelectValue>
               </SelectTrigger>
@@ -163,8 +183,17 @@ export function AddIncomeDialog({
                     {s.name}
                   </SelectItem>
                 ))}
+                <SelectItem value={NEW_SOURCE}>+ New income source…</SelectItem>
               </SelectContent>
             </Select>
+            {sourceId === NEW_SOURCE && (
+              <Input
+                placeholder="Source name, e.g. Salary"
+                value={newSourceName}
+                onChange={(e) => setNewSourceName(e.target.value)}
+                autoFocus
+              />
+            )}
           </div>
 
           {/* Stacked, not side-by-side - a native <input type="date"> has an

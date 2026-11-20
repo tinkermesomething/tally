@@ -178,7 +178,12 @@ export async function confirmPayment(input: {
 }
 
 export async function logExpense(input: {
-  categoryId: number;
+  /** Either an existing category, or the name of a new top-level one to
+   * create in the same step (the Log expense dialog's "+ New category").
+   * Created inside the same transaction as the entry, so a failed log never
+   * leaves an empty category behind. */
+  categoryId?: number;
+  newCategoryName?: string;
   pounds: number;
   entryDate: string;
   note?: string;
@@ -192,12 +197,22 @@ export async function logExpense(input: {
     toResult(async () => {
       assertPositivePounds(input.pounds, "Expense amount must be greater than zero.");
       const amountPence = poundsToPence(input.pounds);
-      await logExpenseQuery({
-        categoryId: input.categoryId,
-        amountPence,
-        entryDate: input.entryDate,
-        note: input.note,
-        debtPersonId: input.debtPersonId,
+      await inTransaction(async () => {
+        let categoryId = input.categoryId;
+        if (input.newCategoryName !== undefined) {
+          const name = input.newCategoryName.trim();
+          if (!name) throw new Error("Name can't be empty.");
+          const created = await addCategoryQuery({ name, parentId: null, groupName: null, isAnnual: false, annualMonth: null });
+          categoryId = created.id;
+        }
+        if (categoryId === undefined) throw new Error("Pick a category.");
+        await logExpenseQuery({
+          categoryId,
+          amountPence,
+          entryDate: input.entryDate,
+          note: input.note,
+          debtPersonId: input.debtPersonId,
+        });
       });
       // Logging into an already-shared category needs this reflected in
       // Household right away, not just whenever that page next happens to
@@ -207,6 +222,7 @@ export async function logExpense(input: {
       revalidatePath("/grid");
       revalidatePath("/debt");
       revalidatePath("/household");
+      revalidatePath("/reports");
     })
   );
 }
@@ -309,7 +325,12 @@ export async function removeIncomeTransaction(id: number) {
  * (app/debt/actions.ts), just entered from the income side instead of the
  * debt side. */
 export async function logIncome(input: {
-  incomeSourceId: number;
+  /** Either an existing source, or the name of a new one to create in the
+   * same step (the Add income dialog's "+ New source"). Created in the same
+   * transaction as the entry, so a failed log never leaves an empty source
+   * behind. A new source is never the pay anchor. */
+  incomeSourceId?: number;
+  newSourceName?: string;
   pounds: number;
   entryDate: string;
   /** Required when incomeSourceId is the designated pay anchor (see
@@ -326,7 +347,13 @@ export async function logIncome(input: {
       assertPositivePounds(input.pounds);
       const amountPence = poundsToPence(input.pounds);
       await inTransaction(async () => {
-        const source = await getIncomeSource(input.incomeSourceId);
+        let incomeSourceId = input.incomeSourceId;
+        if (input.newSourceName !== undefined) {
+          const name = input.newSourceName.trim();
+          if (!name) throw new Error("Name can't be empty.");
+          incomeSourceId = (await addIncomeSourceQuery(name)).id;
+        }
+        const source = incomeSourceId === undefined ? undefined : await getIncomeSource(incomeSourceId);
         if (!source) {
           throw new Error("Income source not found.");
         }
@@ -340,7 +367,7 @@ export async function logIncome(input: {
           year = input.periodYear;
           month = input.periodMonth;
           await recordPayPeriodAnchor({
-            incomeSourceId: input.incomeSourceId,
+            incomeSourceId: source.id,
             receivedDate: input.entryDate,
             year,
             month,
@@ -351,7 +378,7 @@ export async function logIncome(input: {
         }
 
         await logIncomeTransaction({
-          incomeSourceId: input.incomeSourceId,
+          incomeSourceId: source.id,
           amountPence,
           entryDate: input.entryDate,
           year,
@@ -362,6 +389,7 @@ export async function logIncome(input: {
       revalidatePath("/review");
       revalidatePath("/grid");
       revalidatePath("/debt");
+      revalidatePath("/reports");
     })
   );
 }
