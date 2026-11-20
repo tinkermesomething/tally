@@ -1,8 +1,10 @@
 // Desktop has no login, and the server listens on a loopback port - so
-// without this, any local program (or a web page probing localhost, or a
-// DNS-rebinding page) could talk to it as the one local user, backup
-// download and restore included. Every request must come from the app's
-// own window. Edge-safe (WebCrypto only): middleware.ts runs it.
+// without this, a web page probing localhost, a DNS-rebinding page, or a
+// local program that doesn't know the token could talk to it as the one
+// local user, backup download and restore included. Every request must come
+// from the app's own window. (Not a defence against malware running as the
+// same OS user: it can read the server's environment. The OS user is the
+// real boundary.) Edge-safe (WebCrypto only): middleware.ts runs it.
 //
 // How the window proves it: the launcher gives the server a random
 // LAUNCH_TOKEN and opens the window at /api/desktop/enter?t=<token>. That
@@ -19,7 +21,7 @@ const HEALTH_PATH = "/api/health";
 export const UNLOCK_PATH = "/unlock";
 
 // All a locked window may fetch: the unlock page, and the assets it needs to render.
-const LOCKED_STATIC_PREFIXES = ["/_next/"];
+const LOCKED_STATIC_PREFIXES = ["/_next/static/"];
 const LOCKED_STATIC_FILES = ["/favicon.ico", "/icon.svg", "/apple-icon.png"];
 function lockedMayReach(pathname: string): boolean {
   return pathname === UNLOCK_PATH || LOCKED_STATIC_FILES.includes(pathname) || LOCKED_STATIC_PREFIXES.some((p) => pathname.startsWith(p));

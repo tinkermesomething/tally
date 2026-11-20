@@ -18,6 +18,12 @@ use std::{
 
 pub const LOCATION_FILE: &str = "location.json";
 
+/// Written into a custom data folder when a move finishes, and required to
+/// find it there again. Without it an unmounted drive's empty mount-point
+/// folder would pass for the data folder, and the app would quietly start a
+/// blank budget in it (on the wrong disk).
+pub const MARKER_FILE: &str = ".tally-data-folder";
+
 /// Top-level names that belong to the launcher, not the data: never copied,
 /// never compared. (They live in the default folder only.)
 const LAUNCHER_FILES: [&str; 2] = [LOCATION_FILE, "server.log"];
@@ -48,6 +54,13 @@ pub fn resolve(default_dir: &Path) -> Result<PathBuf, String> {
             file.display()
         ));
     }
+    if !dir.join(MARKER_FILE).is_file() {
+        return Err(format!(
+            "{} doesn't look like your Tally data folder (its marker file is missing). If it's on a drive, make sure the drive is connected. Tally won't start a blank budget in its place.\n\nOr delete {} to use the default folder instead (your data stays where it is).",
+            dir.display(),
+            file.display()
+        ));
+    }
     Ok(dir)
 }
 
@@ -63,6 +76,10 @@ pub fn write_location(default_dir: &Path, data_dir: &Path) -> Result<(), String>
 /// Is `dst` a safe place to move `src` to? Must be an existing, EMPTY, writable
 /// folder that isn't `src` and isn't inside it (or containing it).
 pub fn validate_target(src: &Path, dst: &Path) -> Result<(), String> {
+    // The path is stored as JSON text; one that isn't valid Unicode would be saved mangled.
+    if dst.to_str().is_none() {
+        return Err("That folder's path has characters Tally can't save. Choose another folder.".into());
+    }
     if !dst.is_dir() {
         return Err("That isn't a folder.".into());
     }
@@ -88,16 +105,22 @@ fn is_launcher_file(root: &Path, path: &Path) -> bool {
 }
 
 /// Every entry under `root` (relative path, is_dir), sorted, minus launcher files.
+/// A link anywhere in the data is refused: following one could copy half the
+/// disk (or loop forever), and the data folder never contains one legitimately.
 fn list(root: &Path) -> io::Result<Vec<(PathBuf, bool)>> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<(PathBuf, bool)>) -> io::Result<()> {
         for entry in fs::read_dir(dir)? {
-            let path = entry?.path();
+            let entry = entry?;
+            let path = entry.path();
             if is_launcher_file(root, &path) {
                 continue;
             }
-            let is_dir = path.is_dir();
-            out.push((path.strip_prefix(root).unwrap().to_path_buf(), is_dir));
-            if is_dir {
+            let kind = entry.file_type()?; // does not follow links
+            if kind.is_symlink() {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{} is a link, which Tally can't move safely", path.display())));
+            }
+            out.push((path.strip_prefix(root).unwrap().to_path_buf(), kind.is_dir()));
+            if kind.is_dir() {
                 walk(root, &path, out)?;
             }
         }
@@ -109,7 +132,9 @@ fn list(root: &Path) -> io::Result<Vec<(PathBuf, bool)>> {
     Ok(out)
 }
 
-fn copy_tree(src: &Path, dst: &Path) -> io::Result<()> {
+/// Copies everything, recording each entry as it is created so a failure can
+/// undo exactly (and only) what was made.
+fn copy_tree(src: &Path, dst: &Path, created: &mut Vec<(PathBuf, bool)>) -> io::Result<()> {
     for (rel, is_dir) in list(src)? {
         if is_dir {
             fs::create_dir_all(dst.join(&rel))?;
@@ -117,6 +142,7 @@ fn copy_tree(src: &Path, dst: &Path) -> io::Result<()> {
             // fs::copy keeps permissions (app-lock.json stays private).
             fs::copy(src.join(&rel), dst.join(&rel))?;
         }
+        created.push((rel, is_dir));
     }
     Ok(())
 }
@@ -163,47 +189,50 @@ fn identical(src: &Path, dst: &Path) -> io::Result<bool> {
     Ok(true)
 }
 
-/// Empties `dir` (not `dir` itself). Only ever called on a folder this module
-/// itself just verified was empty, to undo its own partial copy.
-fn clear_dir(dir: &Path) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            let _ = if p.is_dir() { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
-        }
+/// Removes what a failed move created - newest first, files then their
+/// (now empty) folders - and nothing else. A file someone drops into the
+/// target meanwhile is never touched: remove_dir refuses a non-empty folder.
+fn undo(dst: &Path, created: &[(PathBuf, bool)]) {
+    for (rel, is_dir) in created.iter().rev() {
+        let path = dst.join(rel);
+        let _ = if *is_dir { fs::remove_dir(&path) } else { fs::remove_file(&path) };
     }
+    let _ = fs::remove_file(dst.join(MARKER_FILE));
 }
 
-/// Copies `src` into the empty folder `dst` and proves the copy is identical.
-/// On ANY failure `dst` is emptied again and the error says nothing changed.
-/// Never touches `src`, never writes location.json - the caller switches only
-/// after this returns Ok, and only then.
+/// Copies `src` into the empty folder `dst` and proves the copy is identical;
+/// returns what it created. On ANY failure the copy is undone and the error
+/// says nothing changed. Never touches `src`, never writes location.json.
 ///
 /// The caller must have stopped everything writing to `src` first.
-pub fn copy_and_verify(src: &Path, dst: &Path) -> Result<(), String> {
+pub fn copy_and_verify(src: &Path, dst: &Path) -> Result<Vec<(PathBuf, bool)>, String> {
     validate_target(src, dst)?;
-    match copy_tree(src, dst).and_then(|_| identical(src, dst)) {
-        Ok(true) => Ok(()),
+    let mut created = Vec::new();
+    match copy_tree(src, dst, &mut created).and_then(|_| identical(src, dst)) {
+        Ok(true) => Ok(created),
         Ok(false) => {
-            clear_dir(dst);
+            undo(dst, &created);
             Err("The copy didn't match the original, so nothing was changed.".into())
         }
         Err(e) => {
-            clear_dir(dst);
+            undo(dst, &created);
             Err(format!("Couldn't copy your data: {e}. Nothing was changed."))
         }
     }
 }
 
-/// The whole move: copy, verify, THEN switch. If saving the new location
-/// fails after a good copy, the copy is removed again, so a failed move never
-/// leaves a second full copy of the data lying around that the app doesn't use.
+/// The whole move: copy, verify, mark the new folder, THEN switch. If anything
+/// after a good copy fails, the copy is removed again, so a failed move never
+/// leaves a second full copy of the data that the app doesn't use.
 pub fn move_to(default_dir: &Path, current: &Path, target: &Path) -> Result<(), String> {
-    copy_and_verify(current, target)?;
-    write_location(default_dir, target).map_err(|e| {
-        clear_dir(target);
-        format!("{e}. Nothing was changed.")
-    })
+    let created = copy_and_verify(current, target)?;
+    fs::write(target.join(MARKER_FILE), br#"{"app":"tally"}"#)
+        .map_err(|e| format!("Can't finish the new folder: {e}"))
+        .and_then(|_| write_location(default_dir, target))
+        .map_err(|e| {
+            undo(target, &created);
+            format!("{e}. Nothing was changed.")
+        })
 }
 
 #[cfg(test)]
@@ -239,6 +268,7 @@ mod tests {
     #[test]
     fn location_file_points_at_the_chosen_folder() {
         let (d, custom) = (tmp(), tmp());
+        fs::write(custom.path().join(MARKER_FILE), b"{}").unwrap();
         write_location(d.path(), custom.path()).unwrap();
         assert_eq!(resolve(d.path()).unwrap(), custom.path());
         assert!(!d.path().join("location.json.tmp").exists());
@@ -251,6 +281,15 @@ mod tests {
         write_location(d.path(), &gone).unwrap();
         let err = resolve(d.path()).unwrap_err();
         assert!(err.contains("can't be found") && err.contains("unplugged-drive"), "{err}");
+    }
+
+    #[test]
+    fn an_existing_but_unmarked_folder_is_not_taken_for_the_data_folder() {
+        // e.g. the empty mount point an unmounted drive leaves behind
+        let (d, stub) = (tmp(), tmp());
+        write_location(d.path(), stub.path()).unwrap();
+        let err = resolve(d.path()).unwrap_err();
+        assert!(err.contains("doesn't look like your Tally data folder"), "{err}");
     }
 
     #[test]
@@ -340,7 +379,7 @@ mod tests {
     fn verification_catches_a_single_flipped_byte() {
         let (src, dst) = (tmp(), tmp());
         sample(src.path());
-        copy_tree(src.path(), dst.path()).unwrap();
+        copy_tree(src.path(), dst.path(), &mut Vec::new()).unwrap();
         assert!(identical(src.path(), dst.path()).unwrap());
         let mut bytes = fs::read(dst.path().join("users/1.db")).unwrap();
         bytes[2_999_999] ^= 1;
@@ -352,7 +391,7 @@ mod tests {
     fn verification_catches_a_missing_file_and_an_extra_one() {
         let (src, dst) = (tmp(), tmp());
         sample(src.path());
-        copy_tree(src.path(), dst.path()).unwrap();
+        copy_tree(src.path(), dst.path(), &mut Vec::new()).unwrap();
         fs::write(dst.path().join("stray.txt"), b"x").unwrap();
         assert!(!identical(src.path(), dst.path()).unwrap());
         fs::remove_file(dst.path().join("stray.txt")).unwrap();
@@ -432,5 +471,52 @@ mod tests {
         assert_eq!(fs::read_dir(dst.path()).unwrap().count(), 0, "no stray second copy");
         assert!(src.path().join("system.db").exists());
         assert_eq!(resolve(default_dir.path()).unwrap(), default_dir.path(), "location unchanged");
+    }
+
+    // --- links, paths, undo ------------------------------------------
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_in_the_data_is_refused_and_nothing_is_copied() {
+        let (src, dst, elsewhere) = (tmp(), tmp(), tmp());
+        sample(src.path());
+        fs::write(elsewhere.path().join("big.bin"), b"not yours").unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), src.path().join("users/sneaky")).unwrap();
+        let err = copy_and_verify(src.path(), dst.path()).unwrap_err();
+        assert!(err.contains("link") && err.contains("Nothing was changed"), "{err}");
+        assert_eq!(fs::read_dir(dst.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_path_that_is_not_valid_unicode_is_refused_up_front() {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+        let (src, parent) = (tmp(), tmp());
+        let odd = parent.path().join(OsStr::from_bytes(b"caf\xe9"));
+        fs::create_dir(&odd).unwrap();
+        assert!(validate_target(src.path(), &odd).unwrap_err().contains("characters"));
+    }
+
+    #[test]
+    fn undo_removes_only_what_the_move_made() {
+        let dst = tmp();
+        fs::create_dir(dst.path().join("users")).unwrap();
+        fs::write(dst.path().join("users/1.db"), b"ours").unwrap();
+        fs::write(dst.path().join("users/notes.txt"), b"someone else's").unwrap();
+        fs::write(dst.path().join("stray.txt"), b"someone else's").unwrap();
+        undo(dst.path(), &[(PathBuf::from("users"), true), (PathBuf::from("users/1.db"), false)]);
+        assert!(!dst.path().join("users/1.db").exists());
+        assert!(dst.path().join("users/notes.txt").exists(), "a file that isn't ours survives, and so does its folder");
+        assert!(dst.path().join("stray.txt").exists());
+    }
+
+    #[test]
+    fn a_finished_move_leaves_the_marker_so_the_folder_can_be_found_again() {
+        let (default_dir, dst) = (tmp(), tmp());
+        let src = default_dir.path().to_path_buf();
+        sample(&src);
+        move_to(default_dir.path(), &src, dst.path()).unwrap();
+        assert!(dst.path().join(MARKER_FILE).is_file());
+        assert_eq!(resolve(default_dir.path()).unwrap(), dst.path());
     }
 }

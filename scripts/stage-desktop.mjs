@@ -65,9 +65,25 @@ if (!fs.existsSync(archive)) {
   fs.writeFileSync(archive, Buffer.from(await res.arrayBuffer()));
 }
 
-// Verify against nodejs.org's published checksums every time, cached or not.
-const sums = await (await fetch(`https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`)).text();
-const expected = sums.split("\n").find((l) => l.endsWith(`  ${base}.${ext}`))?.split(/\s+/)[0];
+// Checksums committed here, so a compromised download host can't vouch for its own
+// file. Taken from https://nodejs.org/dist/v20.20.2/SHASUMS256.txt - when bumping
+// the version, replace them from that file for the new version.
+const PINNED = {
+  "20.20.2": {
+    "node-v20.20.2-darwin-arm64.tar.gz": "466e05f3477c20dfb723054dfebffe55bc74660ee77f612166fca121dacb65b6",
+    "node-v20.20.2-darwin-x64.tar.gz": "8be6f5e4bb128c82774f8a0b8d7a1cc1365a7977d9657cece0ca647b3fe04e61",
+    "node-v20.20.2-linux-arm64.tar.xz": "73093db209e4e9e09dd7d15a47aeaab1b74833830df03efa5f942a1122c5fa71",
+    "node-v20.20.2-linux-x64.tar.xz": "df770b2a6f130ed8627c9782c988fda9669fa23898329a61a871e32f965e007d",
+    "node-v20.20.2-win-x64.zip": "dc3700fdd57a63eedb8fd7e3c7baaa32e6a740a1b904167ff4204bc68ed8bf77",
+  },
+};
+let expected = PINNED[NODE_VERSION]?.[`${base}.${ext}`];
+if (!expected) {
+  // An overridden version has no pin: fall back to nodejs.org's own list (integrity, not provenance).
+  console.warn(`stage-desktop: no pinned checksum for ${base}.${ext}; using nodejs.org's SHASUMS256.txt`);
+  const sums = await (await fetch(`https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`)).text();
+  expected = sums.split("\n").find((l) => l.endsWith(`  ${base}.${ext}`))?.split(/\s+/)[0];
+}
 if (!expected) fail(`no checksum listed for ${base}.${ext}`);
 const actual = createHash("sha256").update(fs.readFileSync(archive)).digest("hex");
 if (actual !== expected) {

@@ -9,4 +9,14 @@ describe("/api/health", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
+
+  it("echoes the launcher's nonce when one is set (desktop readiness handshake)", async () => {
+    resetDb();
+    process.env.HEALTH_NONCE = "abc123";
+    try {
+      expect(await GET().json()).toEqual({ ok: true, nonce: "abc123" });
+    } finally {
+      delete process.env.HEALTH_NONCE;
+    }
+  });
 });

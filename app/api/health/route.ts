@@ -13,7 +13,10 @@ export function GET() {
   try {
     enterUserDb(getLegacyConn());
     sqlite.prepare("select 1").get();
-    return NextResponse.json({ ok: true });
+    // Desktop launcher only: proves the answering server is the one it started
+    // (see healthy() in src-tauri/src/main.rs). Unset elsewhere, so a no-op.
+    const nonce = process.env.HEALTH_NONCE;
+    return NextResponse.json(nonce ? { ok: true, nonce } : { ok: true });
   } catch (err) {
     console.error("[health] database check failed:", err);
     return NextResponse.json({ ok: false }, { status: 503 });

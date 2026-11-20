@@ -126,4 +126,10 @@ describe("/api/desktop/enter", () => {
     vi.stubEnv("LAUNCH_TOKEN", TOKEN);
     expect((await call(`?t=${TOKEN}`)).status).toBe(404);
   });
+
+  it("a locked window cannot slip out of /_next/static/ or sideways to other /_next/ paths", async () => {
+    for (const pathname of ["/_next/image", "/_next/data/x.json", "/_next/../grid", "/unlock/", "/UNLOCK"]) {
+      expect(await gateDecision({ ...base, pathname, cookie: await sessionCookieValue(TOKEN, "locked") }), pathname).toBe("deny");
+    }
+  });
 });

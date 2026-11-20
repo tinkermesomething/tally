@@ -14,7 +14,7 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -54,8 +56,13 @@ jobs:
             # Oldest LTS runner: AppImages built here run on more distros.
             runner: ubuntu-22.04
     runs-on: ${{ matrix.runner }}
+    # Only this job uploads to the release.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Resolve version
         shell: bash
@@ -109,10 +116,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Same two build-time values as the Docker build - see the
-          # Dockerfile for why the encryption key must be a fixed secret.
           NEXT_PUBLIC_APP_VERSION: ${{ env.RELEASE_TAG }}
-          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+          # NEXT_SERVER_ACTIONS_ENCRYPTION_KEY is deliberately NOT set: Next writes
+          # it into the build output, and installers are public downloads. The
+          # desktop server and its pages ship together, so a per-build key is fine.
         with:
           tauriScript: npm run tauri
           # Only a real published release gets uploads (and latest.json);

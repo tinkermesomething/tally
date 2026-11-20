@@ -11,6 +11,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
 # Linux needs a running secret service (GNOME Keyring / KWallet); macOS and
 # Windows use the system keychain / Credential Manager.
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

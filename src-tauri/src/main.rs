@@ -36,11 +36,16 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 /// fresh secret can't open the existing database, and the app would quietly
 /// start empty. Only a genuinely absent entry on a genuinely fresh install
 /// may create one.
-fn auth_secret(data_dir: &Path) -> Result<String, String> {
+fn auth_secret(data_dir: &Path, default_dir: &Path) -> Result<String, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| format!("Can't open the system keychain: {e}"))?;
     match entry.get_password() {
         Ok(secret) => Ok(secret),
         Err(keyring::Error::NoEntry) => {
+            // A first-run key is only ever minted for the default folder. A custom
+            // folder means the user already has data somewhere this key must open.
+            if data_dir != default_dir {
+                return Err("Your data is in a custom folder, but its key is missing from the system keychain. Tally will not create a new key, because that would make your data unreadable. Restore the keychain entry (service com.tally.desktop, account auth-secret) or restore from a backup.".into());
+            }
             if has_existing_data(data_dir) {
                 return Err("Your data exists but its key is missing from the system keychain. Tally will not create a new key, because that would make your data unreadable. Restore the keychain entry (service com.tally.desktop, account auth-secret) or restore from a backup.".into());
             }
@@ -53,12 +58,12 @@ fn auth_secret(data_dir: &Path) -> Result<String, String> {
 }
 
 fn has_existing_data(data_dir: &Path) -> bool {
-    data_dir.join("system.db").exists() || data_dir.join("users").read_dir().map(|mut d| d.next().is_some()).unwrap_or(false)
+    data_dir.join("system.db").exists() || data_dir.join("tally.db").exists() || data_dir.join("users").read_dir().map(|mut d| d.next().is_some()).unwrap_or(false)
 }
 
 fn free_port() -> Result<u16, String> {
     // Released before the server binds it. Another process could grab it in
-    // between - accepted: it is loopback-only and the failure is loud.
+    // between; healthy() makes sure we'd notice (it must echo our nonce).
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Can't pick a local port: {e}"))?;
     listener.local_addr().map(|a| a.port()).map_err(|e| e.to_string())
 }
@@ -69,7 +74,11 @@ fn random_hex() -> Result<String, String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-fn healthy(port: u16) -> bool {
+/// Is OUR server answering on `port`? Another program could grab the port in
+/// the moment between picking it and the server binding it; its answer would
+/// look healthy, and the window would then send it the launch token. So a
+/// healthy answer must also echo `nonce`, which only our own server was told.
+fn healthy(port: u16, nonce: &str) -> bool {
     let Ok(mut stream) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(500)) else {
         return false;
     };
@@ -77,8 +86,10 @@ fn healthy(port: u16) -> bool {
     if stream.write_all(format!("GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n").as_bytes()).is_err() {
         return false;
     }
-    let mut buf = [0u8; 32];
-    stream.read(&mut buf).map(|n| buf[..n].starts_with(b"HTTP/1.1 200")).unwrap_or(false)
+    let mut raw = Vec::new();
+    let _ = stream.take(4096).read_to_end(&mut raw);
+    let body = String::from_utf8_lossy(&raw);
+    body.starts_with("HTTP/1.1 200") && body.contains(nonce)
 }
 
 /// The one-time-per-run secret that proves a request comes from this app's
@@ -90,9 +101,10 @@ fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> 
     fs::create_dir_all(&default_dir).map_err(|e| format!("Can't create {}: {e}", default_dir.display()))?;
     let data_dir = datadir::resolve(&default_dir)?;
 
-    let secret = auth_secret(&data_dir)?;
+    let secret = auth_secret(&data_dir, &default_dir)?;
     let port = free_port()?;
     let launch_token = random_hex()?;
+    let health_nonce = random_hex()?;
 
     let resources = app.path().resource_dir().map_err(|e| e.to_string())?.join("resources");
     let node = resources.join("node").join(if cfg!(windows) { "node.exe" } else { "node" });
@@ -114,6 +126,7 @@ fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> 
         .env("AUTH_SECRET", secret)
         .env("PORT", port.to_string())
         .env("LAUNCH_TOKEN", &launch_token)
+        .env("HEALTH_NONCE", &health_nonce)
         // Loopback only - never 0.0.0.0, which would expose the app to the LAN.
         .env("HOSTNAME", "127.0.0.1")
         .env("NODE_ENV", "production")
@@ -125,6 +138,22 @@ fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> 
         .stdin(Stdio::piped())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
+    // Started from a terminal, the server would inherit the shell's environment. Drop what
+    // could change how Node runs, and the web build's own secrets (desktop uses none).
+    for var in [
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "TALLY_API_TOKEN",
+        "ALLOWED_EMAIL",
+        "OIDC_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "GOCARDLESS_SECRET_ID",
+        "GOCARDLESS_SECRET_KEY",
+        "GOCARDLESS_REDIRECT_URL",
+    ] {
+        cmd.env_remove(var);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -134,7 +163,7 @@ fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> 
 
     let started = Instant::now();
     loop {
-        if healthy(port) {
+        if healthy(port, &health_nonce) {
             return Ok((child, port, launch_token));
         }
         if let Ok(Some(status)) = child.try_wait() {
@@ -155,6 +184,16 @@ fn stop_sidecar(app: &tauri::AppHandle) {
             let _ = child.wait();
         }
     }
+}
+
+/// Opens a web link in the user's own browser. Only http(s): this is fed by
+/// navigations out of the window, which must never run a file: or app URL.
+fn open_in_browser(url: &tauri::Url) {
+    if !matches!(url.scheme(), "http" | "https") {
+        return;
+    }
+    let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
+    let _ = Command::new(opener).arg(url.as_str()).spawn();
 }
 
 fn tell(app: &tauri::AppHandle, kind: MessageDialogKind, title: &str, message: impl Into<String>) {
@@ -255,8 +294,9 @@ fn check_for_update(app: tauri::AppHandle) {
         // Stop the server first: on Windows its files can't be replaced while it runs.
         stop_sidecar(&app);
         if let Err(e) = update.install(bytes) {
-            app.dialog().message(format!("The update couldn't be installed: {e}")).kind(MessageDialogKind::Error).blocking_show();
-            return;
+            app.dialog().message(format!("The update couldn't be installed: {e}\n\nTally will reopen.")).kind(MessageDialogKind::Error).blocking_show();
+            // The server was stopped for the install; reopen so the window isn't left on a dead one.
+            app.restart();
         }
         app.restart();
     });
@@ -264,6 +304,15 @@ fn check_for_update(app: tauri::AppHandle) {
 
 fn main() {
     let app = tauri::Builder::default()
+        // Two copies would run two servers on one database (and a data-folder move
+        // in one would race the other's writes). A second launch just focuses the first.
+        // Must be the first plugin registered.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -291,6 +340,15 @@ fn main() {
                     app.manage(Sidecar(Mutex::new(Some(child))));
                     let url = format!("http://127.0.0.1:{port}/api/desktop/enter?t={launch_token}").parse().map_err(|e| format!("{e}"))?;
                     WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+                        // This window shows ONLY Tally's own local server. A link out (e.g. the footer's
+                        // GitHub link) opens in the browser instead, so no outside page ever runs in here.
+                        .on_navigation(move |url| {
+                            let local = url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port() == Some(port);
+                            if !local {
+                                open_in_browser(url);
+                            }
+                            local
+                        })
                         .title("Tally")
                         .inner_size(1280.0, 860.0)
                         .min_inner_size(420.0, 600.0)
