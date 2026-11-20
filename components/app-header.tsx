@@ -40,6 +40,10 @@ const NAV_ITEMS = [
   { href: "/review", labelKey: "review" },
 ] as const;
 
+// Desktop has no bank sync, so this page is where a CSV gets in - the name
+// has to say so, not just "Review".
+const DESKTOP_REVIEW_LABEL_KEY = "importReview";
+
 // Same threshold bank-account-settings-row.tsx uses for its own "Expires in
 // Nd" warning badge - a connection this close to lapsing (or already
 // lapsed) is the actionable case, not every account regardless of how much
@@ -147,7 +151,7 @@ export async function AppHeader() {
                   href={item.href}
                   className="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
-                  {t(item.labelKey)}
+                  {desktop && item.href === "/review" ? t(DESKTOP_REVIEW_LABEL_KEY) : t(item.labelKey)}
                   {item.href === "/review" && pendingCount > 0 && (
                     <span className="flex min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1 text-[0.65rem] font-semibold text-primary-foreground">
                       {pendingCount}

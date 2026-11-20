@@ -7,7 +7,8 @@
     "netWorth": "Patrimonio netto",
     "bills": "Bollette",
     "reports": "Rapporti",
-    "review": "Revisione"
+    "review": "Revisione",
+    "importReview": "Importa e controlla"
   },
   "userMenu": {
     "settings": "Impostazioni",

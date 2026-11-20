@@ -7,7 +7,8 @@
     "netWorth": "Nettovermögen",
     "bills": "Rechnungen",
     "reports": "Berichte",
-    "review": "Überprüfung"
+    "review": "Überprüfung",
+    "importReview": "Import & Prüfen"
   },
   "userMenu": {
     "settings": "Einstellungen",

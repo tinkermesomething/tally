@@ -7,7 +7,8 @@
     "netWorth": "Wartość netto",
     "bills": "Rachunki",
     "reports": "Raporty",
-    "review": "Przegląd"
+    "review": "Przegląd",
+    "importReview": "Import i przegląd"
   },
   "userMenu": {
     "settings": "Ustawienia",

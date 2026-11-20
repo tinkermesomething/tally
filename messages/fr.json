@@ -7,7 +7,8 @@
     "netWorth": "Valeur nette",
     "bills": "Factures",
     "reports": "Rapports",
-    "review": "Révision"
+    "review": "Révision",
+    "importReview": "Importer et vérifier"
   },
   "userMenu": {
     "settings": "Paramètres",

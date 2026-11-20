@@ -29,6 +29,7 @@ import { CSV_PROVIDER } from "@/lib/db/bank-sync";
 import { isCsvMapping } from "@/lib/csv-import";
 import { formatSyncTime, nextSyncSlot } from "@/lib/sync-schedule";
 import { withCurrentUser } from "@/lib/db/current-user";
+import { isDesktopMode } from "@/lib/desktop/mode";
 
 export const dynamic = "force-dynamic";
 
@@ -59,17 +60,41 @@ export default async function ReviewPage({
   // and the context is gone ("No user database is active for this
   // request" - hit this the hard way). Calling and awaiting the body here
   // keeps every DB read inside the context window.
+  // Desktop has no bank sync, so a CSV is the only way in: the button sits in
+  // the header (both tabs), because a new budget has nothing pending and opens
+  // on "Logged". The web app keeps it in the "To review" tab, as before.
+  const desktop = isDesktopMode();
+  const csvOptions = desktop ? await csvAccountOptions() : [];
+
   const body = tab === "pending" ? await renderPendingTab({ from, to }) : await renderLoggedTab({ yearParam, monthParam });
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Review</h1>
-        <ActivityTabs tab={tab} pendingCount={pendingCount} />
+        <h1 className="text-xl font-semibold tracking-tight">{desktop ? "Import & review" : "Review"}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          {desktop && <ImportCsvDialog accounts={csvOptions} />}
+          <ActivityTabs tab={tab} pendingCount={pendingCount} />
+        </div>
       </div>
       {body}
     </div>
   );
+  });
+}
+
+async function csvAccountOptions() {
+  const accounts = await getBankAccounts();
+  const names = new Map(accountLabels(accounts).map((a) => [a.id, a.name]));
+  return accounts.map((a) => {
+    let mapping = null;
+    try {
+      const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
+      mapping = isCsvMapping(parsed) ? parsed : null;
+    } catch {
+      // a damaged saved mapping is ignored: the file is mapped fresh
+    }
+    return { id: a.id, name: names.get(a.id) ?? accountDisplayName(a), csvOnly: a.provider === CSV_PROVIDER, mapping };
   });
 }
 
@@ -140,23 +165,26 @@ async function renderPendingTab({ from, to }: { from?: string; to?: string }) {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          {bankAccounts.length === 0 && (
-            <p className="text-xs text-muted-foreground">No bank accounts linked yet.</p>
-          )}
-          <ImportCsvDialog
-            accounts={bankAccounts.map((a) => {
-              let mapping = null;
-              try {
-                const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
-                mapping = isCsvMapping(parsed) ? parsed : null;
-              } catch {
-                // a damaged saved mapping is ignored: the file is mapped fresh
-              }
-              return { id: a.id, name: accountName.get(a.id) ?? accountDisplayName(a), csvOnly: a.provider === CSV_PROVIDER, mapping };
-            })}
-          />
-        </div>
+        {/* Desktop shows this in the page header instead (see ReviewPage). */}
+        {!isDesktopMode() && (
+          <div className="flex items-center gap-3">
+            {bankAccounts.length === 0 && (
+              <p className="text-xs text-muted-foreground">No bank accounts linked yet.</p>
+            )}
+            <ImportCsvDialog
+              accounts={bankAccounts.map((a) => {
+                let mapping = null;
+                try {
+                  const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
+                  mapping = isCsvMapping(parsed) ? parsed : null;
+                } catch {
+                  // a damaged saved mapping is ignored: the file is mapped fresh
+                }
+                return { id: a.id, name: accountName.get(a.id) ?? accountDisplayName(a), csvOnly: a.provider === CSV_PROVIDER, mapping };
+              })}
+            />
+          </div>
+        )}
       </div>
 
       <form className="flex flex-wrap items-end gap-3" method="get">
