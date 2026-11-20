@@ -7,7 +7,24 @@
 
 **Personal and household budgeting - the spreadsheet you've outgrown, not a bank. Self-host it, or run it as a desktop app.**
 
-Multi-user and self-hosted: each person's account is its own encrypted SQLite file, unlocked automatically by their own login. Nobody - not even an admin - can read another account's data without their key. You decide how exposed it is; nothing about Tally makes that choice for you.
+**[Download for macOS, Windows or Linux](https://github.com/tinkermesomething/tally/releases/latest)** &nbsp;·&nbsp; **[Self-host with Docker](#self-host)**
+
+</div>
+
+## Two ways to run Tally
+
+| | **Desktop app** | **Self-hosted** |
+|---|---|---|
+| For | One person, on their own computer | A household, on a server you run |
+| Install | Download an installer from [Releases](https://github.com/tinkermesomething/tally/releases/latest) | `docker compose up -d` ([steps](#self-host)) |
+| Accounts | One local user, no login | Several people, each signs in with your OIDC provider |
+| Bank sync | No. Import CSV files | Yes (EU/UK banks) |
+| Household sharing | No | Yes |
+| Your data | A folder on your computer, encrypted, key in your system keychain | Your server, one encrypted SQLite file per account |
+
+It is the same app either way. Nobody, not even an admin, can read another account's data without their key. You decide how exposed a self-hosted install is; nothing about Tally makes that choice for you.
+
+<div align="center">
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -86,13 +103,14 @@ It's built for one household (or one person) at a time, run on hardware you own.
 
 ## Contents
 
-1. [Features](#features)
-2. [Get started](#get-started)
-3. [Desktop app](#desktop-app)
-4. [Documentation](#documentation)
-5. [Tech stack](#tech-stack)
-6. [Structure](#structure)
-7. [License](#license)
+1. [Two ways to run Tally](#two-ways-to-run-tally)
+2. [Features](#features)
+3. [Get started](#get-started)
+4. [Desktop app](#desktop-app)
+5. [Documentation](#documentation)
+6. [Tech stack](#tech-stack)
+7. [Structure](#structure)
+8. [License](#license)
 
 ## Features
 
