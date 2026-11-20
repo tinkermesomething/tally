@@ -12,10 +12,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod datadir;
+
+use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-#[cfg(not(debug_assertions))]
-use tauri_plugin_dialog::MessageDialogButtons;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 #[cfg(not(debug_assertions))]
 use tauri_plugin_updater::UpdaterExt;
 
@@ -83,8 +84,11 @@ fn healthy(port: u16) -> bool {
 /// The one-time-per-run secret that proves a request comes from this app's
 /// own window - see lib/desktop/gate.ts on the server side.
 fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> {
-    let data_dir: PathBuf = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    fs::create_dir_all(&data_dir).map_err(|e| format!("Can't create {}: {e}", data_dir.display()))?;
+    // The default folder holds only the launcher's own files (log, location.json) and,
+    // until the user moves it, the data. See datadir.rs.
+    let default_dir: PathBuf = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&default_dir).map_err(|e| format!("Can't create {}: {e}", default_dir.display()))?;
+    let data_dir = datadir::resolve(&default_dir)?;
 
     let secret = auth_secret(&data_dir)?;
     let port = free_port()?;
@@ -100,7 +104,7 @@ fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> 
     let log = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(data_dir.join("server.log"))
+        .open(default_dir.join("server.log"))
         .map_err(|e| format!("Can't open the server log: {e}"))?;
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
 
@@ -134,11 +138,11 @@ fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> 
             return Ok((child, port, launch_token));
         }
         if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!("The server stopped during startup ({status}). See {}.", data_dir.join("server.log").display()));
+            return Err(format!("The server stopped during startup ({status}). See {}.", default_dir.join("server.log").display()));
         }
         if started.elapsed() > STARTUP_TIMEOUT {
             let _ = child.kill();
-            return Err(format!("The server didn't start within {}s. See {}.", STARTUP_TIMEOUT.as_secs(), data_dir.join("server.log").display()));
+            return Err(format!("The server didn't start within {}s. See {}.", STARTUP_TIMEOUT.as_secs(), default_dir.join("server.log").display()));
         }
         sleep(Duration::from_millis(250));
     }
@@ -150,6 +154,69 @@ fn stop_sidecar(app: &tauri::AppHandle) {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+fn tell(app: &tauri::AppHandle, kind: MessageDialogKind, title: &str, message: impl Into<String>) {
+    app.dialog().message(message.into()).title(title).kind(kind).blocking_show();
+}
+
+/// Data > Change data folder... Runs off the main thread (it shows blocking
+/// dialogs). The server is stopped only AFTER the user confirms, and the app
+/// always restarts afterwards - on the new folder if the move worked, on the
+/// old one if it didn't. Nothing is deleted either way.
+fn change_data_folder(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let title = "Change data folder";
+        let Ok(default_dir) = app.path().app_data_dir() else { return };
+        let current = match datadir::resolve(&default_dir) {
+            Ok(dir) => dir,
+            Err(e) => return tell(&app, MessageDialogKind::Error, title, e),
+        };
+        let Some(picked) = app.dialog().file().set_title("Choose an empty folder for your Tally data").blocking_pick_folder() else { return };
+        let Ok(target) = picked.into_path() else { return tell(&app, MessageDialogKind::Error, title, "Tally can't use that location.") };
+        if let Err(e) = datadir::validate_target(&current, &target) {
+            return tell(&app, MessageDialogKind::Error, title, e);
+        }
+        let confirmed = app
+            .dialog()
+            .message(format!(
+                "Move your data?\n\nFrom: {}\nTo: {}\n\nTally will close, copy everything, check the copy is identical, then reopen using the new folder. Your original stays where it is until you delete it.",
+                current.display(),
+                target.display()
+            ))
+            .title(title)
+            .buttons(MessageDialogButtons::OkCancelCustom("Move".into(), "Cancel".into()))
+            .blocking_show();
+        if !confirmed {
+            return;
+        }
+
+        stop_sidecar(&app);
+        match datadir::move_to(&default_dir, &current, &target) {
+            Ok(()) => tell(
+                &app,
+                MessageDialogKind::Info,
+                title,
+                format!("Done. Tally will reopen using {}.\n\nYour original data is still in {} - delete it once you've checked everything looks right.", target.display(), current.display()),
+            ),
+            Err(e) => tell(&app, MessageDialogKind::Error, title, format!("{e}\n\nYour data is where it was. Tally will reopen.")),
+        }
+        app.restart();
+    });
+}
+
+/// Data > Show data folder: opens it in Finder / Explorer / the file manager.
+fn show_data_folder(app: &tauri::AppHandle) {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string()).and_then(|d| datadir::resolve(&d));
+    match dir {
+        Ok(dir) => {
+            let opener = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
+            if let Err(e) = Command::new(opener).arg(&dir).spawn() {
+                tell(app, MessageDialogKind::Error, "Show data folder", format!("Can't open {}: {e}", dir.display()));
+            }
+        }
+        Err(e) => tell(app, MessageDialogKind::Error, "Show data folder", e),
     }
 }
 
@@ -199,7 +266,26 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "change-data-folder" => change_data_folder(app.clone()),
+            "show-data-folder" => show_data_folder(app),
+            _ => {}
+        })
         .setup(|app| {
+            // The platform's standard menu (keeps copy/paste working) plus a Data menu.
+            let menu = Menu::default(app.handle())?;
+            let data = Submenu::with_items(
+                app,
+                "Data",
+                true,
+                &[
+                    &MenuItem::with_id(app, "change-data-folder", "Change data folder…", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "show-data-folder", "Show data folder", true, None::<&str>)?,
+                ],
+            )?;
+            menu.append(&data)?;
+            app.set_menu(menu)?;
+
             match start_server(app.handle()) {
                 Ok((child, port, launch_token)) => {
                     app.manage(Sidecar(Mutex::new(Some(child))));
