@@ -13,6 +13,7 @@ import { guessMapping, mapCsvRows, splitTable, type CsvMapping } from "@/lib/csv
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
+import { HelpTip } from "@/components/help-tip";
 import { importCsv, previewCsv } from "@/app/review/csv-actions";
 import type { CsvImportPlan, CsvImportResult, DuplicatePolicy } from "@/lib/db/csv-import";
 
@@ -150,6 +151,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
   const importable = plan ? (policy === "skip" ? plan.fresh - plan.possibleDuplicates : plan.fresh) : 0;
 
   return (
+    <span className="inline-flex items-center gap-1">
     <Dialog
       open={open}
       onOpenChange={(next) => {
@@ -359,7 +361,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                     <p>
                       <span className="font-medium">{plan.fresh} new</span>
                       {plan.alreadyImported > 0 && <> · {plan.alreadyImported} already imported</>}
-                      {plan.possibleDuplicates > 0 && <> · <span className="text-chart-4">{plan.possibleDuplicates} look like existing transactions</span></>}
+                      {plan.possibleDuplicates > 0 && <> · <span className="text-chart-4">{plan.possibleDuplicates} look like existing transactions</span> <HelpTip id="review.duplicates" /></>}
                       {plan.oldest && plan.newest && <span className="text-muted-foreground"> · {formatDate(plan.oldest, dateFormat)} to {formatDate(plan.newest, dateFormat)}</span>}
                     </p>
                     {plan.possibleDuplicates > 0 && (
@@ -390,5 +392,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
         )}
       </DialogContent>
     </Dialog>
+    <HelpTip id="review.importCsv" />
+    </span>
   );
 }

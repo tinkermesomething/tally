@@ -14,6 +14,7 @@ import { getBuckets } from "@/lib/db/savings";
 import { ReviewList } from "@/components/review/review-list";
 import { EntriesTable } from "@/components/entries/entries-table";
 import { ActivityTabs, type ActivityTab } from "@/components/review/activity-tabs";
+import { HelpTip } from "@/components/help-tip";
 import { YearSwitcher } from "@/components/grid/year-switcher";
 import { MonthSelect } from "@/components/reports/month-select";
 import { Input } from "@/components/ui/input";
@@ -76,7 +77,10 @@ export default async function ReviewPage({
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         <div className="flex flex-wrap items-center gap-3">
           {desktop && <ImportCsvDialog accounts={csvAccounts} />}
-          <ActivityTabs tab={tab} pendingCount={pendingCount} />
+          <span className="inline-flex items-center gap-1">
+            <ActivityTabs tab={tab} pendingCount={pendingCount} />
+            <HelpTip id="review.tabs" />
+          </span>
         </div>
       </div>
       {body}

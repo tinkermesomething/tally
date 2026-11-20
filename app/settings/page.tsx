@@ -22,6 +22,7 @@ import { buildGroupColorMap, GROUP_PALETTE, UNGROUPED } from "@/lib/group-colors
 import { getGroupStyles } from "@/lib/db/groups";
 import { GroupRow } from "@/components/settings/group-row";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { HelpTip } from "@/components/help-tip";
 import { AddCategoryDialog } from "@/components/grid/add-category-dialog";
 import { AddIncomeSourceDialog } from "@/components/grid/add-income-source-dialog";
 import { AddPersonDialog } from "@/components/debt/add-person-dialog";
@@ -200,6 +201,7 @@ export default async function SettingsPage({
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">
                   Rename, regroup, add subcategories, or archive. Press and hold a name to drag it into place. Tick several to change them at once.
+                  <span className="ml-1 inline-flex align-middle"><HelpTip id="settings.categoryLinks" /></span>
                 </p>
                 <AddCategoryDialog
                   topLevelCategories={categoryTree.map((c) => ({ id: c.id, name: c.name }))}
@@ -260,6 +262,7 @@ export default async function SettingsPage({
             <TabsContent value="groups" className="space-y-4 pt-4">
               <p className="text-sm text-muted-foreground">
                 Rename a group, or give it its own colour instead of the automatic one.
+                <span className="ml-1 inline-flex align-middle"><HelpTip id="settings.group" /></span>
               </p>
               {existingGroups.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
@@ -283,7 +286,10 @@ export default async function SettingsPage({
 
         <TabsContent value="income" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Add, rename, reorder (press and hold) or archive income sources.</p>
+            <p className="text-sm text-muted-foreground">
+              Add, rename, reorder (press and hold) or archive income sources.
+              <span className="ml-1 inline-flex align-middle"><HelpTip id="settings.payAnchor" /></span>
+            </p>
             <AddIncomeSourceDialog />
           </div>
 
@@ -345,7 +351,10 @@ export default async function SettingsPage({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-medium">Auto-categorization rules</h2>
+                <h2 className="flex items-center gap-1 text-sm font-medium">
+                  Auto-categorization rules
+                  <HelpTip id="settings.rules" />
+                </h2>
                 <p className="text-xs text-muted-foreground">
                   Runs automatically when a transaction imports - first match wins.
                 </p>
@@ -540,7 +549,10 @@ export default async function SettingsPage({
               </div>
             )}
             <div className={desktop ? "space-y-4" : "space-y-4 border-t border-border pt-4"}>
-              <h2 className="text-sm font-medium">Backup</h2>
+              <h2 className="flex items-center gap-1 text-sm font-medium">
+                Backup
+                {desktop && <HelpTip id="settings.backup" />}
+              </h2>
               <BackupSettings auto={await autoBackupView()} />
             </div>
             {features.multiUser && (
