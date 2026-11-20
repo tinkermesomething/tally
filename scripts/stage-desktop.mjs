@@ -35,6 +35,17 @@ fs.cpSync(path.join(root, ".next", "static"), path.join(app, ".next", "static"),
 fs.cpSync(path.join(root, "public"), path.join(app, "public"), { recursive: true });
 fs.cpSync(path.join(root, "drizzle"), path.join(app, "drizzle"), { recursive: true });
 
+// Next's optional image library (sharp) installs a native package per OS/CPU
+// (and a musl-Linux one on Linux). Only this platform's can load, and the
+// foreign ones break the Linux AppImage bundler, which tries to resolve every
+// binary's libc. Names end in -<os>-<cpu>, e.g. sharp-libvips-linuxmusl-x64.
+const mine = `-${process.platform}-${process.arch}`;
+const nativeImgPackage = /-(darwin|linux|linuxmusl|win32)-(x64|arm64|arm|ppc64|s390x|riscv64)$/;
+const imgDir = path.join(app, "node_modules", "@img");
+for (const name of fs.existsSync(imgDir) ? fs.readdirSync(imgDir) : []) {
+  if (nativeImgPackage.test(name) && !name.endsWith(mine)) fs.rmSync(path.join(imgDir, name), { recursive: true, force: true });
+}
+
 // The launcher keeps a pipe open to this process's stdin. If the app is
 // force-quit (or crashes) the pipe closes and the server exits with it, so
 // no orphaned Node process is left holding the database.
