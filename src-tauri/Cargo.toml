@@ -1,0 +1,18 @@
+[package]
+name = "tally-desktop"
+version = "0.1.0"
+description = "Tally desktop app"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+# Linux needs a running secret service (GNOME Keyring / KWallet); macOS and
+# Windows use the system keychain / Credential Manager.
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+getrandom = "0.3"
+serde_json = "1"

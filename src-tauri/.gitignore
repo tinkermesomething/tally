@@ -1,0 +1,4 @@
+/target/
+/gen/
+/resources/
+/tauri.release.conf.json

@@ -1,4 +1,5 @@
 import { Tags } from "lucide-react";
+import { isDesktopMode } from "@/lib/desktop/mode";
 import { formatSyncTime, syncSlotHours, syncTimeZone } from "@/lib/sync-schedule";
 import {
   getCategoryTree,
@@ -49,6 +50,8 @@ import {
 import { restorePerson } from "@/app/debt/actions";
 import { withCurrentUser } from "@/lib/db/current-user";
 import { ManualBackup } from "@/components/settings/manual-backup";
+import { AppLockPanel } from "@/components/settings/app-lock-panel";
+import { isLockEnabled } from "@/lib/desktop/lock";
 import { AvatarPicker } from "@/components/settings/avatar-picker";
 import { UsersPanel, type PublicUser } from "@/components/settings/users-panel";
 import { MigrateLegacyButton } from "@/components/settings/migrate-legacy-button";
@@ -158,11 +161,16 @@ export default async function SettingsPage({
       }))
     : [];
 
+  const desktop = isDesktopMode();
+  const requestedTab = TAB_ALIASES[tab ?? ""] ?? tab ?? "";
+  // A desktop link to a tab it doesn't have (bank-sync) opens the default instead of a blank page.
+  const initialTab = SETTINGS_TABS.includes(requestedTab) && !(desktop && requestedTab === "bank-sync") ? requestedTab : "account";
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
-      <Tabs defaultValue={SETTINGS_TABS.includes(TAB_ALIASES[tab ?? ""] ?? tab ?? "") ? (TAB_ALIASES[tab ?? ""] ?? tab!) : "account"}>
+      <Tabs defaultValue={initialTab}>
         {/* Same horizontal-scroll, hidden-scrollbar treatment as the main
             header nav (components/app-header.tsx) - on a narrow phone this
             row has as many triggers as the main nav has links, and was
@@ -171,7 +179,7 @@ export default async function SettingsPage({
             instead of just overflowing its own fit-content box. */}
         <TabsList className="w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <TabsTrigger value="account" className="shrink-0">Account settings</TabsTrigger>
-          <TabsTrigger value="bank-sync" className="shrink-0">Bank sync</TabsTrigger>
+          {!desktop && <TabsTrigger value="bank-sync" className="shrink-0">Bank sync</TabsTrigger>}
           <TabsTrigger value="categories" className="shrink-0">Categories</TabsTrigger>
           <TabsTrigger value="income" className="shrink-0">Income</TabsTrigger>
           <TabsTrigger value="debt" className="shrink-0">Debts</TabsTrigger>
@@ -406,6 +414,7 @@ export default async function SettingsPage({
           </div>
         </TabsContent>
 
+        {!desktop && (
         <TabsContent value="bank-sync" className="space-y-6 pt-4">
           {connected && (
             <p className="rounded-lg border border-status-good/30 bg-status-good/10 px-3 py-2 text-sm text-status-good">
@@ -454,6 +463,7 @@ export default async function SettingsPage({
             )}
           </div>
         </TabsContent>
+        )}
 
         <TabsContent value="account" className="space-y-6 pt-4">
           <section className="space-y-3">
@@ -487,6 +497,13 @@ export default async function SettingsPage({
             />
           </div>
 
+          {desktop && (
+            <div className="space-y-2 border-t border-border pt-4">
+              <h2 className="text-sm font-medium">App lock</h2>
+              <AppLockPanel enabled={isLockEnabled()} />
+            </div>
+          )}
+
           <div className="border-t border-border pt-4">
             <ManualBackup />
           </div>
@@ -505,25 +522,31 @@ export default async function SettingsPage({
 
         {me.isAdmin && (
           <TabsContent value="admin" className="space-y-6 pt-4">
-            <div className="space-y-4">
-              <h2 className="text-sm font-medium">Users</h2>
-              <UsersPanel users={publicUsers} />
-            </div>
-            <div className="space-y-2 border-t border-border pt-4">
-              <h2 className="text-sm font-medium">GoCardless API credentials</h2>
-              <p className="text-xs text-muted-foreground">
-                One set, shared by every user&apos;s bank connections on this instance.
-              </p>
-              <GocardlessCredentialsForm configured={gocardlessConfigured} />
-            </div>
-            <div className="space-y-4 border-t border-border pt-4">
+            {!desktop && (
+              <div className="space-y-4">
+                <h2 className="text-sm font-medium">Users</h2>
+                <UsersPanel users={publicUsers} />
+              </div>
+            )}
+            {!desktop && (
+              <div className="space-y-2 border-t border-border pt-4">
+                <h2 className="text-sm font-medium">GoCardless API credentials</h2>
+                <p className="text-xs text-muted-foreground">
+                  One set, shared by every user&apos;s bank connections on this instance.
+                </p>
+                <GocardlessCredentialsForm configured={gocardlessConfigured} />
+              </div>
+            )}
+            <div className={desktop ? "space-y-4" : "space-y-4 border-t border-border pt-4"}>
               <h2 className="text-sm font-medium">Backup</h2>
               <BackupSettings auto={await autoBackupView()} />
             </div>
-            <div className="space-y-2 border-t border-border pt-4">
-              <h2 className="text-sm font-medium">Household budget</h2>
-              <HouseholdAdminToggle enabled={householdEnabled} />
-            </div>
+            {!desktop && (
+              <div className="space-y-2 border-t border-border pt-4">
+                <h2 className="text-sm font-medium">Household budget</h2>
+                <HouseholdAdminToggle enabled={householdEnabled} />
+              </div>
+            )}
           </TabsContent>
         )}
       </Tabs>

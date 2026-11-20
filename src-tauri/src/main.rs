@@ -1,0 +1,230 @@
+// No console window on Windows release builds.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use std::{
+    fs::{self, OpenOptions},
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::Mutex,
+    thread::sleep,
+    time::{Duration, Instant},
+};
+
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+#[cfg(not(debug_assertions))]
+use tauri_plugin_dialog::MessageDialogButtons;
+#[cfg(not(debug_assertions))]
+use tauri_plugin_updater::UpdaterExt;
+
+// Holds the Node server. Its stdin pipe stays open as long as this lives;
+// desktop-run.cjs exits when that pipe closes, so a force-quit or crash of
+// this app never leaves the server running.
+struct Sidecar(Mutex<Option<Child>>);
+
+const KEYRING_SERVICE: &str = "com.tally.desktop";
+const KEYRING_USER: &str = "auth-secret";
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The key that seals the database's own key (AUTH_SECRET in the web build).
+/// Created once, then read silently from the OS keychain on every launch.
+///
+/// A keychain READ failure must never fall through to creating a new one: a
+/// fresh secret can't open the existing database, and the app would quietly
+/// start empty. Only a genuinely absent entry on a genuinely fresh install
+/// may create one.
+fn auth_secret(data_dir: &Path) -> Result<String, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| format!("Can't open the system keychain: {e}"))?;
+    match entry.get_password() {
+        Ok(secret) => Ok(secret),
+        Err(keyring::Error::NoEntry) => {
+            if has_existing_data(data_dir) {
+                return Err("Your data exists but its key is missing from the system keychain. Tally will not create a new key, because that would make your data unreadable. Restore the keychain entry (service com.tally.desktop, account auth-secret) or restore from a backup.".into());
+            }
+            let secret = random_hex()?;
+            entry.set_password(&secret).map_err(|e| format!("Can't save the key to the system keychain: {e}"))?;
+            Ok(secret)
+        }
+        Err(e) => Err(format!("Can't read the key from the system keychain: {e}")),
+    }
+}
+
+fn has_existing_data(data_dir: &Path) -> bool {
+    data_dir.join("system.db").exists() || data_dir.join("users").read_dir().map(|mut d| d.next().is_some()).unwrap_or(false)
+}
+
+fn free_port() -> Result<u16, String> {
+    // Released before the server binds it. Another process could grab it in
+    // between - accepted: it is loopback-only and the failure is loud.
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| format!("Can't pick a local port: {e}"))?;
+    listener.local_addr().map(|a| a.port()).map_err(|e| e.to_string())
+}
+
+fn random_hex() -> Result<String, String> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).map_err(|e| format!("Can't generate a key: {e}"))?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn healthy(port: u16) -> bool {
+    let Ok(mut stream) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(500)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    if stream.write_all(format!("GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n").as_bytes()).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 32];
+    stream.read(&mut buf).map(|n| buf[..n].starts_with(b"HTTP/1.1 200")).unwrap_or(false)
+}
+
+/// The one-time-per-run secret that proves a request comes from this app's
+/// own window - see lib/desktop/gate.ts on the server side.
+fn start_server(app: &tauri::AppHandle) -> Result<(Child, u16, String), String> {
+    let data_dir: PathBuf = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&data_dir).map_err(|e| format!("Can't create {}: {e}", data_dir.display()))?;
+
+    let secret = auth_secret(&data_dir)?;
+    let port = free_port()?;
+    let launch_token = random_hex()?;
+
+    let resources = app.path().resource_dir().map_err(|e| e.to_string())?.join("resources");
+    let node = resources.join("node").join(if cfg!(windows) { "node.exe" } else { "node" });
+    let script = resources.join("app").join("desktop-run.cjs");
+    if !node.exists() || !script.exists() {
+        return Err(format!("The app is incomplete: missing {} or {}.", node.display(), script.display()));
+    }
+
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(data_dir.join("server.log"))
+        .map_err(|e| format!("Can't open the server log: {e}"))?;
+    let log_err = log.try_clone().map_err(|e| e.to_string())?;
+
+    let mut cmd = Command::new(node);
+    cmd.arg(script)
+        .env("TALLY_MODE", "desktop")
+        .env("AUTH_SECRET", secret)
+        .env("PORT", port.to_string())
+        .env("LAUNCH_TOKEN", &launch_token)
+        // Loopback only - never 0.0.0.0, which would expose the app to the LAN.
+        .env("HOSTNAME", "127.0.0.1")
+        .env("NODE_ENV", "production")
+        .env("NEXT_TELEMETRY_DISABLED", "1")
+        .env("DATABASE_PATH", data_dir.join("tally.db"))
+        .env("USERS_DB_DIR", data_dir.join("users"))
+        .env("SYSTEM_DB_PATH", data_dir.join("system.db"))
+        .env("BACKUP_DIR", data_dir.join("backups"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(log_err));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("Can't start the server: {e}"))?;
+
+    let started = Instant::now();
+    loop {
+        if healthy(port) {
+            return Ok((child, port, launch_token));
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!("The server stopped during startup ({status}). See {}.", data_dir.join("server.log").display()));
+        }
+        if started.elapsed() > STARTUP_TIMEOUT {
+            let _ = child.kill();
+            return Err(format!("The server didn't start within {}s. See {}.", STARTUP_TIMEOUT.as_secs(), data_dir.join("server.log").display()));
+        }
+        sleep(Duration::from_millis(250));
+    }
+}
+
+fn stop_sidecar(app: &tauri::AppHandle) {
+    if let Some(sidecar) = app.try_state::<Sidecar>() {
+        if let Some(mut child) = sidecar.0.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+/// Checks GitHub Releases for a newer signed build, once per launch. The
+/// update's signature is verified against the public key in tauri.conf.json
+/// before anything is installed. Failures (offline, no release yet) are
+/// silent: an update check must never get in the way of opening the app.
+#[cfg(not(debug_assertions))]
+fn check_for_update(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let Ok(updater) = app.updater() else { return };
+        let update = match tauri::async_runtime::block_on(updater.check()) {
+            Ok(Some(update)) => update,
+            Ok(None) => return,
+            Err(e) => {
+                eprintln!("update check failed: {e}");
+                return;
+            }
+        };
+        let wanted = app
+            .dialog()
+            .message(format!("Tally {} is available (you have {}). Install it now? Tally will restart.", update.version, update.current_version))
+            .title("Update available")
+            .buttons(MessageDialogButtons::OkCancelCustom("Update".into(), "Later".into()))
+            .blocking_show();
+        if !wanted {
+            return;
+        }
+        let bytes = match tauri::async_runtime::block_on(update.download(|_, _| {}, || {})) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                app.dialog().message(format!("The update couldn't be downloaded: {e}")).kind(MessageDialogKind::Error).blocking_show();
+                return;
+            }
+        };
+        // Stop the server first: on Windows its files can't be replaced while it runs.
+        stop_sidecar(&app);
+        if let Err(e) = update.install(bytes) {
+            app.dialog().message(format!("The update couldn't be installed: {e}")).kind(MessageDialogKind::Error).blocking_show();
+            return;
+        }
+        app.restart();
+    });
+}
+
+fn main() {
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            match start_server(app.handle()) {
+                Ok((child, port, launch_token)) => {
+                    app.manage(Sidecar(Mutex::new(Some(child))));
+                    let url = format!("http://127.0.0.1:{port}/api/desktop/enter?t={launch_token}").parse().map_err(|e| format!("{e}"))?;
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+                        .title("Tally")
+                        .inner_size(1280.0, 860.0)
+                        .min_inner_size(420.0, 600.0)
+                        .build()?;
+                    #[cfg(not(debug_assertions))]
+                    check_for_update(app.handle().clone());
+                    Ok(())
+                }
+                Err(message) => {
+                    app.dialog().message(&message).title("Tally can't start").kind(MessageDialogKind::Error).blocking_show();
+                    Err(message.into())
+                }
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building Tally");
+
+    app.run(|handle, event| {
+        if let RunEvent::Exit = event {
+            stop_sidecar(handle);
+        }
+    });
+}

@@ -7,6 +7,7 @@ import { resolveSignIn, isEffectiveAdmin, canDelete, type ExistingAccount, type 
 import { generateDek, resealDek, sealDek } from "../user-dek";
 import { removeHouseholdDataForUser } from "./household";
 import { audit } from "../audit";
+import { DESKTOP_EMAIL, DESKTOP_NAME, DESKTOP_SUB } from "../desktop/mode";
 
 /** Every function here uses the shared keystore connection directly
  * (lib/db/system-connection.ts), never the ambient per-request `db`
@@ -96,6 +97,22 @@ export async function resolveAndApplySignIn(
     .values({ oidcSub: sub, email: email!, name: name ?? email, isAdmin: effectiveAdminFor(false), dekSealed })
     .returning();
   return { resolution, user: created };
+}
+
+/** Desktop's only account, created once at first launch (see
+ * instrumentation.ts). Idempotent: a second call must never re-seal the DEK,
+ * or the existing encrypted database would become unreadable. Admin, so
+ * Settings > Admin (backups) stays reachable - the multi-user panels are
+ * hidden separately. */
+export async function ensureDesktopUser(): Promise<UserRow> {
+  const db = sysDb();
+  const existing = await db.query.users.findFirst({ where: eq(users.oidcSub, DESKTOP_SUB) });
+  if (existing) return existing;
+  const [created] = await db
+    .insert(users)
+    .values({ oidcSub: DESKTOP_SUB, email: DESKTOP_EMAIL, name: DESKTOP_NAME, isAdmin: true, dekSealed: sealDek(generateDek(), DESKTOP_SUB) })
+    .returning();
+  return created;
 }
 
 // `avatarImage` can be up to 10MB - excluded from every one of these,

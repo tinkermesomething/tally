@@ -1,0 +1,134 @@
+name: Release Desktop App
+
+# Same trigger as release-docker.yml: one GitHub Release produces both the
+# Docker image and the desktop installers. A workflow_dispatch run builds
+# and uploads the installers as workflow artifacts only - it never touches
+# the Release, so it can't reach the updater's latest.json.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Version to build (e.g. v5.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  check:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: [check]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native runners only, no cross-compiling: the sqlite addon is
+          # compiled per-platform by `npm ci`, and the bundled Node binary
+          # is picked by the runner's own arch (scripts/stage-desktop.mjs).
+          - name: macOS (Apple silicon)
+            runner: macos-latest
+          - name: macOS (Intel)
+            runner: macos-15-intel
+          - name: Windows
+            runner: windows-latest
+          - name: Linux
+            # Oldest LTS runner: AppImages built here run on more distros.
+            runner: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        shell: bash
+        # Event values go through env, never straight into the script text.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          TAG="$INPUT_TAG"
+          if [ "$EVENT_NAME" = "release" ]; then TAG="$RELEASE_TAG"; fi
+          if ! [[ "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "tag must look like v1.2.3, got: $TAG" >&2; exit 1; fi
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "APP_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev patchelf
+
+      - run: npm ci
+
+      # `next build` opens a throwaway sqlite file at import time (see the
+      # Dockerfile) - it needs a directory to put it in.
+      - run: mkdir -p config
+        shell: bash
+
+      # A file, not inline JSON in `args`: quoting JSON through a shell
+      # differs between bash and Windows. createUpdaterArtifacts is only set
+      # here so a local `cargo tauri build` doesn't need the signing key.
+      - name: Write release config
+        shell: bash
+        run: |
+          node -e 'require("fs").writeFileSync("src-tauri/tauri.release.conf.json", JSON.stringify({ version: process.env.APP_VERSION, bundle: { createUpdaterArtifacts: true } }))'
+
+      - name: Build and publish installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Same two build-time values as the Docker build - see the
+          # Dockerfile for why the encryption key must be a fixed secret.
+          NEXT_PUBLIC_APP_VERSION: ${{ env.RELEASE_TAG }}
+          NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
+        with:
+          tauriScript: npm run tauri
+          # Only a real published release gets uploads (and latest.json);
+          # empty on workflow_dispatch, which makes this a build-only run.
+          releaseId: ${{ github.event.release.id }}
+          args: --config src-tauri/tauri.release.conf.json
+
+      - name: Keep installers from a manual run
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tally-desktop-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            src-tauri/target/release/bundle/dmg/*
+            src-tauri/target/release/bundle/nsis/*
+            src-tauri/target/release/bundle/appimage/*
+            src-tauri/target/release/bundle/deb/*
+          if-no-files-found: error
+          retention-days: 7

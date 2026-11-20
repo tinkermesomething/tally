@@ -11,7 +11,11 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx ../../GITEA/docker/tally/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "tauri": "tauri",
+    "desktop:stage": "node scripts/stage-desktop.mjs",
+    "desktop:build": "cargo tauri build",
+    "desktop:dev": "npm run desktop:stage && cargo tauri dev"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -34,6 +38,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.12.6",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/react": "^19",

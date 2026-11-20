@@ -12,6 +12,7 @@ import { getAppSettings } from "@/lib/db/settings";
 import { isHouseholdEnabled } from "@/lib/db/household";
 import { withCurrentUser } from "@/lib/db/current-user";
 import type { UserRow } from "@/lib/db/users";
+import { isDesktopMode } from "@/lib/desktop/mode";
 
 // Same threshold as EXPIRY_WARNING_DAYS below - "due soon" for a bill gets
 // the same runway as "about to lapse" for a bank connection.
@@ -54,6 +55,7 @@ export async function AppHeader() {
   // nothing below reads the database in that case anyway (see the `session
   // ? ... : 0` guards).
   const session = await auth();
+  const desktop = isDesktopMode();
   const t = await getTranslations("nav");
   // A session that decrypts fine but names an account that no longer
   // resolves (disabled, deleted, or - once, moving off the old single-user
@@ -93,9 +95,11 @@ export async function AppHeader() {
         // producing new transactions and nobody notices until they go
         // looking. Settings is where reconnecting actually happens, so the
         // badge lives there.
-        const expiring = (await getBankAccounts()).filter(
-          (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
-        ).length;
+        const expiring = desktop
+          ? 0
+          : (await getBankAccounts()).filter(
+              (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
+            ).length;
         const bills = await getUpcomingBills(BILL_DUE_SOON_DAYS);
         const settings = await getAppSettings();
         const household = await isHouseholdEnabled();
@@ -163,7 +167,7 @@ export async function AppHeader() {
                   color={currentUser.avatarColor}
                   imageVersion={currentUser.avatarImageUpdatedAt ? currentUser.avatarImageUpdatedAt.getTime() : null}
                   expiringBankAccounts={expiringBankAccounts}
-                  onSignOut={signOutAction}
+                  onSignOut={desktop ? undefined : signOutAction}
                 />
               ) : (
                 // currentUser failed to resolve (see the catch above) but the

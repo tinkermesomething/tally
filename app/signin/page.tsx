@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
+import { isDesktopMode } from "@/lib/desktop/mode";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { PocketIdLogo } from "@/components/pocket-id-logo";
@@ -8,6 +10,8 @@ export default async function SignInPage({
 }: {
   searchParams: Promise<{ callbackUrl?: string }>;
 }) {
+  // Desktop has no sign-in; anyone landing here just goes to the app.
+  if (isDesktopMode()) redirect("/grid");
   const { callbackUrl } = await searchParams;
 
   return (

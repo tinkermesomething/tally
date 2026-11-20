@@ -47,3 +47,6 @@ next-env.d.ts
 # instead (private Gitea only), never in this repo. Safety net in case a
 # local copy gets recreated here for quick testing.
 /scripts/seed.ts
+
+# desktop build
+/.desktop-cache/

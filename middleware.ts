@@ -1,5 +1,8 @@
 import NextAuth from "next-auth";
+import { NextResponse, type NextRequest } from "next/server";
 import authConfig from "@/auth.config";
+import { isDesktopMode } from "@/lib/desktop/mode";
+import { SESSION_COOKIE, gateDecision } from "@/lib/desktop/gate";
 
 // A SEPARATE, lightweight Auth.js instance - not `export { auth as
 // middleware } from "@/auth"` (the full instance), specifically so this
@@ -10,7 +13,23 @@ import authConfig from "@/auth.config";
 // cosmetic - confirmed by a real Turbopack build failure once auth.ts
 // started reaching lib/db/legacy-connection.ts (node:path/process.cwd()),
 // which middleware's bundle can never be allowed to need.
-export const { auth: middleware } = NextAuth(authConfig);
+const { auth } = NextAuth(authConfig);
+
+// Desktop has no sign-in at all (authConfig lets everything through), so
+// the only gate is "does this request come from the app's own window" -
+// see lib/desktop/gate.ts. Web mode is untouched.
+async function desktopGate(req: NextRequest) {
+  const decision = await gateDecision({
+    host: req.headers.get("host"),
+    pathname: req.nextUrl.pathname,
+    cookie: req.cookies.get(SESSION_COOKIE)?.value,
+    token: process.env.LAUNCH_TOKEN,
+    port: process.env.PORT,
+  });
+  return decision === "allow" ? NextResponse.next() : new NextResponse("Forbidden", { status: 403 });
+}
+
+export const middleware = isDesktopMode() ? desktopGate : auth;
 
 // The negative-lookahead exclusion pattern Next.js docs recommend here
 // compiles fine under webpack but Turbopack's build (`next build --turbopack`,

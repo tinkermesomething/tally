@@ -1,6 +1,9 @@
 import NextAuth from "next-auth";
+import { cookies } from "next/headers";
 import authConfig from "./auth.config";
 import { checkProfile } from "@/lib/auth-rules";
+import { DESKTOP_EMAIL, DESKTOP_NAME, DESKTOP_SUB, isDesktopMode } from "@/lib/desktop/mode";
+import { SESSION_COOKIE, safeEqual, sessionCookieValue } from "@/lib/desktop/gate";
 
 const allowedEmail = process.env.ALLOWED_EMAIL;
 // Which OIDC "groups" claim value counts as admin - "admin" unless the
@@ -25,7 +28,7 @@ async function audit(action: string, detail?: string) {
  * builds its own lightweight instance straight from auth.config.ts, with
  * no database access at all). See auth.config.ts's top comment for why
  * this split exists. */
-export const { handlers, auth, signIn, signOut } = NextAuth((req) => {
+export const { handlers, auth: authInner, signIn, signOut } = NextAuth((req) => {
   const base = authConfig(req);
   return {
     ...base,
@@ -62,3 +65,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth((req) => {
     },
   };
 });
+
+// Desktop has no sign-in, so nothing makes Auth.js produce a session - hand
+// every caller the one local user instead. The five places that call auth()
+// only check it is truthy or read user.sub.
+// Only for a window holding the full session cookie. A window still locked
+// (lib/desktop/lock.ts) - or anything without the cookie, or outside a
+// request - is signed out, so the unlock screen's layout renders no account
+// data. Middleware already refused such requests everything else.
+async function desktopAuth() {
+  const token = process.env.LAUNCH_TOKEN;
+  let cookie: string | undefined;
+  try {
+    cookie = (await cookies()).get(SESSION_COOKIE)?.value;
+  } catch {
+    return null;
+  }
+  if (!token || !cookie || !safeEqual(cookie, await sessionCookieValue(token))) return null;
+  return {
+    user: { sub: DESKTOP_SUB, email: DESKTOP_EMAIL, name: DESKTOP_NAME },
+    expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
+export const auth = (isDesktopMode() ? desktopAuth : authInner) as typeof authInner;

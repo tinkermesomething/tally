@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { allowedHostFrom, parseAllowedHosts } from "@/lib/auth-rules";
+import { isDesktopMode } from "@/lib/desktop/mode";
 
 // Which hosts this app answers requests for - everything below that reads a
 // request's own Host/X-Forwarded-Host header checks it against this list
@@ -25,6 +26,13 @@ const ALLOWED_HOSTS = parseAllowedHosts(process.env.ALLOWED_HOSTS ?? "tally.home
  * structurally absent from what middleware imports, not just unreachable
  * at runtime. */
 export default function authConfig(req?: Request): NextAuthConfig {
+  // Desktop: one local user, no sign-in at all. Everything below (OIDC
+  // provider, host allow-list, redirect handling) is for the self-hosted
+  // web build and needs none of its env vars here.
+  if (isDesktopMode()) {
+    return { providers: [], trustHost: true, session: { strategy: "jwt" }, callbacks: { authorized: () => true } };
+  }
+
   // Lazy initialization (a function, not a plain object) - this app is
   // reachable on two real hostnames (tally.home.internal AND
   // tally.angelsomething.com, both behind Caddy), and NEITHER a fixed

@@ -29,7 +29,8 @@ export function UserMenu({
   color: string | null;
   imageVersion: number | null;
   expiringBankAccounts: number;
-  onSignOut: () => Promise<void>;
+  /** Absent in the desktop build (no sign-in, so nothing to sign out of). */
+  onSignOut?: () => Promise<void>;
 }) {
   // Client-side proof of the i18n pipeline, alongside app-header.tsx's
   // server-side getTranslations() - NextIntlClientProvider (app/layout.tsx)
@@ -60,10 +61,12 @@ export function UserMenu({
           <Settings className="size-4" />
           {t("settings")}
         </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onClick={() => onSignOut()}>
-          <LogOut className="size-4" />
-          {t("signOut")}
-        </DropdownMenuItem>
+        {onSignOut && (
+          <DropdownMenuItem variant="destructive" onClick={() => onSignOut()}>
+            <LogOut className="size-4" />
+            {t("signOut")}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

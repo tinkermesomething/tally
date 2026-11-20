@@ -8,8 +8,16 @@ export async function register() {
     const { getLegacyConn } = await import("./lib/db/legacy-connection");
     getLegacyConn();
 
-    const { startScheduledSync } = await import("./lib/scheduled-sync");
-    startScheduledSync();
+    // Desktop has no bank sync (CSV import only) and one fixed local user,
+    // provisioned here so the very first request already has an account.
+    const { isDesktopMode } = await import("./lib/desktop/mode");
+    if (isDesktopMode()) {
+      const { ensureDesktopUser } = await import("./lib/db/users");
+      await ensureDesktopUser();
+    } else {
+      const { startScheduledSync } = await import("./lib/scheduled-sync");
+      startScheduledSync();
+    }
 
     const { startAutoBackup } = await import("./lib/auto-backup");
     startAutoBackup();
