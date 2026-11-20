@@ -56,7 +56,11 @@ jobs:
           - name: macOS (Intel)
             runner: macos-15-intel
           - name: Windows
-            runner: windows-latest
+            # Not windows-latest: that image is Visual Studio 2026, which the
+            # node-gyp bundled with Node 20 can't find, and the sqlite addon
+            # has no prebuilt Node 20 binary so it must compile. Runs on
+            # Windows 10 and 11. Revisit if GitHub retires this image.
+            runner: windows-2022
           - name: Linux
             # Oldest LTS runner: AppImages built here run on more distros.
             runner: ubuntu-22.04
@@ -130,7 +134,14 @@ jobs:
           # Only a real published release gets uploads (and latest.json);
           # empty on workflow_dispatch, which makes this a build-only run.
           releaseId: ${{ github.event.release.id }}
-          args: --config src-tauri/tauri.release.conf.json
+          # --verbose: linuxdeploy's own output is hidden otherwise, and "failed to
+          # run linuxdeploy" alone doesn't say why.
+          args: --config src-tauri/tauri.release.conf.json --verbose
+
+      # Starts the packaged server on this platform's own Node and sqlite
+      # addon. A green build doesn't prove they load; this does.
+      - name: Smoke test the staged server
+        run: node scripts/smoke-desktop.mjs
 
       - name: Keep installers from a manual run
         if: github.event_name == 'workflow_dispatch'
