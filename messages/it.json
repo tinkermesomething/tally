@@ -12,6 +12,7 @@
   },
   "userMenu": {
     "settings": "Impostazioni",
+    "help": "Help",
     "signOut": "Esci"
   }
 }

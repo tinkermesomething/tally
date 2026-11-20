@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Settings, LogOut } from "lucide-react";
+import { Settings, LifeBuoy, LogOut } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/settings/user-avatar";
 
 /** The avatar+name in the header is the trigger, not a direct link - open
- * it to get exactly two things: Settings (the standalone top-nav Settings
+ * it to get exactly three things: Settings (the standalone top-nav Settings
  * link was removed - this is the only way in now, so it carries the
- * expiring-bank-connection badge that link used to show), and Sign out.
+ * expiring-bank-connection badge that link used to show), Help, and Sign out.
  * `onSignOut` is a server action reference passed down from app-header.tsx
  * (a Server Component) - calling a server action from a plain onClick, not
  * just a <form action>, is the supported way to invoke one from inside a
@@ -60,6 +60,10 @@ export function UserMenu({
         <DropdownMenuItem render={<Link href="/settings" />}>
           <Settings className="size-4" />
           {t("settings")}
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/help" />}>
+          <LifeBuoy className="size-4" />
+          {t("help")}
         </DropdownMenuItem>
         {onSignOut && (
           <DropdownMenuItem variant="destructive" onClick={() => onSignOut()}>
