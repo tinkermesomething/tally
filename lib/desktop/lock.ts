@@ -4,6 +4,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { systemDbPath } from "@/lib/db/system-connection";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isDesktopMode } from "@/lib/desktop/mode";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@/lib/desktop/password-rules";
 
 // The optional desktop app lock: a password asked for when Tally opens.
 //
@@ -18,8 +19,7 @@ import { isDesktopMode } from "@/lib/desktop/mode";
 // forgotten password is "delete app-lock.json" - safe, because the lock
 // never protected the data's encryption in the first place.
 
-export const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 200;
+export { MIN_PASSWORD_LENGTH } from "@/lib/desktop/password-rules";
 const SCRYPT = { N: 2 ** 15, r: 8, p: 1, keyLength: 64 };
 const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 

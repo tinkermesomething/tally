@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { runAction } from "@/lib/action-result";
 import { removeAppLockAction, setAppLockAction } from "@/app/settings/app-lock-actions";
+import { MIN_PASSWORD_LENGTH } from "@/lib/desktop/password-rules";
 
 type Mode = "idle" | "set" | "remove";
 
@@ -84,7 +85,7 @@ export function AppLockPanel({ enabled }: { enabled: boolean }) {
             </div>
           )}
           <div className="space-y-1">
-            <Label htmlFor="lock-new">New password (8+ characters)</Label>
+            <Label htmlFor="lock-new">New password ({MIN_PASSWORD_LENGTH}+ characters)</Label>
             <Input id="lock-new" type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
           </div>
           <div className="space-y-1">

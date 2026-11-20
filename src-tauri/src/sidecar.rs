@@ -124,6 +124,7 @@ pub fn start(app: &tauri::AppHandle) -> Result<Started, String> {
     let mut child = cmd.spawn().map_err(|e| format!("Can't start the server: {e}"))?;
 
     let started = Instant::now();
+    let mut wait = Duration::from_millis(50);
     loop {
         if healthy(port, &health_nonce) {
             return Ok(Started { child, port, launch_token });
@@ -135,7 +136,8 @@ pub fn start(app: &tauri::AppHandle) -> Result<Started, String> {
             let _ = child.kill();
             return Err(format!("The server didn't start within {}s. See {}.", STARTUP_TIMEOUT.as_secs(), log_path.display()));
         }
-        sleep(Duration::from_millis(250));
+        sleep(wait);
+        wait = (wait * 2).min(Duration::from_millis(250));
     }
 }
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubTempSystemDir } from "./helpers/system-dir";
 import { MIN_PASSWORD_LENGTH, checkNewPassword, isLockEnabled, lockFilePath, removeLock, setLockPassword, verifyLockPassword } from "@/lib/desktop/lock";
 import { sessionCookieValue } from "@/lib/desktop/gate";
 
@@ -20,8 +20,7 @@ vi.mock("@/lib/session", () => ({ requireSession: (fn: (u: unknown) => unknown) 
 
 let dir: string;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-lock-"));
-  vi.stubEnv("SYSTEM_DB_PATH", path.join(dir, "system.db"));
+  dir = stubTempSystemDir("tally-lock-");
   vi.stubEnv("TALLY_MODE", "desktop");
   vi.stubEnv("LAUNCH_TOKEN", "launch-token");
   jar.set.length = 0;

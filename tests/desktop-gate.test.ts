@@ -1,7 +1,5 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { stubTempSystemDir } from "./helpers/system-dir";
 import { ENTER_PATH, gateDecision, isAllowedHost, safeEqual, sessionCookieValue } from "@/lib/desktop/gate";
 
 const TOKEN = "t".repeat(64);
@@ -114,8 +112,7 @@ describe("/api/desktop/enter", () => {
   it("starts the window LOCKED, at the unlock screen, when an app lock is set", async () => {
     vi.stubEnv("TALLY_MODE", "desktop");
     vi.stubEnv("LAUNCH_TOKEN", TOKEN);
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-enter-"));
-    vi.stubEnv("SYSTEM_DB_PATH", path.join(dir, "system.db"));
+    stubTempSystemDir("tally-enter-");
     const { setLockPassword } = await import("@/lib/desktop/lock");
     setLockPassword("correct horse");
     const res = await call(`?t=${TOKEN}`);
