@@ -20,14 +20,16 @@ import { buildGroupColorMap, UNGROUPED } from "@/lib/group-colors";
 import { getGroupStyles } from "@/lib/db/groups";
 import { MONTH_ABBREVIATIONS as MONTHS, MONTH_NAMES } from "@/lib/months";
 import { withCurrentUser } from "@/lib/db/current-user";
+import { Tour } from "@/components/tour/tour";
+import { isDesktopMode } from "@/lib/desktop/mode";
 
 export default async function GridPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string }>;
+  searchParams: Promise<{ year?: string; month?: string; tour?: string }>;
 }) {
   return withCurrentUser(async () => {
-  const { year: yearParam, month: monthParam } = await searchParams;
+  const { year: yearParam, month: monthParam, tour: tourParam } = await searchParams;
   // "Now" is whatever budget period today's date resolves to through the
   // pay anchor (see lib/db/pay-period.ts) - not just the raw calendar
   // year/month. Once you log a pay-anchor entry that shifts the boundary
@@ -38,7 +40,7 @@ export default async function GridPage({
   // moved into the next one.
   const nowPeriod = await resolvePeriodForDate(new Date().toISOString().slice(0, 10));
   const year = yearParam ? parseInt(yearParam, 10) : nowPeriod.year;
-  const [data, years, people, { currency }, groupStyles] = await Promise.all([
+  const [data, years, people, { currency, tourSeen }, groupStyles] = await Promise.all([
     getGridData(year),
     getAvailableYears(),
     getPeopleWithBalances(),
@@ -76,6 +78,7 @@ export default async function GridPage({
           <YearSwitcher year={year} years={years} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <span data-tour="log-expense" className="inline-flex">
           <LogExpenseDialog
             categories={data.categories.flatMap((c) => [
               { id: c.id, name: c.name },
@@ -83,6 +86,8 @@ export default async function GridPage({
             ])}
             people={people.map((p) => ({ id: p.id, name: p.name }))}
           />
+          </span>
+          <span data-tour="add-income" className="inline-flex">
           <AddIncomeDialog
             incomeSources={data.incomeSources.map((s) => ({
               id: s.id,
@@ -91,11 +96,12 @@ export default async function GridPage({
             }))}
             people={people.map((p) => ({ id: p.id, name: p.name }))}
           />
+          </span>
         </div>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <div data-tour="summary-pills" className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <StatCard
             label="Budgeted"
             help="grid.budgeted"
@@ -148,6 +154,7 @@ export default async function GridPage({
         </p>
       )}
 
+      <div data-tour="grid">
       <DesktopGridTables
         categories={data.categories}
         year={year}
@@ -170,8 +177,9 @@ export default async function GridPage({
         currentMonthIndex={currentMonthIndex}
         highlightMonthIndex={nowPeriod.year === year ? nowPeriod.month - 1 : null}
       />
+      </div>
 
-      <div className="space-y-3 pb-4 md:hidden">
+      <div data-tour="grid" className="space-y-3 pb-4 md:hidden">
         <div className="flex justify-center">
           <MonthPager year={year} month={selectedMonth} />
         </div>
@@ -208,6 +216,7 @@ export default async function GridPage({
           currency={currency}
         />
       </div>
+      <Tour autoStart={!tourSeen || tourParam === "1"} desktop={isDesktopMode()} />
     </div>
   );
   });

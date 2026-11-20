@@ -150,6 +150,7 @@ export async function AppHeader() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-tour={item.href === "/review" ? "nav-review" : undefined}
                   className="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
                   {desktop && item.href === "/review" ? t(DESKTOP_REVIEW_LABEL_KEY) : t(item.labelKey)}

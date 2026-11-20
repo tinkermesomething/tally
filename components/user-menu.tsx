@@ -45,6 +45,7 @@ export function UserMenu({
             type="button"
             className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-foreground transition-colors hover:bg-accent"
             title="Account menu"
+            data-tour="user-menu"
           >
             <UserAvatar userId={userId} name={name} email={email} color={color} imageVersion={imageVersion} size={28} />
             <span className="hidden max-w-32 truncate sm:inline">{name || email}</span>
