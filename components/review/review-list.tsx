@@ -25,7 +25,10 @@ import {
   bulkIgnoreImportedTransactions,
   bulkCategorizeImportedTransactionsAsExpense,
   bulkCategorizeImportedTransactionsAsIncome,
+  createCategoryForReview,
+  createIncomeSourceForReview,
 } from "@/app/review/actions";
+import { OptionPicker } from "@/components/review/option-picker";
 
 export function ReviewList({
   transactions,
@@ -337,40 +340,26 @@ export function ReviewList({
             </>
           )}
           {allSelectedExpense && (
-            <Select value={bulkCategoryId} onValueChange={(v) => setBulkCategoryId(v ?? "")}>
-              <SelectTrigger className="w-60">
-                <SelectValue>
-                  {(value: string) =>
-                    value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionPicker
+              options={categories}
+              value={bulkCategoryId}
+              onChange={setBulkCategoryId}
+              placeholder="Choose a category"
+              newLabel="+ New category…"
+              newPlaceholder="Category name"
+              create={createCategoryForReview}
+            />
           )}
           {allSelectedIncome && (
-            <Select value={bulkIncomeSourceId} onValueChange={(v) => setBulkIncomeSourceId(v ?? "")}>
-              <SelectTrigger className="w-60">
-                <SelectValue>
-                  {(value: string) =>
-                    value ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value) : "Choose a source"
-                  }
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {incomeSources.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <OptionPicker
+              options={incomeSources}
+              value={bulkIncomeSourceId}
+              onChange={setBulkIncomeSourceId}
+              placeholder="Choose a source"
+              newLabel="+ New income source…"
+              newPlaceholder="Source name"
+              create={createIncomeSourceForReview}
+            />
           )}
           {(allSelectedExpense || allSelectedIncome) && (
             <DebtTagControl

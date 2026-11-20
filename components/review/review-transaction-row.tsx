@@ -5,13 +5,6 @@ import { Check, X, TriangleAlert, Pencil, StickyNote, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { TableRow, TableCell } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -24,7 +17,10 @@ import {
   confirmImportedTransactionIncomeMatch,
   discardImportedTransactionIncomeMatch,
   saveImportedTransactionNote,
+  createCategoryForReview,
+  createIncomeSourceForReview,
 } from "@/app/review/actions";
+import { OptionPicker } from "@/components/review/option-picker";
 import { NEW_PERSON, usePersonSelection } from "@/components/grid/person-picker";
 import type { RuleContext } from "@/components/review/rule-dialog";
 import { DebtTagControl } from "@/components/review/debt-tag-control";
@@ -429,55 +425,33 @@ export function ReviewTransactionRow({
       <TableCell>
         <div className="flex items-center gap-1.5">
         {isIncome ? (
-          <Select
+          <OptionPicker
+            options={incomeSources}
             value={incomeSourceId}
-            onValueChange={(v) => {
-              setIncomeSourceId(v ?? "");
-              // Picking a source ticks the row, so several categorized rows
-              // can be approved together without ticking each one by hand.
+            // Picking a source ticks the row, so several categorized rows
+            // can be approved together without ticking each one by hand.
+            onChange={(v) => {
+              setIncomeSourceId(v);
               if (v) onSelect(transaction.id);
             }}
-          >
-            <SelectTrigger className="w-60" title={incomeSources.find((s) => String(s.id) === incomeSourceId)?.name}>
-              <SelectValue>
-                {(value: string) =>
-                  value
-                    ? (incomeSources.find((s) => String(s.id) === value)?.name ?? value)
-                    : "Choose a source"
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {incomeSources.map((s) => (
-                <SelectItem key={s.id} value={String(s.id)}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Choose a source"
+            newLabel="+ New income source…"
+            newPlaceholder="Source name"
+            create={createIncomeSourceForReview}
+          />
         ) : (
-          <Select
+          <OptionPicker
+            options={categories}
             value={categoryId}
-            onValueChange={(v) => {
-              setCategoryId(v ?? "");
+            onChange={(v) => {
+              setCategoryId(v);
               if (v) onSelect(transaction.id);
             }}
-          >
-            <SelectTrigger className="w-60" title={categories.find((c) => String(c.id) === categoryId)?.name}>
-              <SelectValue>
-                {(value: string) =>
-                  value ? (categories.find((c) => String(c.id) === value)?.name ?? value) : "Choose a category"
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Choose a category"
+            newLabel="+ New category…"
+            newPlaceholder="Category name"
+            create={createCategoryForReview}
+          />
         )}
         <Button
           size="xs"
