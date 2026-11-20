@@ -1,5 +1,6 @@
 import { Tags } from "lucide-react";
 import { isDesktopMode } from "@/lib/desktop/mode";
+import { features } from "@/lib/features";
 import { formatSyncTime, syncSlotHours, syncTimeZone } from "@/lib/sync-schedule";
 import {
   getCategoryTree,
@@ -164,7 +165,7 @@ export default async function SettingsPage({
   const desktop = isDesktopMode();
   const requestedTab = TAB_ALIASES[tab ?? ""] ?? tab ?? "";
   // A desktop link to a tab it doesn't have (bank-sync) opens the default instead of a blank page.
-  const initialTab = SETTINGS_TABS.includes(requestedTab) && !(desktop && requestedTab === "bank-sync") ? requestedTab : "account";
+  const initialTab = SETTINGS_TABS.includes(requestedTab) && (features.bankSync || requestedTab !== "bank-sync") ? requestedTab : "account";
 
   return (
     <div className="space-y-4">
@@ -179,7 +180,7 @@ export default async function SettingsPage({
             instead of just overflowing its own fit-content box. */}
         <TabsList className="w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <TabsTrigger value="account" className="shrink-0">Account settings</TabsTrigger>
-          {!desktop && <TabsTrigger value="bank-sync" className="shrink-0">Bank sync</TabsTrigger>}
+          {features.bankSync && <TabsTrigger value="bank-sync" className="shrink-0">Bank sync</TabsTrigger>}
           <TabsTrigger value="categories" className="shrink-0">Categories</TabsTrigger>
           <TabsTrigger value="income" className="shrink-0">Income</TabsTrigger>
           <TabsTrigger value="debt" className="shrink-0">Debts</TabsTrigger>
@@ -414,7 +415,7 @@ export default async function SettingsPage({
           </div>
         </TabsContent>
 
-        {!desktop && (
+        {features.bankSync && (
         <TabsContent value="bank-sync" className="space-y-6 pt-4">
           {connected && (
             <p className="rounded-lg border border-status-good/30 bg-status-good/10 px-3 py-2 text-sm text-status-good">
@@ -522,13 +523,13 @@ export default async function SettingsPage({
 
         {me.isAdmin && (
           <TabsContent value="admin" className="space-y-6 pt-4">
-            {!desktop && (
+            {features.multiUser && (
               <div className="space-y-4">
                 <h2 className="text-sm font-medium">Users</h2>
                 <UsersPanel users={publicUsers} />
               </div>
             )}
-            {!desktop && (
+            {features.bankSync && (
               <div className="space-y-2 border-t border-border pt-4">
                 <h2 className="text-sm font-medium">GoCardless API credentials</h2>
                 <p className="text-xs text-muted-foreground">
@@ -541,7 +542,7 @@ export default async function SettingsPage({
               <h2 className="text-sm font-medium">Backup</h2>
               <BackupSettings auto={await autoBackupView()} />
             </div>
-            {!desktop && (
+            {features.multiUser && (
               <div className="space-y-2 border-t border-border pt-4">
                 <h2 className="text-sm font-medium">Household budget</h2>
                 <HouseholdAdminToggle enabled={householdEnabled} />

@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { isDesktopMode } from "@/lib/desktop/mode";
-import { isLockEnabled } from "@/lib/desktop/lock";
+import { desktopLockActive } from "@/lib/desktop/lock";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { UnlockForm } from "./unlock-form";
 
@@ -10,7 +9,7 @@ import { UnlockForm } from "./unlock-form";
 export const dynamic = "force-dynamic";
 
 export default function UnlockPage() {
-  if (!isDesktopMode() || !isLockEnabled()) redirect("/grid");
+  if (!desktopLockActive()) redirect("/grid");
   return (
     <div className="flex min-h-[70vh] items-center justify-center px-4">
       <Card className="w-full max-w-sm">

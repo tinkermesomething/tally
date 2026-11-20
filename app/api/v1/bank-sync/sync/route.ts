@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-auth";
 import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 import { syncAllBankAccounts } from "@/lib/db/bank-sync";
-import { isDesktopMode } from "@/lib/desktop/mode";
+import { features } from "@/lib/features";
 
 // GoCardless's own per-account daily call budget is the real limit (as low
 // as 4-10/day); this just stops the endpoint itself being hammered well
@@ -18,7 +18,7 @@ const WINDOW_MS = 60_000;
 // the manual trigger. If a pass is already running, this joins it rather
 // than starting another (see syncAllBankAccounts).
 export const POST = apiRoute(async (request) => {
-  if (isDesktopMode()) return NextResponse.json({ error: "Bank sync isn't available in the desktop app." }, { status: 404 });
+  if (!features.bankSync) return NextResponse.json({ error: "Bank sync isn't available in the desktop app." }, { status: 404 });
   const limit = checkRateLimit(`bank-sync:${clientIp(request)}`, MAX_CALLS_PER_WINDOW, WINDOW_MS);
   if (!limit.allowed) {
     return NextResponse.json({ error: "Too many sync requests. Try again shortly." }, { status: 429 });

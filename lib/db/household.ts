@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { isDesktopMode } from "../desktop/mode";
+import { features } from "../features";
 import { db } from "./index";
 import { getSystemConn } from "./system-connection";
 import {
@@ -25,7 +25,7 @@ const sysDb = () => getSystemConn().db;
 
 export async function isHouseholdEnabled(): Promise<boolean> {
   // "Household" is the multi-user sharing feature - meaningless with one local user.
-  if (isDesktopMode()) return false;
+  if (!features.multiUser) return false;
   const row = await sysDb().query.householdSettings.findFirst();
   return row?.enabled ?? false;
 }

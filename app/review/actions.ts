@@ -17,34 +17,29 @@ import {
   confirmPencilledIncomeMatch,
   setTransactionNote,
 } from "@/lib/db/bank-sync";
-import { addCategory, addIncomeSource } from "@/lib/db/queries";
-import { pencilInExpense, discardPencilledExpense, pencilInIncome, discardPencilledIncome } from "@/lib/db/queries";
+import { addCategory, addIncomeSource, pencilInExpense, discardPencilledExpense, pencilInIncome, discardPencilledIncome } from "@/lib/db/queries";
 import { poundsToPence } from "@/lib/money";
 
 /** "+ New category" / "+ New income source" in the review pickers: creates a
  * plain top-level one and hands back its id so the row can select it. */
-export async function createCategoryForReview(name: string) {
+function createForReview(name: string, create: (trimmed: string) => Promise<{ id: number }>) {
   return requireSession(async () => {
     const trimmed = name.trim();
     if (!trimmed) return { ok: false as const, error: "Name can't be empty." };
-    const created = await addCategory({ name: trimmed, parentId: null, groupName: null, isAnnual: false, annualMonth: null });
+    const { id } = await create(trimmed);
     revalidatePath("/review");
     revalidatePath("/grid");
     revalidatePath("/reports");
-    return { ok: true as const, id: created.id };
+    return { ok: true as const, id };
   });
 }
 
+export async function createCategoryForReview(name: string) {
+  return createForReview(name, (n) => addCategory({ name: n, parentId: null, groupName: null, isAnnual: false, annualMonth: null }));
+}
+
 export async function createIncomeSourceForReview(name: string) {
-  return requireSession(async () => {
-    const trimmed = name.trim();
-    if (!trimmed) return { ok: false as const, error: "Name can't be empty." };
-    const created = await addIncomeSource(trimmed);
-    revalidatePath("/review");
-    revalidatePath("/grid");
-    revalidatePath("/reports");
-    return { ok: true as const, id: created.id };
-  });
+  return createForReview(name, addIncomeSource);
 }
 
 export async function categorizeImportedTransaction(

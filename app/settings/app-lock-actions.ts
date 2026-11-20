@@ -3,8 +3,7 @@
 import { requireSession } from "@/lib/session";
 import { toResult, type ActionResult } from "@/lib/action-result";
 import { isDesktopMode } from "@/lib/desktop/mode";
-import { isLockEnabled, removeLock, setLockPassword, verifyLockPassword } from "@/lib/desktop/lock";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { isLockEnabled, lockAttemptError, removeLock, setLockPassword, verifyLockPassword } from "@/lib/desktop/lock";
 
 // Desktop only (the web build has real sign-in). Every change to an
 // existing lock needs the CURRENT password: a window left open on an
@@ -15,8 +14,8 @@ function requireDesktop() {
 }
 
 function requireCurrentPassword(current: string) {
-  const limit = checkRateLimit("desktop-lock-change", 5, 60_000);
-  if (!limit.allowed) throw new Error("Too many attempts. Wait a minute and try again.");
+  const tooMany = lockAttemptError("desktop-lock-change");
+  if (tooMany) throw new Error(tooMany);
   if (!verifyLockPassword(current)) throw new Error("The current password is wrong.");
 }
 

@@ -13,6 +13,7 @@ import { isHouseholdEnabled } from "@/lib/db/household";
 import { withCurrentUser } from "@/lib/db/current-user";
 import type { UserRow } from "@/lib/db/users";
 import { isDesktopMode } from "@/lib/desktop/mode";
+import { features } from "@/lib/features";
 
 // Same threshold as EXPIRY_WARNING_DAYS below - "due soon" for a bill gets
 // the same runway as "about to lapse" for a bank connection.
@@ -99,7 +100,7 @@ export async function AppHeader() {
         // producing new transactions and nobody notices until they go
         // looking. Settings is where reconnecting actually happens, so the
         // badge lives there.
-        const expiring = desktop
+        const expiring = !features.bankSync
           ? 0
           : (await getBankAccounts()).filter(
               (a) => (a.consentExpiresAt.getTime() - Date.now()) / 86_400_000 <= EXPIRY_WARNING_DAYS
@@ -171,7 +172,7 @@ export async function AppHeader() {
                   color={currentUser.avatarColor}
                   imageVersion={currentUser.avatarImageUpdatedAt ? currentUser.avatarImageUpdatedAt.getTime() : null}
                   expiringBankAccounts={expiringBankAccounts}
-                  onSignOut={desktop ? undefined : signOutAction}
+                  onSignOut={features.multiUser ? signOutAction : undefined}
                 />
               ) : (
                 // currentUser failed to resolve (see the catch above) but the

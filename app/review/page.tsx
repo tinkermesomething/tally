@@ -29,6 +29,7 @@ import { CSV_PROVIDER } from "@/lib/db/bank-sync";
 import { isCsvMapping } from "@/lib/csv-import";
 import { formatSyncTime, nextSyncSlot } from "@/lib/sync-schedule";
 import { withCurrentUser } from "@/lib/db/current-user";
+import { getTranslations } from "next-intl/server";
 import { isDesktopMode } from "@/lib/desktop/mode";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,7 @@ export default async function ReviewPage({
   searchParams: Promise<{ tab?: string; from?: string; to?: string; year?: string; month?: string }>;
 }) {
   return withCurrentUser(async () => {
+  const desktop = isDesktopMode();
   const { tab: tabParam, from, to, year: yearParam, month: monthParam } = await searchParams;
 
   // Unfiltered, regardless of tab - this is "is there anything waiting at
@@ -60,20 +62,20 @@ export default async function ReviewPage({
   // and the context is gone ("No user database is active for this
   // request" - hit this the hard way). Calling and awaiting the body here
   // keeps every DB read inside the context window.
+  const body = tab === "pending" ? await renderPendingTab({ from, to }) : await renderLoggedTab({ yearParam, monthParam });
+
   // Desktop has no bank sync, so a CSV is the only way in: the button sits in
   // the header (both tabs), because a new budget has nothing pending and opens
-  // on "Logged". The web app keeps it in the "To review" tab, as before.
-  const desktop = isDesktopMode();
-  const csvOptions = desktop ? await csvAccountOptions() : [];
-
-  const body = tab === "pending" ? await renderPendingTab({ from, to }) : await renderLoggedTab({ yearParam, monthParam });
+  // on "Logged". The web app keeps it in the "To review" tab.
+  const title = desktop ? (await getTranslations("nav"))("importReview") : "Review";
+  const csvAccounts = desktop ? toCsvAccounts(await getBankAccounts()) : [];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">{desktop ? "Import & review" : "Review"}</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         <div className="flex flex-wrap items-center gap-3">
-          {desktop && <ImportCsvDialog accounts={csvOptions} />}
+          {desktop && <ImportCsvDialog accounts={csvAccounts} />}
           <ActivityTabs tab={tab} pendingCount={pendingCount} />
         </div>
       </div>
@@ -83,8 +85,8 @@ export default async function ReviewPage({
   });
 }
 
-async function csvAccountOptions() {
-  const accounts = await getBankAccounts();
+/** What the Import CSV dialog needs to know about each account. */
+function toCsvAccounts(accounts: Awaited<ReturnType<typeof getBankAccounts>>) {
   const names = new Map(accountLabels(accounts).map((a) => [a.id, a.name]));
   return accounts.map((a) => {
     let mapping = null;
@@ -171,18 +173,7 @@ async function renderPendingTab({ from, to }: { from?: string; to?: string }) {
             {bankAccounts.length === 0 && (
               <p className="text-xs text-muted-foreground">No bank accounts linked yet.</p>
             )}
-            <ImportCsvDialog
-              accounts={bankAccounts.map((a) => {
-                let mapping = null;
-                try {
-                  const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
-                  mapping = isCsvMapping(parsed) ? parsed : null;
-                } catch {
-                  // a damaged saved mapping is ignored: the file is mapped fresh
-                }
-                return { id: a.id, name: accountName.get(a.id) ?? accountDisplayName(a), csvOnly: a.provider === CSV_PROVIDER, mapping };
-              })}
-            />
+            <ImportCsvDialog accounts={toCsvAccounts(bankAccounts)} />
           </div>
         )}
       </div>

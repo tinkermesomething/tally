@@ -25,8 +25,7 @@ import {
 } from "@/components/ui/select";
 import { logExpense } from "@/app/grid/actions";
 import { NEW_PERSON, PersonPickerField, usePersonSelection } from "@/components/grid/person-picker";
-
-const NEW_CATEGORY = "__new_category__";
+import { NEW_ITEM, useNewOrExisting } from "@/components/grid/new-or-existing";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -40,8 +39,7 @@ export function LogExpenseDialog({
   people: { id: number; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
-  const [categoryId, setCategoryId] = useState<string>("");
-  const [newCategoryName, setNewCategoryName] = useState("");
+  const category = useNewOrExisting(categories);
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState("");
@@ -52,8 +50,7 @@ export function LogExpenseDialog({
   const [pending, startTransition] = useTransition();
 
   function reset() {
-    setCategoryId("");
-    setNewCategoryName("");
+    category.reset();
     setAmount("");
     setDate(todayIso());
     setNote("");
@@ -65,19 +62,11 @@ export function LogExpenseDialog({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const pounds = (parsePounds(amount) ?? NaN);
-    if (!categoryId) {
-      setError("Pick a category, or add a new one.");
+    const target = category.resolve({ pick: "Pick a category, or add a new one.", name: "Enter a name for the new category." });
+    if ("error" in target) {
+      setError(target.error);
       return;
     }
-    const creating = categoryId === NEW_CATEGORY;
-    if (creating && !newCategoryName.trim()) {
-      setError("Enter a name for the new category.");
-      return;
-    }
-    // Typing a name that already exists means "that one", not a duplicate.
-    const existing = creating
-      ? categories.find((c) => c.name.toLowerCase() === newCategoryName.trim().toLowerCase())
-      : undefined;
     if (Number.isNaN(pounds) || pounds <= 0) {
       setError("Enter an amount greater than zero.");
       return;
@@ -95,9 +84,7 @@ export function LogExpenseDialog({
       const debtPersonId = isRepayment ? await resolvePersonId() : undefined;
       const failure = await runAction(() =>
         logExpense({
-          ...(creating && !existing
-            ? { newCategoryName }
-            : { categoryId: existing ? existing.id : parseInt(categoryId, 10) }),
+          ...("newName" in target ? { newCategoryName: target.newName } : { categoryId: target.id }),
           pounds,
           entryDate: date,
           note: note.trim() || undefined,
@@ -137,13 +124,13 @@ export function LogExpenseDialog({
           <div className="space-y-1.5">
             <Label htmlFor="expense-category">Category</Label>
             <Select
-              value={categoryId}
-              onValueChange={(value) => setCategoryId(value ?? "")}
+              value={category.value}
+              onValueChange={(value) => category.setValue(value ?? "")}
             >
               <SelectTrigger id="expense-category" className="w-full">
                 <SelectValue>
                   {(value: string) =>
-                    value === NEW_CATEGORY
+                    value === NEW_ITEM
                       ? "+ New category…"
                       : value
                         ? (categories.find((c) => String(c.id) === value)?.name ?? value)
@@ -157,14 +144,14 @@ export function LogExpenseDialog({
                     {c.name}
                   </SelectItem>
                 ))}
-                <SelectItem value={NEW_CATEGORY}>+ New category…</SelectItem>
+                <SelectItem value={NEW_ITEM}>+ New category…</SelectItem>
               </SelectContent>
             </Select>
-            {categoryId === NEW_CATEGORY && (
+            {category.creating && (
               <Input
                 placeholder="Category name, e.g. Groceries"
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
+                value={category.newName}
+                onChange={(e) => category.setNewName(e.target.value)}
                 autoFocus
               />
             )}

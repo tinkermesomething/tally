@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { systemDbPath } from "@/lib/db/system-connection";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { isDesktopMode } from "@/lib/desktop/mode";
 
 // The optional desktop app lock: a password asked for when Tally opens.
 //
@@ -22,17 +25,30 @@ const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 
 type LockRecord = { v: 1; salt: string; hash: string; N: number; r: number; p: number };
 
-/** Next to the system database, same rule lib/db/system-connection.ts uses. */
+/** Next to the system database. */
 export function lockFilePath(): string {
-  const sys = process.env.SYSTEM_DB_PATH?.trim();
-  const dir = sys ? path.dirname(sys) : path.dirname(process.env.DATABASE_PATH ?? "./config/tally.db");
-  return path.join(dir, "app-lock.json");
+  return path.join(path.dirname(systemDbPath()), "app-lock.json");
 }
 
 /** True whenever the file exists - even a damaged one. A lock that can't be
  * read must keep the app locked, never quietly open it. */
 export function isLockEnabled(): boolean {
   return fs.existsSync(lockFilePath());
+}
+
+/** Desktop with an app lock set - the only time the unlock screen means anything. */
+export function desktopLockActive(): boolean {
+  return isDesktopMode() && isLockEnabled();
+}
+
+const MAX_ATTEMPTS_PER_WINDOW = 5;
+const ATTEMPT_WINDOW_MS = 60_000;
+
+/** Counts one password attempt in `bucket`. A message when over the limit, else null.
+ * A local program can't get here without the launch token, so this is defence in
+ * depth: it just stops a script hammering the password. */
+export function lockAttemptError(bucket: string): string | null {
+  return checkRateLimit(bucket, MAX_ATTEMPTS_PER_WINDOW, ATTEMPT_WINDOW_MS).allowed ? null : "Too many attempts. Wait a minute and try again.";
 }
 
 function derive(password: string, salt: Buffer, p: Pick<LockRecord, "N" | "r" | "p">): Buffer {

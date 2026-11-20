@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import authConfig from "./auth.config";
 import { checkProfile } from "@/lib/auth-rules";
 import { DESKTOP_EMAIL, DESKTOP_NAME, DESKTOP_SUB, isDesktopMode } from "@/lib/desktop/mode";
-import { SESSION_COOKIE, safeEqual, sessionCookieValue } from "@/lib/desktop/gate";
+import { SESSION_COOKIE, hasSessionCookie } from "@/lib/desktop/gate";
 
 const allowedEmail = process.env.ALLOWED_EMAIL;
 // Which OIDC "groups" claim value counts as admin - "admin" unless the
@@ -66,22 +66,20 @@ export const { handlers, auth: authInner, signIn, signOut } = NextAuth((req) => 
   };
 });
 
-// Desktop has no sign-in, so nothing makes Auth.js produce a session - hand
-// every caller the one local user instead. The five places that call auth()
-// only check it is truthy or read user.sub.
-// Only for a window holding the full session cookie. A window still locked
-// (lib/desktop/lock.ts) - or anything without the cookie, or outside a
-// request - is signed out, so the unlock screen's layout renders no account
-// data. Middleware already refused such requests everything else.
+// Desktop has no sign-in, so nothing makes Auth.js produce a session: hand
+// every caller the one local user instead (they only check it is truthy or
+// read user.sub, which is why the cast on `auth` below is safe).
+// Only for a window holding the full session cookie. A window still locked,
+// or anything outside a request, is signed out, so the unlock screen's layout
+// renders no account data.
 async function desktopAuth() {
-  const token = process.env.LAUNCH_TOKEN;
   let cookie: string | undefined;
   try {
     cookie = (await cookies()).get(SESSION_COOKIE)?.value;
   } catch {
     return null;
   }
-  if (!token || !cookie || !safeEqual(cookie, await sessionCookieValue(token))) return null;
+  if (!(await hasSessionCookie(cookie, process.env.LAUNCH_TOKEN))) return null;
   return {
     user: { sub: DESKTOP_SUB, email: DESKTOP_EMAIL, name: DESKTOP_NAME },
     expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),

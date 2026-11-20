@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isDesktopMode } from "@/lib/desktop/mode";
-import { SESSION_COOKIE, UNLOCK_PATH, safeEqual, sessionCookieValue } from "@/lib/desktop/gate";
+import { SESSION_COOKIE, SESSION_COOKIE_OPTIONS, UNLOCK_PATH, safeEqual, sessionCookieValue } from "@/lib/desktop/gate";
 import { isLockEnabled } from "@/lib/desktop/lock";
 
 // The desktop window's first request: trades the launcher's one-time-per-run
@@ -21,6 +21,6 @@ export async function GET(request: Request) {
   // whatever origin the server thinks it is bound to.
   const locked = isLockEnabled();
   const res = new NextResponse(null, { status: 303, headers: { Location: locked ? UNLOCK_PATH : "/grid" } });
-  res.cookies.set(SESSION_COOKIE, await sessionCookieValue(expected, locked ? "locked" : "session"), { httpOnly: true, sameSite: "strict", path: "/" });
+  res.cookies.set(SESSION_COOKIE, await sessionCookieValue(expected, locked ? "locked" : "session"), SESSION_COOKIE_OPTIONS);
   return res;
 }

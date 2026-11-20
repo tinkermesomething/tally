@@ -177,6 +177,13 @@ export async function confirmPayment(input: {
   });
 }
 
+/** The name typed into a "new category" / "new income source" field. */
+function requireName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Name can't be empty.");
+  return trimmed;
+}
+
 export async function logExpense(input: {
   /** Either an existing category, or the name of a new top-level one to
    * create in the same step (the Log expense dialog's "+ New category").
@@ -200,9 +207,7 @@ export async function logExpense(input: {
       await inTransaction(async () => {
         let categoryId = input.categoryId;
         if (input.newCategoryName !== undefined) {
-          const name = input.newCategoryName.trim();
-          if (!name) throw new Error("Name can't be empty.");
-          const created = await addCategoryQuery({ name, parentId: null, groupName: null, isAnnual: false, annualMonth: null });
+          const created = await addCategoryQuery({ name: requireName(input.newCategoryName), parentId: null, groupName: null, isAnnual: false, annualMonth: null });
           categoryId = created.id;
         }
         if (categoryId === undefined) throw new Error("Pick a category.");
@@ -349,9 +354,7 @@ export async function logIncome(input: {
       await inTransaction(async () => {
         let incomeSourceId = input.incomeSourceId;
         if (input.newSourceName !== undefined) {
-          const name = input.newSourceName.trim();
-          if (!name) throw new Error("Name can't be empty.");
-          incomeSourceId = (await addIncomeSourceQuery(name)).id;
+          incomeSourceId = (await addIncomeSourceQuery(requireName(input.newSourceName))).id;
         }
         const source = incomeSourceId === undefined ? undefined : await getIncomeSource(incomeSourceId);
         if (!source) {
@@ -415,9 +418,7 @@ export async function updateIncomeAmount(input: {
 export async function createIncomeSource(name: string) {
   return requireSession(() =>
     toResult(async () => {
-      const trimmed = name.trim();
-      if (!trimmed) throw new Error("Name can't be empty.");
-      await addIncomeSourceQuery(trimmed);
+      await addIncomeSourceQuery(requireName(name));
       revalidatePath("/grid");
     })
   );
@@ -432,9 +433,7 @@ export async function createCategory(input: {
 }) {
   return requireSession(() =>
     toResult(async () => {
-      const trimmed = input.name.trim();
-      if (!trimmed) throw new Error("Name can't be empty.");
-      await addCategoryQuery({ ...input, name: trimmed });
+      await addCategoryQuery({ ...input, name: requireName(input.name) });
       revalidatePath("/grid");
       revalidatePath("/reports");
     })

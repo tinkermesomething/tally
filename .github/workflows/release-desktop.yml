@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+# A re-published release replaces a build in flight instead of racing it.
+concurrency:
+  group: release-desktop-${{ github.event.release.tag_name || inputs.release_tag }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 

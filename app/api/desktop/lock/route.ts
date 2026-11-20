@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { isDesktopMode } from "@/lib/desktop/mode";
-import { SESSION_COOKIE, UNLOCK_PATH, sessionCookieValue } from "@/lib/desktop/gate";
-import { isLockEnabled } from "@/lib/desktop/lock";
+import { SESSION_COOKIE, SESSION_COOKIE_OPTIONS, UNLOCK_PATH, sessionCookieValue } from "@/lib/desktop/gate";
+import { desktopLockActive } from "@/lib/desktop/lock";
 
 // "Lock now" (Settings > App lock): drops this window back to the unlock
 // screen. A plain redirect, not a server action - an action that changes the
@@ -12,8 +11,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const token = process.env.LAUNCH_TOKEN;
-  if (!isDesktopMode() || !token || !isLockEnabled()) return new NextResponse(null, { status: 404 });
+  if (!token || !desktopLockActive()) return new NextResponse(null, { status: 404 });
   const res = new NextResponse(null, { status: 303, headers: { Location: UNLOCK_PATH } });
-  res.cookies.set(SESSION_COOKIE, await sessionCookieValue(token, "locked"), { httpOnly: true, sameSite: "strict", path: "/" });
+  res.cookies.set(SESSION_COOKIE, await sessionCookieValue(token, "locked"), SESSION_COOKIE_OPTIONS);
   return res;
 }

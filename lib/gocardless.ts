@@ -5,7 +5,7 @@
 // restarts since re-fetching from secret_id/secret_key is free and the
 // secret itself doesn't expire.
 
-import { isDesktopMode } from "./desktop/mode";
+import { features } from "./features";
 
 const BASE_URL = "https://bankaccountdata.gocardless.com/api/v2";
 
@@ -52,7 +52,7 @@ let tokenCache: { secretId: string; token: string; expiresAt: number } | null = 
 
 async function getAccessToken(): Promise<string> {
   // Desktop is CSV-import only. Every GoCardless call goes through here, so this one check covers all of them.
-  if (isDesktopMode()) throw new Error("Bank sync isn't available in the desktop app. Import a CSV instead.");
+  if (!features.bankSync) throw new Error("Bank sync isn't available in the desktop app. Import a CSV instead.");
   // Dynamic import: this module has no other reason to touch the database
   // at all (credentials live in the shared keystore now, not a per-user
   // connection) - a plain top-level import would work too, this just keeps

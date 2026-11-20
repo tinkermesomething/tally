@@ -34,10 +34,30 @@ const enc = new TextEncoder();
  * request is from our window but reaches only the unlock screen. */
 export type CookieKind = "session" | "locked";
 
-export async function sessionCookieValue(token: string, kind: CookieKind = "session"): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", enc.encode(token), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(`tally-desktop-${kind}-v1`));
-  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+/** Set on every cookie this module's values go into: no page script can read it,
+ * and no other site's request carries it. */
+export const SESSION_COOKIE_OPTIONS = { httpOnly: true, sameSite: "strict", path: "/" } as const;
+
+// The token never changes while the server runs, so each value is computed once, not on every request.
+const cookieValues = new Map<string, Promise<string>>();
+
+export function sessionCookieValue(token: string, kind: CookieKind = "session"): Promise<string> {
+  const id = `${kind}:${token}`;
+  let value = cookieValues.get(id);
+  if (!value) {
+    value = (async () => {
+      const key = await crypto.subtle.importKey("raw", enc.encode(token), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const sig = await crypto.subtle.sign("HMAC", key, enc.encode(`tally-desktop-${kind}-v1`));
+      return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+    })();
+    cookieValues.set(id, value);
+  }
+  return value;
+}
+
+/** Does `cookie` open the whole app (not just the unlock screen)? */
+export async function hasSessionCookie(cookie: string | undefined, token: string | undefined): Promise<boolean> {
+  return !!cookie && !!token && safeEqual(cookie, await sessionCookieValue(token));
 }
 
 /** Constant-time string compare (no node:crypto in the Edge runtime). */
@@ -69,7 +89,7 @@ export async function gateDecision({ host, pathname, cookie, token, port }: Gate
   // (validated by the route itself) are the only requests that need no cookie.
   if (pathname === HEALTH_PATH || pathname === ENTER_PATH) return "allow";
   if (!cookie) return "deny";
-  if (safeEqual(cookie, await sessionCookieValue(token))) return "allow";
+  if (await hasSessionCookie(cookie, token)) return "allow";
   if (safeEqual(cookie, await sessionCookieValue(token, "locked")) && lockedMayReach(pathname)) return "allow";
   return "deny";
 }

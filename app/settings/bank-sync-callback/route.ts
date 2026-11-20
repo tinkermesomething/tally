@@ -4,14 +4,14 @@ import { getRequisition, getAccountMeta, PENDING_CONNECTION_COOKIE, type Pending
 import { linkOrRenewBankAccount } from "@/lib/db/bank-sync";
 import { resolveCurrentUser } from "@/lib/db/current-user";
 import { runWithUserDb } from "@/lib/db/context";
-import { isDesktopMode } from "@/lib/desktop/mode";
+import { features } from "@/lib/features";
 
 // Where GoCardless (or the end-user's bank) redirects back to after the
 // consent step. No query params from that redirect are trusted - see
 // PENDING_CONNECTION_COOKIE's comment - all correlation state comes from
 // the httpOnly cookie startBankConnection set before sending the user away.
 export async function GET() {
-  if (isDesktopMode()) return new NextResponse(null, { status: 404 });
+  if (!features.bankSync) return new NextResponse(null, { status: 404 });
   // NOT `new URL("...", request.url)` - request.url's origin resolved to
   // the standalone server's own bind address (0.0.0.0:3000, from the
   // Dockerfile's HOSTNAME/PORT) rather than the real public hostname, a
