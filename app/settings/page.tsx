@@ -495,6 +495,7 @@ export default async function SettingsPage({
               showDebtTab={appSettings.showDebtTab}
               showNetWorthTab={appSettings.showNetWorthTab}
               showBillsTab={appSettings.showBillsTab}
+              showHelpIcons={appSettings.showHelpIcons}
             />
           </div>
 

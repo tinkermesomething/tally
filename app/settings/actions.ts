@@ -20,6 +20,7 @@ export async function updatePreferences(input: {
   showDebtTab?: boolean;
   showNetWorthTab?: boolean;
   showBillsTab?: boolean;
+  showHelpIcons?: boolean;
 }) {
   return requireSession(async () => {
     await updateAppSettings(input);

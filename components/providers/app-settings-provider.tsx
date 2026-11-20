@@ -9,7 +9,7 @@ import type { DateFormat } from "@/lib/date-format";
  * type in lib/db/settings.ts) only ever get read server-side, when
  * building GridData or rendering the Preferences form, so they don't
  * belong in this client context at all. */
-type ClientAppSettings = { currency: string; dateFormat: DateFormat };
+type ClientAppSettings = { currency: string; dateFormat: DateFormat; showHelpIcons: boolean };
 
 const AppSettingsContext = createContext<ClientAppSettings | null>(null);
 
@@ -22,10 +22,11 @@ const AppSettingsContext = createContext<ClientAppSettings | null>(null);
 export function AppSettingsProvider({
   currency,
   dateFormat,
+  showHelpIcons,
   children,
 }: ClientAppSettings & { children: React.ReactNode }) {
   return (
-    <AppSettingsContext.Provider value={{ currency, dateFormat }}>
+    <AppSettingsContext.Provider value={{ currency, dateFormat, showHelpIcons }}>
       {children}
     </AppSettingsContext.Provider>
   );

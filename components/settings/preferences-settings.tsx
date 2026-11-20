@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
+import { buttonVariants } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,6 +27,7 @@ export function PreferencesSettings({
   showDebtTab,
   showNetWorthTab,
   showBillsTab,
+  showHelpIcons,
 }: {
   currency: string;
   dateFormat: DateFormat;
@@ -34,6 +37,7 @@ export function PreferencesSettings({
   showDebtTab: boolean;
   showNetWorthTab: boolean;
   showBillsTab: boolean;
+  showHelpIcons: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   // Local echo so the Select updates instantly instead of waiting on the
@@ -47,6 +51,7 @@ export function PreferencesSettings({
   const [localShowDebtTab, setLocalShowDebtTab] = useState(showDebtTab);
   const [localShowNetWorthTab, setLocalShowNetWorthTab] = useState(showNetWorthTab);
   const [localShowBillsTab, setLocalShowBillsTab] = useState(showBillsTab);
+  const [localShowHelpIcons, setLocalShowHelpIcons] = useState(showHelpIcons);
   const startYearOptions = [localStartYear - 1, localStartYear, localStartYear + 1].filter(
     (y, i, arr) => arr.indexOf(y) === i
   );
@@ -221,6 +226,28 @@ export function PreferencesSettings({
               startTransition(() => updatePreferences({ showBillsTab: next }));
             }}
           />
+        </div>
+      </div>
+
+      <div className="space-y-2 border-t border-border pt-4">
+        <Label>Help</Label>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">Show ? help icons</span>
+          <Switch
+            checked={localShowHelpIcons}
+            onCheckedChange={(next) => {
+              setLocalShowHelpIcons(next);
+              startTransition(() => updatePreferences({ showHelpIcons: next }));
+            }}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/grid?tour=1" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Take the tour
+          </Link>
+          <Link href="/help" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            Open the help page
+          </Link>
         </div>
       </div>
 

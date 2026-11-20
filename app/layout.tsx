@@ -51,7 +51,7 @@ export default async function RootLayout({
   // otherwise the sign-in page gets display defaults (it shows no
   // financial data anyway) rather than throwing.
   const session = await auth();
-  const { currency, dateFormat, locale } = session ? await loadSettings() : SETTINGS_DEFAULTS;
+  const { currency, dateFormat, locale, showHelpIcons } = session ? await loadSettings() : SETTINGS_DEFAULTS;
   const wide = (await cookies()).get(WIDE_COOKIE)?.value === "1";
 
   return (
@@ -62,7 +62,7 @@ export default async function RootLayout({
       <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark">
           <AccentProvider>
-            <AppSettingsProvider currency={currency} dateFormat={dateFormat}>
+            <AppSettingsProvider currency={currency} dateFormat={dateFormat} showHelpIcons={showHelpIcons}>
               {/* Auto-inherits locale/messages from i18n/request.ts (next-intl
                   4.x) - no props to thread here. A separate provider from
                   AppSettingsProvider above on purpose: that one is this app's

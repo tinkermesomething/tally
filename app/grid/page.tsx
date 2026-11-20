@@ -98,6 +98,7 @@ export default async function GridPage({
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <StatCard
             label="Budgeted"
+            help="grid.budgeted"
             value={formatPence(plannedNow, currency)}
             icon={ReceiptText}
             tone="neutral"
@@ -105,6 +106,7 @@ export default async function GridPage({
           />
           <StatCard
             label="Income"
+            help="grid.income"
             value={formatPence(wagesNow, currency)}
             icon={Banknote}
             tone="neutral"
@@ -112,6 +114,7 @@ export default async function GridPage({
           />
           <StatCard
             label="Available"
+            help="grid.available"
             value={formatPence(availableNow, currency)}
             icon={PiggyBank}
             tone={availableNow < 0 ? "critical" : "good"}
@@ -119,6 +122,7 @@ export default async function GridPage({
           />
           <StatCard
             label="Left to spend"
+            help="grid.leftToSpend"
             value={formatPence(leftToSpendNow, currency)}
             icon={Wallet}
             tone={leftToSpendNow < 0 ? "critical" : "good"}

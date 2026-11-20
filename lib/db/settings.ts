@@ -30,9 +30,13 @@ export type AppSettings = {
   showDebtTab: boolean;
   showNetWorthTab: boolean;
   showBillsTab: boolean;
+  /** The first-run tour was shown (finished or skipped). */
+  tourSeen: boolean;
+  /** Show the "?" help icons. */
+  showHelpIcons: boolean;
 };
 
-export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat, locale: DEFAULT_LOCALE };
+export const DEFAULTS = { currency: "GBP", dateFormat: "dmy" as DateFormat, locale: DEFAULT_LOCALE, showHelpIcons: true };
 
 function currentYearMonth(): { year: number; month: number } {
   const now = new Date();
@@ -59,6 +63,8 @@ export async function getAppSettings(): Promise<AppSettings> {
       showDebtTab: row.showDebtTab,
       showNetWorthTab: row.showNetWorthTab,
       showBillsTab: row.showBillsTab,
+      tourSeen: row.tourSeen,
+      showHelpIcons: row.showHelpIcons,
     };
   }
   const [created] = await db.insert(appSettings).values({}).returning();
@@ -74,6 +80,8 @@ export async function getAppSettings(): Promise<AppSettings> {
     showDebtTab: created.showDebtTab,
     showNetWorthTab: created.showNetWorthTab,
     showBillsTab: created.showBillsTab,
+    tourSeen: created.tourSeen,
+    showHelpIcons: created.showHelpIcons,
   };
 }
 
@@ -91,6 +99,8 @@ export async function updateAppSettings(input: {
   showDebtTab?: boolean;
   showNetWorthTab?: boolean;
   showBillsTab?: boolean;
+  tourSeen?: boolean;
+  showHelpIcons?: boolean;
 }) {
   if (input.currency !== undefined && !isCurrencyCode(input.currency)) {
     throw new Error(`Unrecognized currency code: "${input.currency}"`);
@@ -123,6 +133,8 @@ export async function updateAppSettings(input: {
       ...(input.showDebtTab !== undefined ? { showDebtTab: input.showDebtTab } : {}),
       ...(input.showNetWorthTab !== undefined ? { showNetWorthTab: input.showNetWorthTab } : {}),
       ...(input.showBillsTab !== undefined ? { showBillsTab: input.showBillsTab } : {}),
+      ...(input.tourSeen !== undefined ? { tourSeen: input.tourSeen } : {}),
+      ...(input.showHelpIcons !== undefined ? { showHelpIcons: input.showHelpIcons } : {}),
     })
     .where(eq(appSettings.id, row!.id));
 }

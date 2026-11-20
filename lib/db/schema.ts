@@ -385,6 +385,15 @@ export const appSettings = sqliteTable("app_settings", {
   // added later - at the END for the same physical-column-order reason
   // locale's own comment explains.
   showBillsTab: integer("show_bills_tab", { mode: "boolean" }).notNull().default(true),
+  // The first-run guided tour (components/tour). False only for an account
+  // created after the migration that added it - that migration marks every
+  // account that already existed as seen, so an upgrade never launches the
+  // tour over someone's real budget. Added at the END for the same
+  // physical-column-order reason locale's comment explains.
+  tourSeen: integer("tour_seen", { mode: "boolean" }).notNull().default(false),
+  // The "?" help icons (components/help-tip.tsx). On by default; this is
+  // the switch for people who find them noisy.
+  showHelpIcons: integer("show_help_icons", { mode: "boolean" }).notNull().default(true),
 });
 
 /** A append-only record of security-relevant events - sign-ins, failed API
