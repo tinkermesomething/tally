@@ -151,3 +151,16 @@ export async function setAutoBackupStored(json: string | null) {
   const row = await db.query.appSettings.findFirst();
   await db.update(appSettings).set({ autoBackupConfig: json }).where(eq(appSettings.id, row!.id));
 }
+
+/** The saved ingest-folder choices, as JSON (see lib/ingest-settings.ts). */
+export async function getIngestStored(): Promise<string | null> {
+  await getAppSettings(); // makes sure the row exists
+  const row = await db.query.appSettings.findFirst();
+  return row?.ingestConfig ?? null;
+}
+
+export async function setIngestStored(json: string | null) {
+  await getAppSettings();
+  const row = await db.query.appSettings.findFirst();
+  await db.update(appSettings).set({ ingestConfig: json }).where(eq(appSettings.id, row!.id));
+}

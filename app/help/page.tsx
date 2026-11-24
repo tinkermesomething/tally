@@ -25,6 +25,8 @@ function BlockView({ block }: { block: Block }) {
         ))}
       </ul>
     );
+  if ("code" in block)
+    return <pre className="overflow-x-auto rounded-lg border border-border bg-muted px-3 py-2 font-mono text-xs leading-relaxed text-foreground">{block.code}</pre>;
   if ("tip" in block) {
     const { title, tip } = HELP[block.tip];
     return (

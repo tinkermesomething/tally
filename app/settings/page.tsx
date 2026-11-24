@@ -53,6 +53,8 @@ import { restorePerson } from "@/app/debt/actions";
 import { withCurrentUser } from "@/lib/db/current-user";
 import { ManualBackup } from "@/components/settings/manual-backup";
 import { AppLockPanel } from "@/components/settings/app-lock-panel";
+import { IngestPanel, type IngestView } from "@/components/settings/ingest-panel";
+import { ingestStatus } from "@/lib/ingest-run";
 import { isLockEnabled } from "@/lib/desktop/lock";
 import { AvatarPicker } from "@/components/settings/avatar-picker";
 import { UsersPanel, type PublicUser } from "@/components/settings/users-panel";
@@ -508,6 +510,14 @@ export default async function SettingsPage({
             />
           </div>
 
+          <div className="space-y-2 border-t border-border pt-4">
+            <h2 className="text-sm font-medium">
+              Ingest folder
+              <span className="ml-1 inline-flex align-middle"><HelpTip id="settings.ingest" /></span>
+            </h2>
+            <IngestPanel view={await ingestView(me.email)} />
+          </div>
+
           {desktop && (
             <div className="space-y-2 border-t border-border pt-4">
               <h2 className="text-sm font-medium">App lock</h2>
@@ -590,4 +600,13 @@ async function autoBackupView(): Promise<AutoBackupView> {
     lastError: s.lastError,
     files: s.files.map((f) => ({ name: f.name, size: f.size, at: formatSyncTime(f.modifiedAt) })),
   };
+}
+
+/** What the Ingest folder section shows, with file times already formatted
+ * (in the app's time zone, so the browser's own zone can't disagree). */
+async function ingestView(email: string): Promise<IngestView> {
+  const s = await ingestStatus(email);
+  const base = { desktop: s.desktop, on: s.on, dir: s.dir, savedDir: s.savedDir, suggestion: s.suggestion, problem: s.problem };
+  if (s.folder !== "ok") return { ...base, folder: s.folder, ready: 0, waiting: [], strays: [], recent: [] };
+  return { ...base, folder: "ok", ready: s.ready, waiting: s.waiting, strays: s.strays, recent: s.recent.map((r) => ({ ...r, at: formatSyncTime(r.at) })) };
 }

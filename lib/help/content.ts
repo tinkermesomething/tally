@@ -57,6 +57,11 @@ export const HELP = {
     tip: "Automatic backups need a password so they are encrypted. Without one, Tally makes no automatic backups.",
     learnMore: "desktop",
   },
+  "settings.ingest": {
+    title: "Ingest folder",
+    tip: "Drop a bank CSV into a folder named after the account, and Tally imports it for you. Import one file by hand first, so Tally learns that account's columns.",
+    learnMore: "ingest",
+  },
   "review.tabs": {
     title: "To review and Logged",
     tip: "To review: transactions waiting for a category. Logged: everything already recorded.",

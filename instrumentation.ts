@@ -24,6 +24,9 @@ export async function register() {
     const { startAutoBackup } = await import("./lib/auto-backup");
     startAutoBackup();
 
+    const { startIngest } = await import("./lib/ingest-run");
+    startIngest();
+
     const { enterUserDb } = await import("./lib/db/context");
     const { pruneAuditLog } = await import("./lib/audit");
     enterUserDb(getLegacyConn());

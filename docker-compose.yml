@@ -6,6 +6,11 @@ services:
       - .env
     volumes:
       - ./data:/app/config
+      # Ingest folder (optional): users drop bank CSVs here. One subfolder per
+      # user, named with their email in lowercase. See the README.
+      - ./ingest:/app/ingest
+    environment:
+      INGEST_DIR: /app/ingest
     ports:
       - "3000:3000"
     restart: unless-stopped

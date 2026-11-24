@@ -26,6 +26,14 @@ export type CsvMapping = {
   payeeCols: number[];
   /** Optional column holding the bank's own transaction id. */
   idCol: number | null;
+  /** Optional column of fees the bank takes on top of the amount (Revolut,
+   * Wise). A fee always lowers the balance, whatever sign the file uses.
+   * Absent on mappings saved before this existed. */
+  feeCol?: number | null;
+  /** The file's column names and count when this mapping was saved. Lets a
+   * later file be checked against the layout the person confirmed. */
+  headers?: string[];
+  columns?: number;
 };
 
 export type ParsedCsvRow = {
@@ -38,6 +46,9 @@ export type ParsedCsvRow = {
 };
 
 export type CsvRowError = { line: number; reason: string };
+
+/** A line with nothing to import (a bank's fee note, say). Not a sign the layout changed. */
+export const ZERO_AMOUNT_REASON = "The amount is zero.";
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
@@ -80,8 +91,9 @@ export function parseDate(raw: string, format: DateFormat = "dmy"): string | nul
 
 /** Looks at the date cells to decide day-first vs month-first. A first part
  * above 12 means day-first; a second part above 12 means month-first;
- * otherwise it is genuinely ambiguous and defaults to day-first (UK). */
-export function detectDateFormat(values: string[]): { format: DateFormat; ambiguous: boolean } {
+ * otherwise it is genuinely ambiguous and follows `preferred` (the person's
+ * date setting), day-first if that is not month-first. */
+export function detectDateFormat(values: string[], preferred: DateFormat = "dmy"): { format: DateFormat; ambiguous: boolean } {
   let dayFirst = false;
   let monthFirst = false;
   let iso = false;
@@ -101,16 +113,29 @@ export function detectDateFormat(values: string[]): { format: DateFormat; ambigu
   if (dayFirst && !monthFirst) return { format: "dmy", ambiguous: false };
   if (monthFirst && !dayFirst) return { format: "mdy", ambiguous: false };
   if (numeric === 0) return { format: iso ? "ymd" : "dmy", ambiguous: false };
-  return { format: "dmy", ambiguous: true };
+  // Genuinely ambiguous: the person's own date setting is the best hint.
+  return { format: preferred === "mdy" ? "mdy" : "dmy", ambiguous: true };
 }
 
-/** Reads one amount cell into signed pence, or null. Understands £/$/€,
- * thousands separators, a decimal comma ("12,50"), (negative) brackets and a
- * trailing minus. Works on the digits as text, never through floats. */
+/** Reads one amount cell into signed pence, or null. Understands £/$/€
+ * and currency codes ("GBP 12.50"), thousands separators (1,234.50, 1.234,50,
+ * 1 234,50, 1'234.50), a decimal comma ("12,50"), (negative) brackets, a
+ * trailing minus, a unicode minus and DR/CR suffixes. Works on the digits as text, never through floats. */
+const CURRENCY_CODE = "(?:GBP|USD|EUR|CHF|CAD|AUD|NZD|JPY|SEK|NOK|DKK|PLN|CZK|HUF|RON|BGN|INR|ZAR|HKD|SGD|AED|TRY|MXN|BRL)";
+const CODE_BEFORE = new RegExp(`^${CURRENCY_CODE}\\s*(?=[-+(\\d.,])`, "i");
+const CODE_AFTER = new RegExp(`(?<=[\\d)])\\s*${CURRENCY_CODE}$`, "i");
+
 export function parseAmount(raw: string): number | null {
-  let text = raw.replace(/[£$€\s ]/g, "").replace(/^\+/, "");
-  if (!text) return null;
+  let text = raw.replace(/[\u2212\u2013\u2014]/g, "-").replace(/[£$€'\u2019]/g, "").trim();
+  text = text.replace(CODE_BEFORE, "").replace(CODE_AFTER, "");
   let negative = false;
+  const side = /(?<=[\d)])\s*(CR|DR)\.?$/i.exec(text); // "12.50 DR" = money out, "12.50 CR" = money in
+  if (side) {
+    negative = side[1].toUpperCase() === "DR";
+    text = text.slice(0, side.index);
+  }
+  text = text.replace(/\s/g, "").replace(/^\+/, "");
+  if (!text) return null;
   if (/^\(.*\)$/.test(text)) {
     negative = true;
     text = text.slice(1, -1);
@@ -178,7 +203,13 @@ export function mapCsvRows(text: string, mapping: CsvMapping): { rows: ParsedCsv
       if (amount === null) return void errors.push({ line, reason: `Can't read the amount "${col(cells, mapping.amountCol)}".` });
     }
     if (mapping.flipSign) amount = -amount;
-    if (amount === 0) return void errors.push({ line, reason: "The amount is zero." });
+    const feeText = col(cells, mapping.feeCol ?? null);
+    if (feeText) {
+      const fee = parseAmount(feeText);
+      if (fee === null) return void errors.push({ line, reason: `Can't read the fee "${feeText}".` });
+      amount -= Math.abs(fee);
+    }
+    if (amount === 0) return void errors.push({ line, reason: ZERO_AMOUNT_REASON });
 
     const payeeRaw = mapping.payeeCols
       .map((c) => col(cells, c))
@@ -198,14 +229,38 @@ const looksLikeDateHeader = /date|time|completed|posted|booking|started/i;
 const amountHeader = /^(amount|value|total|sum)\b|\bamount\b/i;
 const inHeader = /paid in|money in|credit|deposit|received|\bin$/i;
 const outHeader = /paid out|money out|debit|withdraw|spent|\bout$/i;
-const payeeHeader = /description|payee|merchant|details|narrative|name|counterparty|reference|memo|transaction$/i;
-const idHeader = /(^|\b)(id|ref(erence)? ?(no|number)?|transaction id|tx ?id)\b/i;
+const payeeHeader = /description|payee|merchant|narrative|name|counter ?party|reference|memo|transaction$/i;
+// "Details" is a weaker hint: some banks use it for the type (Chase: DEBIT / CREDIT).
+const payeeWeakHeader = /details/i;
+const feeHeader = /^fees?\b|\bfees?$/i;
+// A real ID, not a free-text "Reference" (Starling, N26: "Rent", "Salary"), which repeats.
+const idHeader = /\bid$|^id\b|transaction id|\btx ?id\b|\bref(erence)? ?(no\.?|number|id)\b/i;
 
 /** A sensible starting mapping for any file - guessed from the header names
  * if there are any, else from what the columns contain - for the person to
  * confirm or change on the mapping screen. */
-export function guessMapping(text: string, delimiter: Delimiter): CsvMapping {
-  const all = parseCsv(text, delimiter);
+/** How many lines at the top are a title or account summary rather than the
+ * table: the table starts at the first line with the width most lines have. */
+export function detectSkipRows(all: string[][]): number {
+  const head = all.slice(0, 40);
+  const widths = new Map<number, number>();
+  for (const r of head) widths.set(r.length, (widths.get(r.length) ?? 0) + 1);
+  let width = 0;
+  let most = 0;
+  for (const [w, n] of widths) {
+    if (w >= 2 && (n > most || (n === most && w > width))) {
+      width = w;
+      most = n;
+    }
+  }
+  if (most < 2) return 0;
+  return Math.max(0, head.findIndex((r) => r.length === width));
+}
+
+export function guessMapping(text: string, delimiter: Delimiter, preferredDates: DateFormat = "dmy"): CsvMapping {
+  const everything = parseCsv(text, delimiter);
+  const skipRows = detectSkipRows(everything);
+  const all = everything.slice(skipRows);
   const width = Math.max(1, ...all.map((r) => r.length));
   const first = all[0] ?? [];
   const sample = all.slice(1, 40);
@@ -235,18 +290,26 @@ export function guessMapping(text: string, delimiter: Delimiter): CsvMapping {
     inCol = 0;
     outCol = 0;
   }
-  let payeeCol = names.findIndex((n, c) => c !== dateCol && c !== amountCol && c !== inCol && c !== outCol && payeeHeader.test(n));
+  const free = (c: number) => c !== dateCol && c !== amountCol && c !== inCol && c !== outCol;
+  let payeeCol = names.findIndex((n, c) => free(c) && payeeHeader.test(n));
+  if (payeeCol < 0) payeeCol = names.findIndex((n, c) => free(c) && payeeWeakHeader.test(n));
   if (payeeCol < 0) {
     const used = new Set([dateCol, amountCol, inCol, outCol]);
     const textLen = (c: number) => rows.reduce((s, r) => s + (numScore(c, [r]) === 0 ? col(r, c).length : 0), 0);
     payeeCol = Array.from({ length: width }, (_, c) => c).filter((c) => !used.has(c)).sort((a, b) => textLen(b) - textLen(a))[0] ?? 0;
   }
-  const idc = names.findIndex((n, c) => c !== payeeCol && idHeader.test(n));
-  const { format } = detectDateFormat(rows.map((r) => col(r, dateCol)));
+  let idc = names.findIndex((n, c) => c !== payeeCol && idHeader.test(n));
+  if (idc >= 0) {
+    // An ID that repeats would make different transactions look like one.
+    const ids = (hasHeader ? all.slice(1) : all).map((r) => col(r, idc).trim()).filter(Boolean);
+    if (ids.length === 0 || new Set(ids).size !== ids.length) idc = -1;
+  }
+  const feec = split ? -1 : names.findIndex((n, c) => c !== dateCol && c !== amountCol && c !== payeeCol && feeHeader.test(n) && numScore(c, rows) > 0);
+  const { format } = detectDateFormat(rows.map((r) => col(r, dateCol)), preferredDates);
 
   return {
     delimiter,
-    skipRows: 0,
+    skipRows,
     hasHeader,
     dateCol,
     dateFormat: format,
@@ -257,7 +320,46 @@ export function guessMapping(text: string, delimiter: Delimiter): CsvMapping {
     flipSign: false,
     payeeCols: [Math.max(0, payeeCol)],
     idCol: idc >= 0 ? idc : null,
+    feeCol: feec >= 0 ? feec : null,
   };
+}
+
+const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** The columns a mapping actually reads. */
+export function usedColumns(m: CsvMapping): number[] {
+  const cols = [m.dateCol, ...(m.amountMode === "split" ? [m.inCol, m.outCol] : [m.amountCol]), ...m.payeeCols];
+  if (m.feeCol != null) cols.push(m.feeCol);
+  if (m.idCol !== null) cols.push(m.idCol);
+  return [...new Set(cols)].sort((a, b) => a - b);
+}
+
+/** What a mapping must remember so a later file can be compared with the one it was confirmed on. */
+export function layoutOf(text: string, m: CsvMapping): Pick<CsvMapping, "headers" | "columns"> {
+  const t = splitTable(text, m);
+  return { headers: t.headers, columns: t.columns };
+}
+
+export type LayoutStatus = { state: "ok" } | { state: "unknown" } | { state: "changed"; reason: string };
+
+/** Is this file laid out like the one the mapping was confirmed on? A bank
+ * that adds, drops or reorders columns would make an old mapping read the
+ * wrong ones, and the numbers can still parse - so the names of the columns
+ * the mapping reads must match. Extra columns it does not read are fine.
+ * "unknown" is a mapping saved before layouts were remembered. */
+export function layoutStatus(text: string, m: CsvMapping): LayoutStatus {
+  if (!m.headers || m.columns === undefined) return { state: "unknown" };
+  const t = splitTable(text, m);
+  if (!m.hasHeader) {
+    return t.columns === m.columns ? { state: "ok" } : { state: "changed", reason: `The file has ${t.columns} columns. It had ${m.columns} when this account was set up.` };
+  }
+  const name = (h: string[], c: number) => (h[c] ? `"${h[c]}"` : "nothing");
+  for (const c of usedColumns(m)) {
+    if (norm(t.headers[c] ?? "") !== norm(m.headers[c] ?? "")) {
+      return { state: "changed", reason: `Column ${c + 1} was ${name(m.headers, c)} when this account was set up. In this file it is ${name(t.headers, c)}.` };
+    }
+  }
+  return { state: "ok" };
 }
 
 export function isCsvMapping(value: unknown): value is CsvMapping {
@@ -277,6 +379,9 @@ export function isCsvMapping(value: unknown): value is CsvMapping {
     typeof m.flipSign === "boolean" &&
     Array.isArray(m.payeeCols) &&
     m.payeeCols.every((c) => Number.isInteger(c)) &&
-    (m.idCol === null || Number.isInteger(m.idCol))
+    (m.idCol === null || Number.isInteger(m.idCol)) &&
+    (m.feeCol === undefined || m.feeCol === null || Number.isInteger(m.feeCol)) &&
+    (m.headers === undefined || (Array.isArray(m.headers) && m.headers.every((h) => typeof h === "string"))) &&
+    (m.columns === undefined || Number.isInteger(m.columns))
   );
 }

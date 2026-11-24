@@ -125,6 +125,7 @@ It's built for one household (or one person) at a time, run on hardware you own.
 - **Reports**: category spend grouped and charted by year/month - budgeted vs. spent, compare (its total counts overspend only, so a saving elsewhere can't hide an overspend), trend, variance - exportable to PDF (landscape by default) for the whole page or a single panel
 - **Bank sync** (EU/UK only - see above): connects real accounts via GoCardless Bank Account Data (one shared credential pair, admin-managed in Settings > Admin), stages imported transactions for review, auto-categorizes via explicit rules plus a learned-pattern fallback, flags possible duplicates against manual entries (suggestion only, never automatic); unsettled pending transactions can be "pencilled in" as a guess before they clear
 - **CSV import**: for any account GoCardless can't reach - including every bank outside the EU/UK - or for backfilling history
+- **Ingest folder**: drop a bank CSV into a folder named after the account and Tally imports it, when the app opens (desktop) or every 15 minutes (self-hosted). See [Ingest folder](#ingest-folder)
 - **Backups**: automatic scheduled backups (admin-configured folder/password), plus every account gets its own scoped "download/restore my data" pair
 - **Accounts**: invite people by email. The very first admin is whoever first signs in with the address set as `ALLOWED_EMAIL` - that account is permanent and can never be disabled by anyone, even another admin, so a config mistake elsewhere can't lock everyone out. Anyone else becomes an admin only if your OIDC provider puts them in a group claim called `admin` (configurable via `OIDC_ADMIN_GROUP` if you already use that name for something else; optional either way - most single-household setups never need this); admin status is re-checked on every sign-in, so a group change at the provider takes effect on that person's next login. Admins can also disable/delete an account (a non-admin can delete their own; an admin can't self-delete) and re-link a broken OIDC identity; a profile picture is generated from initials by default, or upload/link your own image (10MB cap)
 - **Token-authed API** (see [API.md](API.md)) for a script or agent to read/write budget data without a browser session
@@ -156,6 +157,34 @@ The compose file above publishes port 3000 on every network interface, same as a
 Migrations run automatically on boot - no separate migrate step needed, including on first run.
 
 **On OIDC providers:** auth is built against [pocket-id](https://github.com/pocket-id/pocket-id) and tested only against it - that's the one the comments in `auth.config.ts` reference by name. The flow underneath (authorization code + PKCE, a `sub`/`email`/`groups` claim) is standard OIDC, so Authentik, Authelia, Keycloak, and similar should work, but none of them have actually been tried. If you use one of those and hit a snag, an issue with what broke is genuinely useful - this just hasn't been verified yet.
+
+### Ingest folder
+
+Instead of importing each bank file by hand, drop it into a folder and Tally picks it up. It works the same on the desktop app and on a server.
+
+1. Import one file for the account by hand (Review > Import CSV). This saves that account's columns.
+2. Drop later files into a subfolder named exactly like the account (case and spacing don't matter).
+3. Tally imports them and moves each file into `processed/`. A file it can't read goes to `failed/`, with a `.txt` note saying why. Nothing is ever deleted.
+
+```
+ingest/
+  ann@example.com/        <- self-hosted only: one folder per user, made by you
+    Monzo/                <- the account called Monzo
+      october.csv
+    processed/
+    failed/
+```
+
+On a server you make the user folders. The compose file maps `./ingest` to `/app/ingest` and sets `INGEST_DIR`. Name each user's folder with their email address in lowercase, and let the container user (uid 1000) write to it, as with `./data`:
+
+```
+mkdir -p ingest/ann@example.com
+chown -R 1000:1000 ingest
+```
+
+Before it imports a file, Tally checks that its columns still look like the last file you imported by hand for that account. If the bank has reordered or renamed them, the file goes to `failed/` with a note instead of importing wrong numbers.
+
+Users can't choose their folder, so nobody can read another person's files. Settings > Account settings > Ingest folder shows each user their path, what is waiting and what happened to recent files. On the desktop app you choose the folder in the same place.
 
 ## Desktop app
 

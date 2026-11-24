@@ -7,6 +7,8 @@ export type Block =
   | { p: string }
   | { steps: string[] }
   | { bullets: string[] }
+  /** Monospace, for a folder layout or a path. */
+  | { code: string }
   | { tip: HelpId }
   | { action: "tour" };
 
@@ -98,6 +100,101 @@ export const GUIDE: Section[] = [
       },
       { tip: "review.importCsv" },
       { tip: "review.duplicates" },
+      {
+        bullets: [
+          "Tally reads UTF-8, Windows-1252 (older UK and EU exports) and Excel's Unicode text. Commas, semicolons, tabs and pipes all work.",
+          "A title or account summary above the table is skipped for you. Check the Lines to skip box if the preview looks wrong.",
+          "If your bank puts fees in their own column (Revolut does), pick it under Fee column. The fee is taken off the amount.",
+          "If your bank shows spending as positive numbers (credit cards often do), tick the flip-the-sign box. The preview shows + for money in and − for money out, so check that first.",
+          "Dates like 03/04/2026 can be read two ways. When the file can't tell, Tally follows your Date format setting and says so.",
+          "Tally remembers the columns for each account. If your bank later changes its file layout, Tally notices, shows you the columns again and asks you to check them.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ingest",
+    title: "Drop a CSV into a folder",
+    blocks: [
+      { p: "Instead of importing each bank file by hand, you can drop it into a folder. Tally picks it up and imports it for you." },
+      {
+        steps: [
+          "Import one file for the account by hand: Review > Import CSV. This teaches Tally which columns hold the date, amount and payee for that account, and what the file looks like. Do this once per account. If you imported by hand before version 5.2, do it once more.",
+          "In your ingest folder, make a subfolder with the same name as the account, for example Monzo.",
+          "Drop the bank's CSV file into that subfolder.",
+          "Wait for the next check, or click Check now in Settings > Account settings > Ingest folder.",
+          "The new transactions appear under To review, the same as any import.",
+        ],
+      },
+      { p: "The subfolder name picks the account. This is how the folders look:" },
+      {
+        code: [
+          "ingest folder/",
+          "  Monzo/               <- the account called Monzo",
+          "    october.csv        <- drop files here",
+          "  Amex/                <- the account called Amex",
+          "    statement.csv",
+          "  processed/           <- Tally moves imported files here",
+          "  failed/              <- and files it could not read, with a .txt note",
+        ].join("\n"),
+      },
+      { tip: "settings.ingest" },
+      {
+        bullets: [
+          "Tally never guesses the account from the file. Only the subfolder name counts. Capital letters and extra spaces don't matter: monzo and Monzo are the same account. If you gave the account a nickname (an alias), use the nickname.",
+          "A file in the wrong place is left alone and is not imported. That means: a CSV dropped straight into the ingest folder, a subfolder with no matching account, or an account you have not imported by hand yet. Settings shows each one as waiting, with the reason.",
+          "Imported files move to processed/. Files Tally can't read move to failed/, with a .txt note next to each that says why. Tally never deletes a file.",
+          "A file is all or nothing. If one line can't be read, nothing is imported from that file. Lines with an amount of zero are the only exception: they are skipped and counted.",
+          "Tally checks that a file looks like the last one you imported by hand for that account. If the bank has moved or renamed the columns Tally reads, the file goes to failed/ with a note saying which column changed. Import it by hand once. Tally then learns the new layout.",
+          "Dropping the same file twice is safe. Transactions that already exist are skipped.",
+          "Rows that look like a transaction you already have are imported and marked with a warning in To review, the same as a manual import.",
+          "Only .csv files are read, and only one level down (ingest folder/account/file.csv). Files up to 10 MB.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ingest-desktop",
+    title: "Ingest folder: desktop setup",
+    only: "desktop",
+    blocks: [
+      {
+        bullets: [
+          "Choose the folder in Settings > Account settings > Ingest folder and switch it on. Pick any folder you like, and keep it out of iCloud, OneDrive and Dropbox.",
+          "Tally checks once, a few seconds after the app opens. It does not watch the folder while the app is open. Click Check now to check at any time.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ingest-web",
+    title: "Ingest folder: server setup",
+    only: "web",
+    blocks: [
+      {
+        steps: [
+          "The administrator maps one folder into the container, and sets INGEST_DIR to its path inside the container. docker-compose.yml has an example line: ./ingest:/app/ingest.",
+          "The administrator makes one subfolder per user, named with that user's email address in lowercase. Tally never creates these folders itself.",
+          "Each user then makes account subfolders inside their own folder, as described above.",
+        ],
+      },
+      {
+        code: [
+          "ingest/",
+          "  ann@example.com/     <- Ann's folder, made by the administrator",
+          "    Monzo/             <- Ann's account called Monzo",
+          "      october.csv",
+          "  bob@example.com/     <- Bob's folder",
+          "    Amex/",
+        ].join("\n"),
+      },
+      {
+        bullets: [
+          "You can't choose the folder yourself. If you could, one user could point at another user's folder and import their files.",
+          "Tally checks every 15 minutes. Check now does it straight away.",
+          "The Tally container needs permission to write in the folders, because it moves files into processed/ and failed/.",
+        ],
+      },
     ],
   },
   {

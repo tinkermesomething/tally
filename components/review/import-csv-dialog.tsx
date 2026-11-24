@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DELIMITERS, detectDelimiter, type Delimiter } from "@/lib/csv";
-import { guessMapping, mapCsvRows, splitTable, type CsvMapping } from "@/lib/csv-import";
+import { decodeCsv } from "@/lib/csv-decode";
+import { detectDateFormat, guessMapping, layoutOf, layoutStatus, mapCsvRows, splitTable, type CsvMapping } from "@/lib/csv-import";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -42,6 +43,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
   const [planError, setPlanError] = useState<string | null>(null);
   const [result, setResult] = useState<CsvImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [layoutNote, setLayoutNote] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
   const planRequest = useRef(0);
@@ -59,21 +61,28 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     setPlanError(null);
     setResult(null);
     setError(null);
+    setLayoutNote(null);
   }
 
-  /** The account's saved mapping when this file looks like the same layout
-   * (same header row); otherwise a fresh guess. */
+  /** The account's saved mapping when this file is laid out like the one it
+   * was confirmed on; otherwise a fresh guess, with a note saying why. */
   function chooseMapping(content: string, acct: CsvAccountOption | null): CsvMapping {
     const delimiter = detectDelimiter(content);
     const saved = acct?.mapping;
+    setLayoutNote(null);
     if (saved) {
-      const probe = splitTable(content, { ...saved });
-      if (!saved.hasHeader || probe.headers.length > 0) {
-        const check = mapCsvRows(content, saved);
-        if (check.rows.length > 0 && check.errors.length <= check.rows.length) return saved;
+      const layout = layoutStatus(content, saved);
+      if (layout.state === "changed") {
+        setLayoutNote(`This file is laid out differently from the last one imported into this account. ${layout.reason} Check the columns below.`);
+      } else {
+        const probe = splitTable(content, { ...saved });
+        if (!saved.hasHeader || probe.headers.length > 0) {
+          const check = mapCsvRows(content, saved);
+          if (check.rows.length > 0 && check.errors.length <= check.rows.length) return saved;
+        }
       }
     }
-    return guessMapping(content, delimiter);
+    return guessMapping(content, delimiter, dateFormat);
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -82,7 +91,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     setError(null);
     setPlan(null);
     if (file.size > MAX_BYTES) return setError("That file is over 8 MB. Split it and import in parts.");
-    const content = await file.text();
+    const content = decodeCsv(new Uint8Array(await file.arrayBuffer())).text;
     if (!content.trim()) return setError("That file is empty.");
     setFileName(file.name);
     setText(content);
@@ -100,6 +109,10 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
   const table = useMemo(() => (text !== null && mapping ? splitTable(text, mapping) : null), [text, mapping]);
   const columns = table?.columns ?? 0;
   const headers = table?.headers ?? [];
+  const datesAmbiguous = useMemo(
+    () => !!table && !!mapping && mapping.dateFormat !== "ymd" && detectDateFormat(table.body.map((r) => r[mapping.dateCol] ?? "")).ambiguous,
+    [table, mapping],
+  );
 
   // Live "what would happen" from the server, debounced, newest answer wins.
   const rowsKey = mapped ? `${mapped.rows.length}|${mapped.rows[0]?.bookingDate}|${mapped.rows.at(-1)?.amountPence}|${accountId}` : "";
@@ -141,7 +154,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
         newAccountName: newName,
         transactions: mapped.rows.map(({ bookingDate, amountPence, payeeRaw, idHint }) => ({ bookingDate, amountPence, payeeRaw, idHint })),
         duplicatePolicy: policy,
-        mapping,
+        mapping: { ...mapping, ...layoutOf(text ?? "", mapping) },
       });
       if (!res.ok) return setError(res.error);
       setResult(res.result);
@@ -228,13 +241,18 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
               </div>
             </div>
 
+            {layoutNote && (
+              <p className="rounded-lg border border-border bg-secondary p-3 text-sm" data-testid="csv-layout-changed">
+                {layoutNote}
+              </p>
+            )}
             {mapping && mapped && table && (
               <>
                 <div className="space-y-3 rounded-lg border border-border p-3" data-testid="csv-mapping">
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="space-y-1">
                       <Label htmlFor="csv-delim">Separator</Label>
-                      <select id="csv-delim" className={selectClass} value={mapping.delimiter} onChange={(e) => text !== null && setMapping(guessMapping(text, e.target.value as Delimiter))}>
+                      <select id="csv-delim" className={selectClass} value={mapping.delimiter} onChange={(e) => text !== null && setMapping(guessMapping(text, e.target.value as Delimiter, dateFormat))}>
                         {DELIMITERS.map((d) => (
                           <option key={d.value} value={d.value}>{d.label}</option>
                         ))}
@@ -264,10 +282,22 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                         <option value="mdy">March 4 (month first)</option>
                         <option value="ymd">Year first</option>
                       </select>
+                      {datesAmbiguous && (
+                        <p className="text-xs text-muted-foreground" data-testid="csv-dates-ambiguous">
+                          Every date here could be read either way, so Tally follows your date setting. Check the dates in the preview.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="csv-id">Bank&apos;s own ID column (optional)</Label>
                       <select id="csv-id" className={selectClass} value={mapping.idCol ?? ""} onChange={(e) => set({ idCol: e.target.value === "" ? null : parseInt(e.target.value, 10) })}>
+                        <option value="">None</option>
+                        {Array.from({ length: columns }, (_, i) => <option key={i} value={i}>{colLabel(headers, i)}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="csv-fee">Fee column (optional)</Label>
+                      <select id="csv-fee" className={selectClass} value={mapping.feeCol ?? ""} onChange={(e) => set({ feeCol: e.target.value === "" ? null : parseInt(e.target.value, 10) })}>
                         <option value="">None</option>
                         {Array.from({ length: columns }, (_, i) => <option key={i} value={i}>{colLabel(headers, i)}</option>)}
                       </select>

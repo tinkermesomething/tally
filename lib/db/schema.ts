@@ -394,6 +394,11 @@ export const appSettings = sqliteTable("app_settings", {
   // The "?" help icons (components/help-tip.tsx). On by default; this is
   // the switch for people who find them noisy.
   showHelpIcons: integer("show_help_icons", { mode: "boolean" }).notNull().default(true),
+  // JSON of the ingest-folder choices (lib/ingest-settings.ts): the folder
+  // on desktop, and the on/off switch. Null = nothing chosen. No backfill:
+  // null already means "off" on desktop and "on, if the admin mapped
+  // INGEST_DIR" on a server, which is right for every existing account.
+  ingestConfig: text("ingest_config"),
 });
 
 /** A append-only record of security-relevant events - sign-ins, failed API
