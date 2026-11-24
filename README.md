@@ -162,7 +162,7 @@ Migrations run automatically on boot - no separate migrate step needed, includin
 
 Instead of importing each bank file by hand, drop it into a folder and Tally picks it up. It works the same on the desktop app and on a server.
 
-1. Import one file for the account by hand (Review > Import CSV). This saves that account's columns.
+1. Import one file for the account by hand (Import CSV on the Review page). This saves that account's columns.
 2. Drop later files into a subfolder named exactly like the account (case and spacing don't matter).
 3. Tally imports them and moves each file into `processed/`. A file it can't read goes to `failed/`, with a `.txt` note saying why. Nothing is ever deleted.
 

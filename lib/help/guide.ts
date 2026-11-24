@@ -91,7 +91,7 @@ export const GUIDE: Section[] = [
       {
         steps: [
           "Download a CSV file from your bank's website.",
-          "Open the Review page (Import & review on desktop) and click Import CSV.",
+          "Open the Review page (Import & review on desktop) and click Import CSV. On the web app the button is under the To review tab.",
           "Choose the account, or create a new one, then choose the file.",
           "Check the columns: date, amount and payee. A preview shows exactly what will be imported, and nothing is saved until you press Import.",
           "If some rows look like transactions you already have, choose to import them with a warning or to skip them.",
@@ -120,7 +120,7 @@ export const GUIDE: Section[] = [
       { p: "Instead of importing each bank file by hand, you can drop it into a folder. Tally picks it up and imports it for you." },
       {
         steps: [
-          "Import one file for the account by hand: Review > Import CSV. This teaches Tally which columns hold the date, amount and payee for that account, and what the file looks like. Do this once per account. If you imported by hand before version 5.2, do it once more.",
+          "Import one file for the account by hand: Review > To review > Import CSV (on desktop: Import & review > Import CSV). This teaches Tally which columns hold the date, amount and payee for that account, and what the file looks like. Do this once per account. If you imported by hand before version 5.2, do it once more.",
           "In your ingest folder, make a subfolder with the same name as the account, for example Monzo.",
           "Drop the bank's CSV file into that subfolder.",
           "Wait for the next check, or click Check now in Settings > Account settings > Ingest folder.",

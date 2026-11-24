@@ -98,10 +98,10 @@ export function classify(file: FoundFile, accounts: IngestAccount[], now: number
   const match = matchAccount(file.folder, accounts);
   if ("reason" in match) return { state: "waiting", reason: match.reason };
   if (!match.account.mapping) {
-    return { state: "waiting", reason: `Import one file for "${file.folder}" by hand first (Review > Import CSV). Tally then remembers its columns and takes the next ones itself.` };
+    return { state: "waiting", reason: `Import one file for "${file.folder}" by hand first (Import CSV on the Review page). Tally then remembers its columns and takes the next ones itself.` };
   }
   if (!match.account.mapping.headers) {
-    return { state: "waiting", reason: `Import one file for "${file.folder}" by hand again (Review > Import CSV). Tally then learns the file's layout, so it can tell if the bank changes it.` };
+    return { state: "waiting", reason: `Import one file for "${file.folder}" by hand again (Import CSV on the Review page). Tally then learns the file's layout, so it can tell if the bank changes it.` };
   }
   if (now - file.mtimeMs < SETTLE_MS) return { state: "settling" };
   if (file.size === 0) return { state: "failed", reason: "The file is empty." };
@@ -188,7 +188,7 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
 
     const layout = layoutStatus(text, verdict.account.mapping!);
     if (layout.state === "changed") {
-      outcomes.push(fail(root, file, `This file is laid out differently from the last one imported by hand. ${layout.reason} Nothing was imported. Import it by hand from Review > Import CSV, check the columns, and Tally learns the new layout.`, now));
+      outcomes.push(fail(root, file, `This file is laid out differently from the last one imported by hand. ${layout.reason} Nothing was imported. Import it by hand from Import CSV on the Review page, check the columns, and Tally learns the new layout.`, now));
       continue;
     }
 
@@ -199,7 +199,7 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
       const first = unreadable.slice(0, 3).map((e) => `line ${e.line}: ${e.reason}`).join("; ");
       const reason = mapped.rows.length === 0 && unreadable.length === 0
         ? mapped.skipped.length > 0 ? "The file has only pending, reverted, declined or cancelled lines." : "The file has no transactions."
-        : `${unreadable.length} line(s) can't be read with this account's saved columns (${first}). Nothing was imported. Has the bank changed its file layout? Import it by hand from Review > Import CSV.`;
+        : `${unreadable.length} line(s) can't be read with this account's saved columns (${first}). Nothing was imported. Has the bank changed its file layout? Import it by hand from Import CSV on the Review page.`;
       outcomes.push(fail(root, file, reason, now));
       continue;
     }
