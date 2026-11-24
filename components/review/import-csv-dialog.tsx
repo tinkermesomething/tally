@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DELIMITERS, detectDelimiter, type Delimiter } from "@/lib/csv";
 import { decodeCsv } from "@/lib/csv-decode";
-import { detectDateFormat, guessMapping, layoutOf, layoutStatus, mapCsvRows, splitTable, type CsvMapping } from "@/lib/csv-import";
+import { detectDateFormat, detectSign, guessMapping, layoutOf, layoutStatus, mapCsvRows, splitTable, type CsvMapping } from "@/lib/csv-import";
 import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
@@ -44,6 +44,9 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
   const [result, setResult] = useState<CsvImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [layoutNote, setLayoutNote] = useState<string | null>(null);
+  // What Tally worked out about the sign of the amounts, for a freshly guessed mapping.
+  const [signNote, setSignNote] = useState<{ text: string | null; unsure: boolean } | null>(null);
+  const [signChosen, setSignChosen] = useState(false);
   const [pending, startTransition] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
   const planRequest = useRef(0);
@@ -62,6 +65,17 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     setResult(null);
     setError(null);
     setLayoutNote(null);
+    setSignNote(null);
+    setSignChosen(false);
+  }
+
+  /** A fresh guess, plus what Tally could tell about which way round the amounts are. */
+  function freshGuess(content: string, delimiter: Delimiter): CsvMapping {
+    const guess = guessMapping(content, delimiter, dateFormat);
+    const sign = detectSign(content, guess);
+    setSignNote({ text: sign.note, unsure: sign.certainty === "unsure" });
+    setSignChosen(false);
+    return guess;
   }
 
   /** The account's saved mapping when this file is laid out like the one it
@@ -70,6 +84,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     const delimiter = detectDelimiter(content);
     const saved = acct?.mapping;
     setLayoutNote(null);
+    setSignNote(null);
     if (saved) {
       const layout = layoutStatus(content, saved);
       if (layout.state === "changed") {
@@ -78,11 +93,15 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
         const probe = splitTable(content, { ...saved });
         if (!saved.hasHeader || probe.headers.length > 0) {
           const check = mapCsvRows(content, saved);
-          if (check.rows.length > 0 && check.errors.length <= check.rows.length) return saved;
+          if (check.rows.length > 0 && check.errors.length <= check.rows.length) {
+            // Saved before status columns existed: pick one up so pending lines stay out.
+            if (saved.statusCol === undefined) return { ...saved, statusCol: guessMapping(content, delimiter, dateFormat).statusCol ?? null };
+            return saved;
+          }
         }
       }
     }
-    return guessMapping(content, delimiter, dateFormat);
+    return freshGuess(content, delimiter);
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -161,6 +180,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     });
   }
 
+  const needsSign = !!signNote?.unsure && !signChosen;
   const importable = plan ? (policy === "skip" ? plan.fresh - plan.possibleDuplicates : plan.fresh) : 0;
 
   return (
@@ -252,7 +272,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="space-y-1">
                       <Label htmlFor="csv-delim">Separator</Label>
-                      <select id="csv-delim" className={selectClass} value={mapping.delimiter} onChange={(e) => text !== null && setMapping(guessMapping(text, e.target.value as Delimiter, dateFormat))}>
+                      <select id="csv-delim" className={selectClass} value={mapping.delimiter} onChange={(e) => text !== null && setMapping(freshGuess(text, e.target.value as Delimiter))}>
                         {DELIMITERS.map((d) => (
                           <option key={d.value} value={d.value}>{d.label}</option>
                         ))}
@@ -302,6 +322,13 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                         {Array.from({ length: columns }, (_, i) => <option key={i} value={i}>{colLabel(headers, i)}</option>)}
                       </select>
                     </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="csv-status">Status column (optional)</Label>
+                      <select id="csv-status" className={selectClass} value={mapping.statusCol ?? ""} onChange={(e) => set({ statusCol: e.target.value === "" ? null : parseInt(e.target.value, 10) })}>
+                        <option value="">None</option>
+                        {Array.from({ length: columns }, (_, i) => <option key={i} value={i}>{colLabel(headers, i)}</option>)}
+                      </select>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -330,10 +357,22 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                         </select>
                       </div>
                     )}
-                    <label className="flex items-center gap-2 text-sm">
-                      <Checkbox checked={mapping.flipSign} onCheckedChange={(c) => set({ flipSign: c === true })} aria-label="Spending shows as positive" />
-                      This file shows spending as positive numbers (flip the sign)
-                    </label>
+                    <fieldset className="space-y-1 text-sm" data-testid="csv-sign">
+                      <legend className="font-medium">In this file, a positive number means</legend>
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" name="csv-sign" checked={!mapping.flipSign && !needsSign} onChange={() => { set({ flipSign: false }); setSignChosen(true); }} />
+                        money coming in (spending is negative)
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" name="csv-sign" checked={mapping.flipSign} onChange={() => { set({ flipSign: true }); setSignChosen(true); }} />
+                        money spent (spending is positive, as on many credit cards)
+                      </label>
+                      {signNote?.text && (
+                        <p className={needsSign ? "text-xs font-medium text-status-critical" : "text-xs text-muted-foreground"} data-testid="csv-sign-note">
+                          {signNote.text}
+                        </p>
+                      )}
+                    </fieldset>
                   </div>
 
                   <div className="space-y-1.5">
@@ -357,6 +396,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                   <p className="text-sm font-medium">
                     {mapped.rows.length} {mapped.rows.length === 1 ? "row" : "rows"} read
                     {mapped.errors.length > 0 && <span className="text-status-critical"> · {mapped.errors.length} can&apos;t be read</span>}
+                    {mapped.skipped.length > 0 && <span className="text-muted-foreground" data-testid="csv-skipped"> · {mapped.skipped.length} left out (pending, reverted, declined or cancelled)</span>}
                   </p>
                   {mapped.rows.length > 0 && (
                     <div className="overflow-x-auto rounded-lg border border-border">
@@ -414,7 +454,7 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
 
             {error && <p className="text-sm text-status-critical">{error}</p>}
             <DialogFooter>
-              <Button disabled={pending || !plan || importable === 0} onClick={submit}>
+              <Button disabled={pending || !plan || importable === 0 || needsSign} onClick={submit}>
                 {pending ? "Importing…" : `Import ${importable} ${importable === 1 ? "transaction" : "transactions"}`}
               </Button>
             </DialogFooter>

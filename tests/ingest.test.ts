@@ -126,6 +126,20 @@ describe("ingestOnce", () => {
     expect(fs.existsSync(p)).toBe(false);
   });
 
+  it("leaves out pending lines, says so, and fails a file that has nothing else", async () => {
+    const sample = "Date,Description,Amount,State\n01/08/2026,A,-1.00,COMPLETED\n";
+    const g = guessMapping(sample, ",");
+    const acct: IngestAccount = { id: 1, names: ["Monzo"], mapping: { ...g, ...layoutOf(sample, g) } };
+    drop("Monzo", "mixed.csv", "Date,Description,Amount,State\n05/10/2026,TESCO,-12.50,COMPLETED\n06/10/2026,SHOP,-3.00,PENDING\n");
+    drop("Monzo", "onlypending.csv", "Date,Description,Amount,State\n06/10/2026,SHOP,-3.00,PENDING\n");
+    const seen: number[] = [];
+    const report = await ingestOnce(root, [acct], async (_id, rows) => (seen.push(rows.length), { imported: rows.length, alreadyImported: 0, waitingInReview: rows.length }), 100, NOW);
+    const byName = Object.fromEntries(report.outcomes.map((o) => [o.name, o]));
+    expect(seen).toEqual([1]);
+    expect(byName["mixed.csv"].message).toContain("Left out 1 pending");
+    expect(byName["onlypending.csv"]).toMatchObject({ state: "failed", message: "The file has only pending, reverted, declined or cancelled lines." });
+  });
+
   it("fails a file whose only lines are zero-amount", async () => {
     drop("Monzo", "zero.csv", "Date,Description,Amount\n06/10/2026,Plan fee,0.00\n");
     const report = await ingestOnce(root, [monzo], ok, 100, NOW);

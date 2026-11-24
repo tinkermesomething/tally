@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeCsv } from "@/lib/csv-decode";
 import { detectDelimiter } from "@/lib/csv";
-import { detectDateFormat, detectSkipRows, guessMapping, isCsvMapping, layoutOf, layoutStatus, mapCsvRows, parseAmount, type CsvMapping, type DateFormat } from "@/lib/csv-import";
+import { detectDateFormat, detectSign, detectSkipRows, guessMapping, isCsvMapping, layoutOf, layoutStatus, mapCsvRows, parseAmount, type CsvMapping, type DateFormat } from "@/lib/csv-import";
 import { parseCsv } from "@/lib/csv";
 
 /** What a person gets when they drop a real bank file in: every layout below
@@ -99,15 +99,13 @@ tx_0003,14/08/2026,18:30:10,Card payment,Tesco,🛒,Groceries,-23.10,GBP,-23.10,
     expect(summary(r)).toEqual(["2026-08-01 -1250 Tesco", "2026-08-05 250000 Employer Ltd"]);
   });
 
-  it("Amex UK: spending is positive, so the sign must be flipped (the preview shows it; the mapping then remembers)", () => {
-    const text = `Date,Description,Card Member,Account #,Amount
+  it("Amex UK: spending is positive, and Tally sees it from the negative 'PAYMENT RECEIVED' line", () => {
+    const r = read(utf8(`Date,Description,Card Member,Account #,Amount
 01/08/2026,TESCO STORES,A PERSON,XXXX-12345,12.50
 03/08/2026,PAYMENT RECEIVED - THANK YOU,A PERSON,XXXX-12345,-200.00
-`;
-    const guessed = read(utf8(text));
-    expect(guessed.mapping).toMatchObject({ payeeCols: [1], amountCol: 4, flipSign: false });
-    const flipped = read(utf8(text), { patch: { flipSign: true } });
-    expect(summary(flipped)).toEqual(["2026-08-01 -1250 TESCO STORES", "2026-08-03 20000 PAYMENT RECEIVED - THANK YOU"]);
+`));
+    expect(r.mapping).toMatchObject({ payeeCols: [1], amountCol: 4, flipSign: true });
+    expect(summary(r)).toEqual(["2026-08-01 -1250 TESCO STORES", "2026-08-03 20000 PAYMENT RECEIVED - THANK YOU"]);
   });
 
   it("Chase (US): month-first dates, payee from Description not Details (DEBIT/CREDIT)", () => {
@@ -293,5 +291,79 @@ describe("fees", () => {
     const legacy = { ...r.mapping };
     delete legacy.feeCol;
     expect(mapCsvRows(csv, legacy).rows.map((x) => x.amountPence)).toEqual([-10000, 5000, 100]);
+  });
+});
+
+describe("which way round is the sign?", () => {
+  const card = (rows: string[]) => `Date,Description,Amount\n${rows.join("\n")}\n`;
+  const check = (csv: string) => {
+    const m = guessMapping(csv, ",");
+    return detectSign(csv, { ...m, flipSign: false });
+  };
+
+  it("card file: money-in lines (payment received) are negative, so spending is positive", () => {
+    const c = check(card(["01/08/2026,SHOP A,10.00", "02/08/2026,SHOP B,20.00", "03/08/2026,PAYMENT RECEIVED - THANK YOU,-30.00"]));
+    expect(c).toMatchObject({ flip: true, certainty: "described" });
+    expect(c.note).toContain("PAYMENT RECEIVED");
+  });
+  it("a current account: salary and refunds are positive, so nothing is flipped", () => {
+    expect(check(card(["01/08/2026,TESCO,-10.00", "02/08/2026,ACME SALARY,2000.00", "03/08/2026,REFUND SHOP,5.00"]))).toMatchObject({ flip: false, certainty: "described", note: null });
+  });
+  it("mostly positive and no clue in the descriptions: Tally says so and does not decide", () => {
+    const rows = ["A", "B", "C", "D", "E", "F", "G"].map((n, i) => `0${i + 1}/08/2026,SHOP ${n},${10 + i}.00`);
+    expect(check(card(rows))).toMatchObject({ flip: false, certainty: "unsure" });
+  });
+  it("a normal mostly-negative file with no keywords is left alone, quietly", () => {
+    const rows = ["A", "B", "C", "D", "E", "F"].map((n, i) => `0${i + 1}/08/2026,SHOP ${n},-${10 + i}.00`);
+    expect(check(card(rows))).toEqual({ flip: false, certainty: "normal", note: null });
+  });
+  it("a tiny file is not second-guessed", () => {
+    expect(check(card(["01/08/2026,SHOP,10.00", "02/08/2026,SHOP 2,11.00"]))).toMatchObject({ certainty: "normal" });
+  });
+  it("Revolut's real layout (more spending than income) is left alone", () => {
+    const csv = `Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
+Card Payment,Current,2026-07-31 09:53:31,2026-08-01 13:39:19,Coffee,-10.00,0.00,GBP,COMPLETED,134.63
+Topup,Current,2026-08-02 10:00:00,2026-08-02 10:00:01,Payment from A PERSON,101.00,0.00,GBP,COMPLETED,235.63
+`;
+    expect(read(utf8(csv)).mapping.flipSign).toBe(false);
+  });
+});
+
+describe("lines that are not settled money", () => {
+  const csv = `Date,Description,Amount,State
+01/08/2026,Coffee,-3.50,COMPLETED
+02/08/2026,Pending shop,-20.00,PENDING
+03/08/2026,Cancelled shop,-8.00,Cancelled
+04/08/2026,Reverted one,-5.00,REVERTED
+05/08/2026,Declined one,-9.00,DECLINED
+06/08/2026,Top up,50.00,COMPLETED
+07/08/2026,Posted shop,-1.00,Posted
+08/08/2026,Unknown state,-2.00,
+`;
+  it("are left out and counted; completed, posted, unknown and blank states are imported", () => {
+    const r = read(utf8(csv));
+    expect(r.mapping.statusCol).toBe(3);
+    expect(summary(r).map((x) => x.split(" ").slice(2).join(" "))).toEqual(["Coffee", "Top up", "Posted shop", "Unknown state"]);
+    expect(r.skipped.map((x) => x.reason)).toEqual(["Left out: pending.", "Left out: cancelled.", "Left out: reverted.", "Left out: declined."]);
+    expect(r.errors).toEqual([]);
+  });
+  it("a pending line with no amount yet doesn't count as unreadable", () => {
+    const r = read(utf8("Date,Description,Amount,Status\n01/08/2026,Shop,,Pending\n02/08/2026,Other,-4.00,Completed\n"));
+    expect(r.skipped).toHaveLength(1);
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toHaveLength(1);
+  });
+  it("Wise / PayPal style 'Status' headers are found too", () => {
+    expect(read(utf8("Date,Name,Amount,Status\n01/08/2026,A,-1.00,Completed\n")).mapping.statusCol).toBe(3);
+  });
+  it("a mapping saved before this existed still imports every line", () => {
+    const r = read(utf8(csv), { patch: { statusCol: undefined } });
+    expect(r.rows).toHaveLength(8);
+    expect(r.skipped).toEqual([]);
+  });
+  it("the status column is part of the layout that is checked", () => {
+    const m = guessMapping(csv, ",");
+    const saved = { ...m, ...layoutOf(csv, m) };
+    expect(layoutStatus(csv.replace("State", "Remarks"), saved).state).toBe("changed");
   });
 });

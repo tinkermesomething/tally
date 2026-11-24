@@ -30,6 +30,11 @@ export type CsvMapping = {
    * Wise). A fee always lowers the balance, whatever sign the file uses.
    * Absent on mappings saved before this existed. */
   feeCol?: number | null;
+  /** Optional column holding the line's state (Revolut "State", Wise and
+   * PayPal "Status"). Lines still pending, or reverted, declined, failed or
+   * cancelled, are left out: they are not settled money. Absent on mappings
+   * saved before this existed. */
+  statusCol?: number | null;
   /** The file's column names and count when this mapping was saved. Lets a
    * later file be checked against the layout the person confirmed. */
   headers?: string[];
@@ -49,6 +54,10 @@ export type CsvRowError = { line: number; reason: string };
 
 /** A line with nothing to import (a bank's fee note, say). Not a sign the layout changed. */
 export const ZERO_AMOUNT_REASON = "The amount is zero.";
+
+/** States of a line that is not settled money. Anything else ("Completed",
+ * "Posted", a word we don't know) is imported. */
+const UNSETTLED = /^(pending|reverted|reversed|declined|failed|cancel(l)?ed|rejected|denied|expired|voided)\b/i;
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
@@ -180,12 +189,16 @@ export const MAX_PAYEE_LENGTH = 300;
 
 /** Applies the mapping. Rows that can't be read are reported with a reason
  * (never silently dropped); everything else comes back as transactions. */
-export function mapCsvRows(text: string, mapping: CsvMapping): { rows: ParsedCsvRow[]; errors: CsvRowError[]; headers: string[] } {
+export function mapCsvRows(text: string, mapping: CsvMapping): { rows: ParsedCsvRow[]; errors: CsvRowError[]; skipped: CsvRowError[]; headers: string[] } {
   const { headers, body, firstLine } = splitTable(text, mapping);
   const rows: ParsedCsvRow[] = [];
   const errors: CsvRowError[] = [];
+  const skipped: CsvRowError[] = [];
   body.forEach((cells, i) => {
     const line = firstLine + i;
+    const state = col(cells, mapping.statusCol ?? null).trim();
+    if (state && UNSETTLED.test(state)) return void skipped.push({ line, reason: `Left out: ${state.toLowerCase()}.` });
+
     const bookingDate = parseDate(col(cells, mapping.dateCol), mapping.dateFormat);
     if (!bookingDate) return void errors.push({ line, reason: `Can't read the date "${col(cells, mapping.dateCol)}".` });
 
@@ -222,7 +235,7 @@ export function mapCsvRows(text: string, mapping: CsvMapping): { rows: ParsedCsv
     const idHint = mapping.idCol !== null ? col(cells, mapping.idCol).trim() || null : null;
     rows.push({ line, bookingDate, amountPence: amount, payeeRaw, idHint });
   });
-  return { rows, errors, headers };
+  return { rows, errors, skipped, headers };
 }
 
 const looksLikeDateHeader = /date|time|completed|posted|booking|started/i;
@@ -232,6 +245,7 @@ const outHeader = /paid out|money out|debit|withdraw|spent|\bout$/i;
 const payeeHeader = /description|payee|merchant|narrative|name|counter ?party|reference|memo|transaction$/i;
 // "Details" is a weaker hint: some banks use it for the type (Chase: DEBIT / CREDIT).
 const payeeWeakHeader = /details/i;
+const statusHeader = /^(transaction )?(status|state)$/i;
 const feeHeader = /^fees?\b|\bfees?$/i;
 // A real ID, not a free-text "Reference" (Starling, N26: "Rent", "Salary"), which repeats.
 const idHeader = /\bid$|^id\b|transaction id|\btx ?id\b|\bref(erence)? ?(no\.?|number|id)\b/i;
@@ -239,6 +253,42 @@ const idHeader = /\bid$|^id\b|transaction id|\btx ?id\b|\bref(erence)? ?(no\.?|n
 /** A sensible starting mapping for any file - guessed from the header names
  * if there are any, else from what the columns contain - for the person to
  * confirm or change on the mapping screen. */
+/** Lines that are money coming IN whatever the bank: pay, refunds, card payments. */
+const INCOME_WORDS = /\b(salary|payroll|wages?|payment received|thank you|refund|cashback|interest paid|dividend|deposit)\b/i;
+const STRONG_INCOME_WORDS = /payment received|thank you/i;
+
+export type SignCheck = {
+  /** Spending is shown as positive in this file. */
+  flip: boolean;
+  /** "described": the descriptions settle it. "normal": nothing suggests a flip.
+   * "unsure": most amounts are positive and nothing says why, so a person must choose. */
+  certainty: "described" | "normal" | "unsure";
+  note: string | null;
+};
+
+/** Which way round is this file's sign? A current account shows spending as
+ * negative; many credit-card files show it as positive. A wrong guess turns
+ * every purchase into income, and nothing in the numbers shows it - a card's
+ * balance is what you OWE, so it matches either way and proves nothing. What
+ * does show it is the lines that are always money in ("PAYMENT RECEIVED -
+ * THANK YOU", salary, refunds): if those are negative, spending is positive. */
+export function detectSign(text: string, mapping: CsvMapping): SignCheck {
+  const { rows } = mapCsvRows(text, { ...mapping, flipSign: false });
+  const income = rows.filter((r) => INCOME_WORDS.test(r.payeeRaw));
+  if (income.length >= 2 || income.some((r) => STRONG_INCOME_WORDS.test(r.payeeRaw))) {
+    const negative = income.filter((r) => r.amountPence < 0);
+    if (negative.length * 2 > income.length) {
+      return { flip: true, certainty: "described", note: `Set to "spending is positive", because lines like "${negative[0].payeeRaw.slice(0, 40)}" are negative here. Check the preview.` };
+    }
+    if (negative.length * 2 < income.length) return { flip: false, certainty: "described", note: null };
+  }
+  const positive = rows.filter((r) => r.amountPence > 0).length;
+  if (rows.length >= 6 && positive / rows.length >= 0.7) {
+    return { flip: false, certainty: "unsure", note: "Most amounts here are positive. In a current account spending is negative, but many credit-card files show spending as positive. Choose which this file is." };
+  }
+  return { flip: false, certainty: "normal", note: null };
+}
+
 /** How many lines at the top are a title or account summary rather than the
  * table: the table starts at the first line with the width most lines have. */
 export function detectSkipRows(all: string[][]): number {
@@ -305,9 +355,10 @@ export function guessMapping(text: string, delimiter: Delimiter, preferredDates:
     if (ids.length === 0 || new Set(ids).size !== ids.length) idc = -1;
   }
   const feec = split ? -1 : names.findIndex((n, c) => c !== dateCol && c !== amountCol && c !== payeeCol && feeHeader.test(n) && numScore(c, rows) > 0);
+  const statc = names.findIndex((n, c) => c !== dateCol && c !== amountCol && c !== payeeCol && statusHeader.test(n.trim()));
   const { format } = detectDateFormat(rows.map((r) => col(r, dateCol)), preferredDates);
 
-  return {
+  const guess: CsvMapping = {
     delimiter,
     skipRows,
     hasHeader,
@@ -321,7 +372,9 @@ export function guessMapping(text: string, delimiter: Delimiter, preferredDates:
     payeeCols: [Math.max(0, payeeCol)],
     idCol: idc >= 0 ? idc : null,
     feeCol: feec >= 0 ? feec : null,
+    statusCol: statc >= 0 ? statc : null,
   };
+  return { ...guess, flipSign: detectSign(text, guess).flip };
 }
 
 const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
@@ -330,6 +383,7 @@ const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/\s+/g, " 
 export function usedColumns(m: CsvMapping): number[] {
   const cols = [m.dateCol, ...(m.amountMode === "split" ? [m.inCol, m.outCol] : [m.amountCol]), ...m.payeeCols];
   if (m.feeCol != null) cols.push(m.feeCol);
+  if (m.statusCol != null) cols.push(m.statusCol);
   if (m.idCol !== null) cols.push(m.idCol);
   return [...new Set(cols)].sort((a, b) => a - b);
 }
@@ -381,6 +435,7 @@ export function isCsvMapping(value: unknown): value is CsvMapping {
     m.payeeCols.every((c) => Number.isInteger(c)) &&
     (m.idCol === null || Number.isInteger(m.idCol)) &&
     (m.feeCol === undefined || m.feeCol === null || Number.isInteger(m.feeCol)) &&
+    (m.statusCol === undefined || m.statusCol === null || Number.isInteger(m.statusCol)) &&
     (m.headers === undefined || (Array.isArray(m.headers) && m.headers.every((h) => typeof h === "string"))) &&
     (m.columns === undefined || Number.isInteger(m.columns))
   );

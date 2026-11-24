@@ -198,7 +198,7 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
     if (mapped.rows.length === 0 || unreadable.length > 0) {
       const first = unreadable.slice(0, 3).map((e) => `line ${e.line}: ${e.reason}`).join("; ");
       const reason = mapped.rows.length === 0 && unreadable.length === 0
-        ? "The file has no transactions."
+        ? mapped.skipped.length > 0 ? "The file has only pending, reverted, declined or cancelled lines." : "The file has no transactions."
         : `${unreadable.length} line(s) can't be read with this account's saved columns (${first}). Nothing was imported. Has the bank changed its file layout? Import it by hand from Review > Import CSV.`;
       outcomes.push(fail(root, file, reason, now));
       continue;
@@ -217,6 +217,7 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
     }
     let message = `Imported ${summary.imported} new, ${summary.alreadyImported} already known.`;
     if (zeroLines > 0) message += ` Skipped ${zeroLines} line(s) with a zero amount.`;
+    if (mapped.skipped.length > 0) message += ` Left out ${mapped.skipped.length} pending, reverted, declined or cancelled line(s).`;
     try {
       moveAway(root, PROCESSED_DIR, file, now);
     } catch (err) {
