@@ -120,6 +120,7 @@ export const GUIDE: Section[] = [
       { p: "Instead of importing each bank file by hand, you can drop it into a folder. Tally picks it up and imports it for you." },
       {
         steps: [
+          "Desktop app only: open Settings > Account settings > Ingest folder and click Create folder and switch on. Tally suggests a folder called Tally ingest in your home folder. You can type another full path.",
           "In your ingest folder, make a subfolder named after the account, for example Revolut. The ingest folder is the parent, not the account's folder.",
           "Drop the bank's CSV file into that subfolder.",
           "The first file for an account waits. In Settings > Account settings > Ingest folder, click Set up (or Create and set up, if the account doesn't exist yet). Tally opens the file with the account name filled in from the folder. Check the columns and click Import. Do this once per account.",

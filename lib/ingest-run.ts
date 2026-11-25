@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { isCsvMapping } from "./csv-import";
 import { isDesktopMode } from "./desktop/mode";
 import { getBankAccounts } from "./db/bank-sync";
@@ -100,10 +102,9 @@ export async function readIngestFile(email: string, folder: string, name: string
   return text.trim() ? { ok: true, text } : { ok: false, error: "The file is empty." };
 }
 
-/** A starting point for the desktop folder: next to the app's data. */
+/** A starting point for the desktop folder: a visible one in the person's home, not the app's hidden data folder. */
 function suggestDesktopDir(): string | null {
-  const db = process.env.DATABASE_PATH?.trim();
-  return isDesktopMode() && db ? `${db.replace(/[\\/][^\\/]*$/, "")}${db.includes("\\") ? "\\" : "/"}ingest` : null;
+  return isDesktopMode() ? path.join(/* turbopackIgnore: true */ os.homedir(), "Tally ingest") : null;
 }
 
 async function checkEveryone() {

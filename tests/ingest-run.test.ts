@@ -57,6 +57,12 @@ describe("runIngest (real database)", () => {
     expect((await runIngest("x@y.z")).state).toBe("unset");
   });
 
+  it("suggests a visible folder in the home directory on desktop, none on a server", async () => {
+    expect((await ingestStatus("x@y.z")).suggestion).toBe(path.join(os.homedir(), "Tally ingest"));
+    process.env.TALLY_MODE = "server";
+    expect((await ingestStatus("x@y.z")).suggestion).toBeNull();
+  });
+
   it("imports a dropped file into the account named by its folder, then files it", async () => {
     const a = await trainedAccount("Monzo");
     await setIngestStored(JSON.stringify({ dir: root }));

@@ -83,11 +83,14 @@ export function IngestPanel({ view, accounts }: { view: IngestView; accounts: Cs
       </p>
 
       {view.desktop ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Input value={dir} onChange={(e) => setDir(e.target.value)} placeholder="Full path of the folder to watch" aria-label="Ingest folder" className="min-w-0 flex-1" />
-          <Button type="button" size="sm" variant="outline" disabled={pending || !dir.trim()} onClick={() => save(true, dir)}>
-            {view.savedDir ? "Save folder" : "Save and switch on"}
-          </Button>
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Input value={dir} onChange={(e) => setDir(e.target.value)} placeholder="Full path of the folder to watch" aria-label="Ingest folder" className="min-w-0 flex-1" />
+            <Button type="button" size="sm" variant="outline" disabled={pending || !dir.trim()} onClick={() => save(true, dir)}>
+              {view.savedDir ? "Save folder" : "Create folder and switch on"}
+            </Button>
+          </div>
+          {!view.savedDir && <p className="text-xs text-muted-foreground">Tally makes this folder if it isn&apos;t there. Then make one subfolder inside it for each account.</p>}
         </div>
       ) : (
         <p className="text-sm" data-testid="ingest-dir">
