@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { describeSummary, readPdfStatement } from "@/lib/pdf-statement";
+import { readPdfStatement } from "@/lib/pdf-statement";
+import { describePdfSummary } from "@/lib/pdf-summary";
 import { MAX_PDF_PAGES, readPdfItemsIsolated } from "@/lib/pdf-run";
 import { parseCsv } from "@/lib/csv";
 import { guessMapping, mapCsvRows } from "@/lib/csv-import";
@@ -25,7 +26,7 @@ describe("reading a PDF statement", () => {
       ["25/09/2026", "Lidl", "Debit Card Transaction", "-14.77"],
       ["21/09/2026", "SMITH A", "Mobile/Online Transaction", "60.00"],
     ]);
-    expect(r.summary).toMatchObject({ lines: 3, from: "2026-07-30", to: "2026-09-26", inPence: 6800, outPence: 1477, reconciled: false });
+    expect(r.summary).toMatchObject({ lines: 3, from: "2026-07-30", to: "2026-09-26", inPence: 6800, outPence: 1477, reconciled: false, left: [], leftCount: 0 });
   });
 
   it("goes straight through the normal CSV import", async () => {
@@ -135,12 +136,57 @@ describe("reading a PDF statement", () => {
     });
   });
 
-  it("tells the person what it read, and says plainly when it could not check the balance", async () => {
+  it("records the oldest and newest line read, apart from the period the statement claims", async () => {
     const r = await read([page(BASIC)]);
     if (!r.ok) throw new Error(r.error);
-    expect(describeSummary(r.summary)).toBe(
-      "Read 3 lines, 30/07/2026 to 26/09/2026. Money in £68.00. Money out £14.77. This PDF has no balance column, so Tally can't check the lines that way. Compare the totals with your bank.",
-    );
+    expect(r.summary).toMatchObject({ firstLine: "2026-09-21", lastLine: "2026-09-26", from: "2026-07-30", to: "2026-09-26" });
+    const noPeriod = await read([page([{ date: "26 Sep 2026", desc: "Pay", in: "£8.00" }], { period: false })]);
+    if (!noPeriod.ok) throw new Error(noPeriod.error);
+    expect(noPeriod.summary).toMatchObject({ from: null, to: null, firstLine: "2026-09-26" });
+  });
+
+  it("lists the text it did not turn into lines, so nothing is dropped unseen", async () => {
+    const r = await read([page(BASIC, { footer: ["Registered in England and Wales No. 929027."] }), [{ s: "Important information about your account", x: 20, y: 700 }, { s: "Call us on 0800 000 000", x: 20, y: 680 }]]);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.summary.left).toEqual(["Registered in England and Wales No. 929027.", "Important information about your account", "Call us on 0800 000 000"]);
+    expect(r.summary.leftCount).toBe(3);
+  });
+
+  it("shows only the first few left-out lines but counts them all", async () => {
+    const r = await read([page(BASIC, { footer: Array.from({ length: 20 }, (_, i) => `Note ${i}`), footerStep: 25 })]);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.summary.left).toHaveLength(12);
+    expect(r.summary.leftCount).toBe(20);
+  });
+});
+
+describe("what the person is told", () => {
+  const fmt = { money: (p: number) => `£${(p / 100).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`, date: (d: string) => d.split("-").reverse().join("/") };
+  const base = { lines: 190, from: "2026-07-30", to: "2026-09-26", firstLine: "2026-07-31", lastLine: "2026-09-26", inPence: 1051034, outPence: 1049969, reconciled: false, left: [], leftCount: 0 };
+
+  it("uses the person's own money and date format, and says when it can't prove the lines add up", () => {
+    expect(describePdfSummary(base, fmt)).toEqual([
+      "Read 190 lines, from 31/07/2026 to 26/09/2026. The statement says it covers 30/07/2026 to 26/09/2026.",
+      "Money in £10,510.34. Money out £10,499.69.",
+      "This PDF has no balance column, so Tally can't prove the lines add up. Check that these two totals match your bank's own figures for the same dates.",
+    ]);
+  });
+  it("says so when the balances add up, and copes with one line and no stated period", () => {
+    const one = describePdfSummary({ ...base, lines: 1, from: null, to: null, reconciled: true }, fmt);
+    expect(one[0]).toBe("Read 1 line, from 31/07/2026 to 26/09/2026.");
+    expect(one[2]).toBe("Every balance in the PDF follows from the line before it, so the lines add up.");
+  });
+  it("names the line that is wrong, and what to do instead", async () => {
+    const r = await read([page([{ date: "26 Sep", desc: "Pay", in: "£8.00" }, { date: "25 Sep", desc: "Lidl" }])]);
+    if (r.ok) throw new Error("should refuse");
+    expect(r.error).toBe("The line at 25 Sep (Lidl), page 1 has no amount. Nothing was imported. If your bank offers a CSV, use that instead.");
+  });
+  it("gives every structural refusal the same way out", async () => {
+    for (const pages of [[[]], [[{ s: "26 Sep", x: 20, y: 600 }]], [page([{ date: "29 Sep", desc: "Pay", in: "£8.00" }])]]) {
+      const r = await read(pages);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/Nothing was imported\. If your bank offers a CSV, use that instead\.$/);
+    }
   });
 });
 

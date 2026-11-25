@@ -69,7 +69,7 @@ export function IngestPanel({ view, accounts }: { view: IngestView; accounts: Cs
     startTransition(async () => {
       const res = await loadIngestFile(w.folder, w.name);
       if (!res.ok) return setError(res.error);
-      setSetup({ folder: w.folder, name: w.name, text: res.text, accountId: w.setup?.accountId ?? null, note: res.note });
+      setSetup({ folder: w.folder, name: w.name, text: res.text, accountId: w.setup?.accountId ?? null, kind: res.kind, summary: res.summary });
     });
   }
 

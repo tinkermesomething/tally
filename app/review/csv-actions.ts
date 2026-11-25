@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/session";
-import { readStatement } from "@/lib/statement-file";
+import { readStatement, type StatementText } from "@/lib/statement-file";
 import { inTransaction } from "@/lib/db";
 import { isCsvMapping, type CsvMapping } from "@/lib/csv-import";
 import {
@@ -41,16 +41,19 @@ export async function importCsv(input: {
   transactions: CsvTransactionInput[];
   duplicatePolicy: DuplicatePolicy;
   mapping: CsvMapping;
+  /** Which kind of file this was. A PDF and a CSV keep separate columns. */
+  kind?: "csv" | "pdf";
 }): Promise<{ ok: true; accountId: number; result: CsvImportResult } | Failure> {
   return requireSession(async () => {
     try {
       if (!isCsvMapping(input.mapping)) throw new Error("That column mapping isn't valid.");
+      if (input.kind !== undefined && input.kind !== "csv" && input.kind !== "pdf") throw new Error("That file type isn't known.");
       if (input.duplicatePolicy !== "flag" && input.duplicatePolicy !== "skip") throw new Error("Pick what to do with possible duplicates.");
       // A new account and its rows are created together: a failed import never
       // leaves an empty account behind.
       const done = await inTransaction(async () => {
         const accountId = input.accountId ?? (await createCsvAccount(input.newAccountName ?? "")).id;
-        const result = await importCsvTransactions(accountId, input.transactions, { duplicatePolicy: input.duplicatePolicy, mapping: input.mapping });
+        const result = await importCsvTransactions(accountId, input.transactions, { duplicatePolicy: input.duplicatePolicy, mapping: input.mapping, kind: input.kind });
         return { accountId, result };
       });
       revalidatePath("/review");
@@ -66,7 +69,7 @@ export async function importCsv(input: {
 
 /** Turns a bank's PDF statement into CSV text, or says why it can't. The
  * file is read here and never stored. */
-export async function readPdfFile(form: FormData): Promise<{ ok: true; text: string; note?: string } | Failure> {
+export async function readPdfFile(form: FormData): Promise<StatementText | Failure> {
   return requireSession(async () => {
     try {
       const file = form.get("file");

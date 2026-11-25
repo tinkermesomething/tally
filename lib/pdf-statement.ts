@@ -1,5 +1,8 @@
 import { parseAmount } from "./csv-import";
 import { readPdfItemsIsolated } from "./pdf-run";
+import type { PdfSummary } from "./pdf-summary";
+
+export type { PdfSummary };
 
 /** Reads a bank's PDF statement (the kind you download from online banking,
  * with real text in it, not a scan) into the same CSV text the importer
@@ -20,16 +23,6 @@ import { readPdfItemsIsolated } from "./pdf-run";
 /** One piece of text and where it sits. y grows upward, as in a PDF. */
 export type PdfItem = { str: string; x: number; y: number; w: number; h: number };
 
-export type PdfSummary = {
-  lines: number;
-  from: string | null;
-  to: string | null;
-  inPence: number;
-  outPence: number;
-  /** The statement had a balance column and every line followed from the one before. */
-  reconciled: boolean;
-};
-
 export type PdfResult = { ok: true; csv: string; summary: PdfSummary } | { ok: false; error: string };
 
 type Kind = "date" | "text" | "in" | "out" | "signed" | "balance";
@@ -38,6 +31,7 @@ type Column = { name: string; kind: Kind; x: number; right: number };
 const LINE_TOLERANCE = 2.5;
 const RIGHT_TOLERANCE = 12;
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const monthName = (m: number) => MONTHS[m - 1][0].toUpperCase() + MONTHS[m - 1].slice(1);
 
 const kindOf = (name: string): Kind => {
   const n = name.trim().toLowerCase();
@@ -131,12 +125,30 @@ type Row = { page: number; date: DateParts; text: Map<string, string[]>; amounts
 
 const fail = (error: string): PdfResult => ({ ok: false, error });
 
+const LEFT_SHOWN = 12;
+const LEFT_LENGTH = 120;
+const NO_IMPORT = " Nothing was imported. If your bank offers a CSV, use that instead.";
+
+/** Wraps the reading so every refusal says that nothing was imported and what to do instead. */
 export function statementFromPages(pages: PdfItem[][]): PdfResult {
+  const r = readRows(pages);
+  return r.ok ? r : { ok: false, error: r.error + NO_IMPORT };
+}
+
+function readRows(pages: PdfItem[][]): PdfResult {
   const everything = pages.flat().filter((it) => it.str.trim());
   if (everything.length === 0) return fail("This PDF has no text in it. It may be a scan or a photo. Tally can only read PDFs that were made by the bank's own system.");
   const period = findPeriod((pages[0] ?? []).filter((it) => it.str.trim()));
 
   const rows: Row[] = [];
+  const left: string[] = [];
+  let leftCount = 0;
+  const leave = (text: string) => {
+    const t = text.replace(/\s+/g, " ").trim();
+    if (!t) return;
+    leftCount++;
+    if (left.length < LEFT_SHOWN && !left.includes(t.slice(0, LEFT_LENGTH))) left.push(t.slice(0, LEFT_LENGTH));
+  };
   let columns: Column[] | null = null;
   let hasBalance = false;
 
@@ -149,7 +161,11 @@ export function statementFromPages(pages: PdfItem[][]): PdfResult {
     }
     const start = header ? header.index + 1 : 0;
     const body = lines.slice(start).flat();
-    if (!header && !body.some((it) => readDateCell(it.str) !== null)) continue; // a cover page or a notes page
+    if (!header && !body.some((it) => readDateCell(it.str) !== null)) {
+      // a cover page or a notes page: nothing to read, but say what was there
+      for (const line of lines) leave(line.map((it) => it.str).join(" "));
+      continue;
+    }
     if (!columns) return fail(`Page ${p + 1} has dates but no row of column titles above them, so Tally can't tell which number is which.`);
     const cols = columns;
     const dateCol = cols.find((c) => c.kind === "date");
@@ -161,7 +177,8 @@ export function statementFromPages(pages: PdfItem[][]): PdfResult {
     // The table starts at the first date. Text above it (but under the titles) must not hide an amount.
     const firstY = dateXs[0].y;
     for (const it of body) {
-      if (it.y > firstY + LINE_TOLERANCE && looksLikeMoney(it.str)) return fail(`Page ${p + 1} has an amount ("${it.str.trim()}") above its first date. Tally can't tell which line it belongs to.`);
+      if (it.y > firstY + LINE_TOLERANCE && looksLikeMoney(it.str)) return fail(`Page ${p + 1} has an amount (${it.str.trim()}) above its first date. Tally can't tell which line it belongs to.`);
+      if (it.y > firstY + LINE_TOLERANCE) leave(it.str);
     }
 
     const textCols = cols.filter((c) => !isMoneyKind(c.kind));
@@ -185,8 +202,9 @@ export function statementFromPages(pages: PdfItem[][]): PdfResult {
           continue;
         }
         if (lastY - it.y > lastH * 2.4) {
-          if (isMoney) return fail(`Page ${p + 1}: an amount ("${it.str.trim()}") sits below the "${date.d} ${MONTHS[date.m - 1]}" line but not on a line of its own. Tally can't place it.`);
-          continue; // footer text
+          if (isMoney) return fail(`Page ${p + 1}: an amount ("${it.str.trim()}") sits below the ${date.d} ${monthName(date.m)} line but not on a line of its own. Tally can't place it.`);
+          leave(it.str); // footer text
+          continue;
         }
         const col = [...textCols].reverse().find((c) => c.x <= it.x + 3);
         if (!col) return fail(`Page ${p + 1}: text ("${it.str.trim()}") sits left of the first column.`);
@@ -209,7 +227,8 @@ export function statementFromPages(pages: PdfItem[][]): PdfResult {
   type Line = { iso: string; desc: string; extra: string[]; pence: number; balance: number | null };
   const out: Line[] = [];
   for (const r of rows) {
-    const where = `${r.date.d} ${MONTHS[r.date.m - 1]}, page ${r.page}`;
+    const said = (r.text.get(descName) ?? []).join(" ").slice(0, 40);
+    const where = `${r.date.d} ${monthName(r.date.m)}${said ? ` (${said})` : ""}, page ${r.page}`;
     let year = r.date.y;
     if (year === null) {
       if (!period) return fail(`The line at ${where} has no year, and Tally can't find the From and To dates at the top of the statement to work it out.`);
@@ -276,11 +295,15 @@ export function statementFromPages(pages: PdfItem[][]): PdfResult {
     csv,
     summary: {
       lines: out.length,
-      from: period?.from ?? dates[0],
-      to: period?.to ?? dates[dates.length - 1],
+      from: period?.from ?? null,
+      to: period?.to ?? null,
+      firstLine: dates[0],
+      lastLine: dates[dates.length - 1],
       inPence: out.reduce((s, l) => s + (l.pence > 0 ? l.pence : 0), 0),
       outPence: out.reduce((s, l) => s + (l.pence < 0 ? -l.pence : 0), 0),
       reconciled,
+      left,
+      leftCount,
     },
   };
 }
@@ -292,11 +315,4 @@ export async function readPdfStatement(bytes: Uint8Array): Promise<PdfResult> {
   if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) return fail("That file is not a PDF.");
   const opened = await readPdfItemsIsolated(bytes);
   return opened.ok ? statementFromPages(opened.pages) : fail(opened.error);
-}
-
-/** One plain sentence for the preview, so the person can compare it with the bank. */
-export function describeSummary(s: PdfSummary): string {
-  const range = s.from && s.to ? `${dmy(s.from)} to ${dmy(s.to)}` : "";
-  const checked = s.reconciled ? "Every balance in the PDF follows from the line before it." : "This PDF has no balance column, so Tally can't check the lines that way. Compare the totals with your bank.";
-  return `Read ${s.lines} lines${range ? `, ${range}` : ""}. Money in £${money(s.inPence)}. Money out £${money(s.outPence)}. ${checked}`;
 }

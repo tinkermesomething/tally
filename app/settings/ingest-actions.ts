@@ -9,6 +9,7 @@ import { assertWritable } from "@/lib/assert-writable";
 import { isDesktopMode } from "@/lib/desktop/mode";
 import { getIngestStored, setIngestStored } from "@/lib/db/settings";
 import { readIngestFile, runIngest } from "@/lib/ingest-run";
+import type { StatementText } from "@/lib/statement-file";
 import { parseStored, validateDesktopDir, type StoredIngestConfig } from "@/lib/ingest-settings";
 
 async function requestIp(): Promise<string> {
@@ -62,7 +63,7 @@ export async function checkIngestNow(): Promise<CheckNowResult> {
 }
 
 /** Loads a waiting file so the person can confirm its columns and pick the account. */
-export async function loadIngestFile(folder: string, name: string): Promise<{ ok: true; text: string; note?: string } | { ok: false; error: string }> {
+export async function loadIngestFile(folder: string, name: string): Promise<StatementText> {
   return requireSession(async (user) => {
     try {
       return await readIngestFile(user.email, String(folder), String(name));

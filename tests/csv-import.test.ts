@@ -192,6 +192,28 @@ describe("possible duplicates of a bank-synced transaction", () => {
   });
 });
 
+describe("one account, a CSV and a PDF", () => {
+  const pdfMapping: CsvMapping = { ...mapping, amountCol: 3, payeeCols: [1] };
+  it("remembers the columns of each kind apart, and confirming one never changes the other", async () => {
+    const acct = await linked();
+    await importCsvTransactions(acct.id, [t("2026-10-05", -100, "A")], { mapping });
+    expect(await getSavedMapping(acct.id)).toEqual(mapping);
+    expect(await getSavedMapping(acct.id, "pdf")).toBeNull();
+    await importCsvTransactions(acct.id, [t("2026-10-06", -200, "B")], { mapping: pdfMapping, kind: "pdf" });
+    expect(await getSavedMapping(acct.id)).toEqual(mapping);
+    expect(await getSavedMapping(acct.id, "pdf")).toEqual(pdfMapping);
+    await importCsvTransactions(acct.id, [t("2026-10-07", -300, "C")], { mapping: { ...mapping, flipSign: true } });
+    expect(await getSavedMapping(acct.id, "pdf")).toEqual(pdfMapping);
+    expect((await getSavedMapping(acct.id))?.flipSign).toBe(true);
+  });
+  it("an account that only had CSVs keeps its old stored shape", async () => {
+    const acct = await linked();
+    await importCsvTransactions(acct.id, [t("2026-10-05", -100, "A")], { mapping });
+    const [row] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, acct.id));
+    expect(JSON.parse(row.csvMapping!)).toEqual(mapping);
+  });
+});
+
 describe("remembered mapping", () => {
   it("is saved on the account after an import and read back; garbage is ignored", async () => {
     const acct = await createCsvAccount("Card");

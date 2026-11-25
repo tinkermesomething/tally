@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isStatementName, readStatement } from "./statement-file";
+import { kindOfName } from "./csv-mappings";
 import { layoutStatus, mapCsvRows, ZERO_AMOUNT_REASON, type CsvMapping, type ParsedCsvRow } from "./csv-import";
 
 /** The ingest folder: drop a bank's CSV into <folder>/<account name>/ and
@@ -29,7 +30,11 @@ const RESERVED = new Set([PROCESSED_DIR, FAILED_DIR]);
 export const SETTLE_MS = 15_000;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
-export type IngestAccount = { id: number; names: string[]; mapping: CsvMapping | null };
+/** `mapping` is the confirmed columns for CSV files, `pdfMapping` for PDF statements.
+ * The two are laid out differently, so an account keeps one of each. */
+export type IngestAccount = { id: number; names: string[]; mapping: CsvMapping | null; pdfMapping?: CsvMapping | null };
+
+const mappingFor = (a: IngestAccount, kind: "csv" | "pdf") => (kind === "pdf" ? a.pdfMapping ?? null : a.mapping);
 
 export type FoundFile = { folder: string; name: string; path: string; size: number; mtimeMs: number };
 
@@ -101,10 +106,13 @@ export type Verdict =
 export function classify(file: FoundFile, accounts: IngestAccount[], now: number): Verdict {
   const match = matchAccount(file.folder, accounts);
   if ("reason" in match) return match.none ? { state: "waiting", reason: match.reason, setup: { accountId: null } } : { state: "waiting", reason: match.reason };
-  if (!match.account.mapping) {
-    return { state: "waiting", reason: `Tally doesn't know this account's columns yet.`, setup: { accountId: match.account.id } };
+  const kind = kindOfName(file.name);
+  const saved = mappingFor(match.account, kind);
+  if (!saved) {
+    const reason = kind === "pdf" ? `Tally has not read a PDF for this account yet. Check the first one once, and it reads the rest by itself.` : `Tally doesn't know this account's columns yet.`;
+    return { state: "waiting", reason, setup: { accountId: match.account.id } };
   }
-  if (!match.account.mapping.headers) {
+  if (!saved.headers) {
     return { state: "waiting", reason: `Confirm the columns once more, so Tally can tell if the bank changes the file later.`, setup: { accountId: match.account.id } };
   }
   if (now - file.mtimeMs < SETTLE_MS) return { state: "settling" };
@@ -190,14 +198,20 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
       continue;
     }
     const text = read.text;
+    // Go by what the bytes really are: a PDF that was named .csv still needs the PDF columns.
+    const saved = mappingFor(verdict.account, read.kind);
+    if (!saved) {
+      outcomes.push({ folder: file.folder, name: file.name, state: "waiting", message: `Tally has no saved columns for this kind of file (${read.kind.toUpperCase()}) for this account yet. Import one by hand first.` });
+      continue;
+    }
 
-    const layout = layoutStatus(text, verdict.account.mapping!);
+    const layout = layoutStatus(text, saved);
     if (layout.state === "changed") {
       outcomes.push(fail(root, file, `This file is laid out differently from the last one imported by hand. ${layout.reason} Nothing was imported. Import it by hand from Import CSV on the Review page, check the columns, and Tally learns the new layout.`, now));
       continue;
     }
 
-    const mapped = mapCsvRows(text, verdict.account.mapping!);
+    const mapped = mapCsvRows(text, saved);
     const unreadable = mapped.errors.filter((e) => e.reason !== ZERO_AMOUNT_REASON);
     const zeroLines = mapped.errors.length - unreadable.length;
     if (mapped.rows.length === 0 || unreadable.length > 0) {

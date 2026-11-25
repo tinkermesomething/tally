@@ -4,6 +4,7 @@ import { db, inTransaction } from "./index";
 import { assertIsoDate } from "../validate";
 import { isCsvMapping, MAX_PAYEE_LENGTH, type CsvMapping } from "../csv-import";
 import { samePayeeText } from "../payee-match";
+import { parseSavedMappings, withSavedMapping, type FileKind } from "../csv-mappings";
 import { CSV_PROVIDER, stageImportedTransactions, type RawImportedTransaction } from "./bank-sync";
 import { bankAccounts, importedTransactions } from "./schema";
 
@@ -173,7 +174,7 @@ export type CsvImportResult = CsvImportPlan & {
 export async function importCsvTransactions(
   bankAccountId: number,
   inputs: CsvTransactionInput[],
-  options: { duplicatePolicy?: DuplicatePolicy; mapping?: CsvMapping } = {}
+  options: { duplicatePolicy?: DuplicatePolicy; mapping?: CsvMapping; /** Which kind of file the mapping was confirmed on. Default: a CSV. */ kind?: FileKind } = {}
 ): Promise<CsvImportResult> {
   return inTransaction(async () => {
     const { planned, summary } = await plan(bankAccountId, inputs);
@@ -185,7 +186,9 @@ export async function importCsvTransactions(
     );
     if (options.mapping) {
       if (!isCsvMapping(options.mapping)) throw new Error("That column mapping isn't valid.");
-      await db.update(bankAccounts).set({ csvMapping: JSON.stringify(options.mapping) }).where(eq(bankAccounts.id, bankAccountId));
+      const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, bankAccountId) });
+      const saved = withSavedMapping(account?.csvMapping, options.kind === "pdf" ? "pdf" : "csv", options.mapping);
+      await db.update(bankAccounts).set({ csvMapping: saved }).where(eq(bankAccounts.id, bankAccountId));
     }
     return {
       ...summary,
@@ -218,14 +221,8 @@ export async function createCsvAccount(displayName: string) {
   return created;
 }
 
-/** The column mapping saved by this account's last import, if any. */
-export async function getSavedMapping(bankAccountId: number): Promise<CsvMapping | null> {
+/** The column mapping saved by this account's last import of that kind of file, if any. */
+export async function getSavedMapping(bankAccountId: number, kind: FileKind = "csv"): Promise<CsvMapping | null> {
   const account = await db.query.bankAccounts.findFirst({ where: eq(bankAccounts.id, bankAccountId) });
-  if (!account?.csvMapping) return null;
-  try {
-    const parsed = JSON.parse(account.csvMapping);
-    return isCsvMapping(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return parseSavedMappings(account?.csvMapping)[kind];
 }

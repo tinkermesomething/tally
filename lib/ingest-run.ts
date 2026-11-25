@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { isCsvMapping } from "./csv-import";
+import { parseSavedMappings } from "./csv-mappings";
 import { isDesktopMode } from "./desktop/mode";
 import { getBankAccounts } from "./db/bank-sync";
 import { importCsvTransactions, MAX_CSV_ROWS } from "./db/csv-import";
@@ -10,7 +10,7 @@ import { getOrOpenUserDb } from "./db/pool";
 import { getIngestStored } from "./db/settings";
 import { listUsers } from "./db/users";
 import { openDek, dekToHex } from "./user-dek";
-import { readStatement } from "./statement-file";
+import { readStatement, type StatementText } from "./statement-file";
 import { ingestOnce, inspectFolder, MAX_FILE_BYTES, recentFiles, scanFolder, type IngestAccount, type IngestReport } from "./ingest";
 import { isOn, parseStored, resolveLocation, type Location } from "./ingest-settings";
 
@@ -26,14 +26,8 @@ const here = (email: string): IngestEnv => ({ desktop: isDesktopMode(), email, e
 
 async function loadAccounts(): Promise<IngestAccount[]> {
   return (await getBankAccounts()).map((a) => {
-    let mapping = null;
-    try {
-      const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
-      mapping = isCsvMapping(parsed) ? parsed : null;
-    } catch {
-      mapping = null;
-    }
-    return { id: a.id, names: [a.alias, a.displayName].filter((n): n is string => !!n), mapping };
+    const { csv, pdf } = parseSavedMappings(a.csvMapping);
+    return { id: a.id, names: [a.alias, a.displayName].filter((n): n is string => !!n), mapping: csv, pdfMapping: pdf };
   });
 }
 
@@ -92,7 +86,7 @@ export async function ingestStatus(email: string) {
 /** The text of one waiting file, for the "Set up this account" dialog. Only
  * a file the folder scan itself lists is read, so the names the browser sends
  * can't point anywhere else. */
-export async function readIngestFile(email: string, folder: string, name: string): Promise<{ ok: true; text: string; note?: string } | { ok: false; error: string }> {
+export async function readIngestFile(email: string, folder: string, name: string): Promise<StatementText> {
   const loc: Location = resolveLocation({ ...here(email), stored: parseStored(await getIngestStored()) });
   if (!loc.dir || folderState(loc.dir) !== "ok") return { ok: false, error: "The ingest folder isn't available." };
   const found = scanFolder(loc.dir).files.find((f) => f.folder === folder && f.name === name);

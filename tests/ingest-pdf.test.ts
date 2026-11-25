@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ingestOnce, scanFolder, SETTLE_MS, type ImportRows, type IngestAccount } from "@/lib/ingest";
+import { ingestOnce, inspectFolder, scanFolder, SETTLE_MS, type ImportRows, type IngestAccount } from "@/lib/ingest";
 import { guessMapping, layoutOf } from "@/lib/csv-import";
 import { readPdfStatement } from "@/lib/pdf-statement";
 import { makePdf, page, type Line } from "./helpers/make-pdf";
@@ -27,12 +27,15 @@ function drop(folder: string, name: string, bytes: Uint8Array | string) {
   fs.utimesSync(p, OLD, OLD);
 }
 
-/** An account whose saved columns were confirmed on this very kind of PDF. */
-async function natwest(): Promise<IngestAccount> {
+const CSV = "Date,Description,Amount\n05/10/2026,TESCO,-12.50\n06/10/2026,Salary,1000.00\n";
+
+/** An account whose PDF columns were confirmed on this very kind of PDF. */
+async function natwest(withCsv = false): Promise<IngestAccount> {
   const r = await readPdfStatement(makePdf([page(LINES)]));
   if (!r.ok) throw new Error(r.error);
   const guessed = guessMapping(r.csv, ",");
-  return { id: 1, names: ["NatWest"], mapping: { ...guessed, ...layoutOf(r.csv, guessed) } };
+  const g = guessMapping(CSV, ",");
+  return { id: 1, names: ["NatWest"], mapping: withCsv ? { ...g, ...layoutOf(CSV, g) } : null, pdfMapping: { ...guessed, ...layoutOf(r.csv, guessed) } };
 }
 
 const ok: ImportRows = async (_id, rows) => ({ imported: rows.length, alreadyImported: 0, waitingInReview: rows.length });
@@ -73,18 +76,36 @@ describe("PDF statements in the ingest folder", () => {
     expect(kept.some((n) => n.endsWith(".txt"))).toBe(true);
   });
 
-  it("a PDF is not read with the columns saved from a CSV", async () => {
-    const csv = "Date,Description,Amount\n05/10/2026,TESCO,-12.50\n";
-    const g = guessMapping(csv, ",");
-    const csvAccount: IngestAccount = { id: 1, names: ["NatWest"], mapping: { ...g, ...layoutOf(csv, g) } };
+  it("a PDF waits for its own set-up when the account only knows CSV columns, and says so", async () => {
+    const g = guessMapping(CSV, ",");
+    const csvOnly: IngestAccount = { id: 1, names: ["NatWest"], mapping: { ...g, ...layoutOf(CSV, g) } };
     drop("NatWest", "statement.pdf", makePdf([page(LINES)]));
-    const rep = await ingestOnce(root, [csvAccount], ok, 20000, NOW);
-    expect(rep.outcomes[0]).toMatchObject({ state: "failed", message: expect.stringMatching(/laid out differently/i) });
+    let called = false;
+    const rep = await ingestOnce(root, [csvOnly], async (...a) => ((called = true), ok(...a)), 20000, NOW);
+    expect(called).toBe(false);
+    expect(rep.outcomes[0]).toMatchObject({ state: "waiting", message: expect.stringMatching(/not read a PDF for this account/i) });
+    expect(fs.existsSync(path.join(root, "NatWest", "statement.pdf"))).toBe(true);
+    expect(inspectFolder(root, [csvOnly], NOW).waiting[0]).toMatchObject({ name: "statement.pdf", setup: { accountId: 1 } });
+  });
+
+  it("one account takes both a CSV and a PDF, each read with its own columns", async () => {
+    drop("NatWest", "statement.pdf", makePdf([page(LINES)]));
+    drop("NatWest", "export.csv", CSV);
+    const seen: Record<string, number> = {};
+    const rep = await ingestOnce(root, [await natwest(true)], async (_id, rows) => ((seen[rows[0].payeeRaw] = rows.length), { imported: rows.length, alreadyImported: 0, waitingInReview: 0 }), 20000, NOW);
+    expect(rep.outcomes.map((o) => o.state).sort()).toEqual(["imported", "imported"]);
+    expect(seen).toEqual({ "Mobile top-up": 2, TESCO: 2 });
+  });
+
+  it("goes by what the bytes are: a PDF called .csv is read as a PDF", async () => {
+    drop("NatWest", "oops.csv", makePdf([page(LINES)]));
+    const rep = await ingestOnce(root, [await natwest(true)], ok, 20000, NOW);
+    expect(rep.outcomes[0]).toMatchObject({ state: "imported" });
   });
 
   it("a file named .pdf that is not a PDF is read as text and fails like any bad CSV", async () => {
     drop("NatWest", "statement.pdf", "just some words\n");
-    const rep = await ingestOnce(root, [await natwest()], ok, 20000, NOW);
+    const rep = await ingestOnce(root, [await natwest(true)], ok, 20000, NOW);
     expect(rep.outcomes[0].state).toBe("failed");
   });
 });

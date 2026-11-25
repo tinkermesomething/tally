@@ -16,9 +16,12 @@ import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { HelpTip } from "@/components/help-tip";
 import { importCsv, previewCsv, readPdfFile } from "@/app/review/csv-actions";
+import { describePdfSummary, type PdfSummary } from "@/lib/pdf-summary";
+import type { FileKind } from "@/lib/csv-mappings";
 import type { CsvImportPlan, CsvImportResult, DuplicatePolicy } from "@/lib/db/csv-import";
 
-export type CsvAccountOption = { id: number; name: string; csvOnly: boolean; mapping: CsvMapping | null };
+/** `mapping` is the confirmed columns for CSV files, `pdfMapping` for PDF statements (laid out differently). */
+export type CsvAccountOption = { id: number; name: string; csvOnly: boolean; mapping: CsvMapping | null; pdfMapping?: CsvMapping | null };
 
 const NEW_ACCOUNT = "new";
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -31,7 +34,7 @@ const colLabel = (headers: string[], i: number) => (headers[i] ? `${i + 1}: ${he
  * preview of exactly what will be imported. */
 /** A file that is already known: from the ingest folder. The dialog opens by
  * itself with it loaded, and the folder's name as the account. */
-export type CsvPreload = { folder: string; name: string; text: string; accountId: number | null; note?: string };
+export type CsvPreload = { folder: string; name: string; text: string; accountId: number | null; kind?: FileKind; summary?: PdfSummary };
 
 export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvAccountOption[]; preload?: CsvPreload; onClose?: (imported: boolean) => void }) {
   const router = useRouter();
@@ -42,8 +45,10 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
   const [newName, setNewName] = useState(preload && preload.accountId === null ? preload.folder : "");
   const [fileName, setFileName] = useState<string | null>(preload?.name ?? null);
   const [text, setText] = useState<string | null>(preload?.text ?? null);
+  // The kind of file in the dialog: a CSV and a PDF keep separate saved columns.
+  const [kind, setKind] = useState<FileKind>(preload?.kind ?? "csv");
   // For a PDF: what Tally read from it, so the person can compare with the bank.
-  const [pdfNote, setPdfNote] = useState<string | null>(preload?.note ?? null);
+  const [pdfSummary, setPdfSummary] = useState<PdfSummary | null>(preload?.summary ?? null);
   const [mapping, setMapping] = useState<CsvMapping | null>(null);
   const [policy, setPolicy] = useState<DuplicatePolicy>("flag");
   const [plan, setPlan] = useState<CsvImportPlan | null>(null);
@@ -66,7 +71,8 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
     setNewName("");
     setFileName(null);
     setText(null);
-    setPdfNote(null);
+    setPdfSummary(null);
+    setKind("csv");
     setMapping(null);
     setPolicy("flag");
     setPlan(null);
@@ -89,9 +95,9 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
 
   /** The account's saved mapping when this file is laid out like the one it
    * was confirmed on; otherwise a fresh guess, with a note saying why. */
-  function chooseMapping(content: string, acct: CsvAccountOption | null): CsvMapping {
+  function chooseMapping(content: string, acct: CsvAccountOption | null, fileKind: FileKind = kind): CsvMapping {
     const delimiter = detectDelimiter(content);
-    const saved = acct?.mapping;
+    const saved = fileKind === "pdf" ? acct?.pdfMapping : acct?.mapping;
     setLayoutNote(null);
     setSignNote(null);
     if (saved) {
@@ -121,7 +127,8 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
     if (file.size > MAX_BYTES) return setError("That file is over 8 MB. Split it and import in parts.");
     const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     let content: string;
-    let note: string | null = null;
+    let summary: PdfSummary | null = null;
+    let fileKind: FileKind = "csv";
     if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) {
       // A PDF is read on the server (it needs the PDF reader), then used like any CSV.
       const form = new FormData();
@@ -130,15 +137,17 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
       const res = await readPdfFile(form).finally(() => setReadingPdf(false));
       if (!res.ok) return setError(res.error);
       content = res.text;
-      note = res.note ?? null;
+      summary = res.summary ?? null;
+      fileKind = "pdf";
     } else {
       content = decodeCsv(new Uint8Array(await file.arrayBuffer())).text;
     }
     if (!content.trim()) return setError("That file is empty.");
     setFileName(file.name);
-    setPdfNote(note);
+    setPdfSummary(summary);
+    setKind(fileKind);
     setText(content);
-    setMapping(chooseMapping(content, account));
+    setMapping(chooseMapping(content, account, fileKind));
   }
 
   // Changing the account may bring a saved mapping for the already-loaded file
@@ -199,6 +208,7 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
         transactions: mapped.rows.map(({ bookingDate, amountPence, payeeRaw, idHint }) => ({ bookingDate, amountPence, payeeRaw, idHint })),
         duplicatePolicy: policy,
         mapping: { ...mapping, ...layoutOf(text ?? "", mapping) },
+        kind,
       });
       if (!res.ok) return setError(res.error);
       setResult(res.result);
@@ -293,10 +303,25 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
               </div>
             </div>
 
-            {pdfNote && (
-              <p className="rounded-lg border border-border bg-secondary p-3 text-sm" data-testid="pdf-note">
-                {pdfNote}
-              </p>
+            {pdfSummary && (
+              <div className="space-y-1 rounded-lg border border-border bg-secondary p-3 text-sm" data-testid="pdf-note">
+                {describePdfSummary(pdfSummary, { money: (p) => formatPence(p, currency), date: (d) => formatDate(d, dateFormat) }).map((line) => (
+                  <p key={line}>{line}</p>
+                ))}
+                {pdfSummary.leftCount > 0 && (
+                  <details className="text-xs text-muted-foreground" data-testid="pdf-left-out">
+                    <summary className="cursor-pointer">
+                      Text on the PDF that Tally did not turn into lines ({pdfSummary.leftCount})
+                    </summary>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                      {pdfSummary.left.map((t) => (
+                        <li key={t}>{t}</li>
+                      ))}
+                    </ul>
+                    {pdfSummary.leftCount > pdfSummary.left.length && <p className="mt-1">…and {pdfSummary.leftCount - pdfSummary.left.length} more.</p>}
+                  </details>
+                )}
+              </div>
             )}
             {layoutNote && (
               <p className="rounded-lg border border-border bg-secondary p-3 text-sm" data-testid="csv-layout-changed">

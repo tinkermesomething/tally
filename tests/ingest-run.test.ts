@@ -157,7 +157,7 @@ describe("setting up an account from a waiting file", () => {
     drop("Revolut", "jan.csv");
     const s = await ingestStatus("x@y.z");
     expect(s.folder === "ok" && s.waiting).toEqual([expect.objectContaining({ folder: "Revolut", name: "jan.csv", setup: { accountId: null } })]);
-    expect(await readIngestFile("x@y.z", "Revolut", "jan.csv")).toEqual({ ok: true, text: CSV });
+    expect(await readIngestFile("x@y.z", "Revolut", "jan.csv")).toEqual({ ok: true, kind: "csv", text: CSV });
   });
 
   it("points at the existing account when it has no saved columns yet", async () => {

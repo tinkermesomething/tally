@@ -36,7 +36,7 @@ export const right = (s: string, edge: number): Placed => ({ s, x: edge - width(
 export type Line = { date: string; desc: string; type?: string; in?: string; out?: string; bal?: string; wrap?: string };
 
 /** One page laid out like an online-banking PDF. y counts down from the title. */
-export function page(lines: Line[], opts: { period?: boolean; balance?: boolean; footer?: string[]; top?: number } = {}): Placed[] {
+export function page(lines: Line[], opts: { period?: boolean; balance?: boolean; footer?: string[]; footerStep?: number; top?: number } = {}): Placed[] {
   const out: Placed[] = [{ s: "Transactions-01", x: 250, y: 760 }];
   if (opts.period !== false) {
     out.push({ s: "From", x: 300, y: 720 }, { s: "To", x: 420, y: 720 }, { s: "30/07/2026", x: 300, y: 705 }, { s: "26/09/2026", x: 420, y: 705 });
@@ -59,7 +59,7 @@ export function page(lines: Line[], opts: { period?: boolean; balance?: boolean;
     }
   }
   for (const f of opts.footer ?? []) {
-    y -= 40;
+    y -= opts.footerStep ?? 40;
     out.push({ s: f, x: 20, y });
   }
   return out;
