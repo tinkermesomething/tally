@@ -188,7 +188,8 @@ fn run_update_check(app: &tauri::AppHandle, manual: bool) {
 
 /// Debug builds only (compiled out of releases): shows the update window with
 /// the offer in a JSON file ({version, current, notes}) and prints the choice,
-/// without starting the server or touching any data. TALLY_PREVIEW_PICK=
+/// without starting the server or touching any data (the value "menu" shows
+/// no window at all). TALLY_PREVIEW_PICK=
 /// install|later|skip clicks that link by itself after a moment.
 #[cfg(debug_assertions)]
 fn preview_update(app: tauri::AppHandle, file: String) {
@@ -253,7 +254,10 @@ fn main() {
 
             #[cfg(debug_assertions)]
             if let Ok(file) = std::env::var("TALLY_PREVIEW_UPDATE") {
-                preview_update(app.handle().clone(), file);
+                // "menu": just the menu bar, so Updates > Check for updates... can be tried on its own.
+                if file != "menu" {
+                    preview_update(app.handle().clone(), file);
+                }
                 return Ok(());
             }
 
