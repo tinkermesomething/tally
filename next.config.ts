@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
   // the .node file instead of node_modules). better-sqlite3-multiple-ciphers
   // isn't on that built-in list, so it needs adding explicitly.
   serverExternalPackages: ["better-sqlite3-multiple-ciphers"],
+  // The PDF reader runs in its own thread from a plain file (workers/pdf-worker.mjs)
+  // that the build can't see being started, so nothing is traced for it. Name it
+  // and the two files it loads, or the standalone output ships without them.
+  outputFileTracingIncludes: {
+    "/**": ["./workers/pdf-worker.mjs", "./node_modules/pdfjs-dist/package.json", "./node_modules/pdfjs-dist/legacy/build/pdf.mjs", "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   // Don't advertise the framework in responses - no security value in
   // hiding it, but no value in volunteering it either.
   poweredByHeader: false,

@@ -3,6 +3,7 @@ import { and, asc, between, eq } from "drizzle-orm";
 import { db, inTransaction } from "./index";
 import { assertIsoDate } from "../validate";
 import { isCsvMapping, MAX_PAYEE_LENGTH, type CsvMapping } from "../csv-import";
+import { samePayeeText } from "../payee-match";
 import { CSV_PROVIDER, stageImportedTransactions, type RawImportedTransaction } from "./bank-sync";
 import { bankAccounts, importedTransactions } from "./schema";
 
@@ -24,7 +25,7 @@ export type CsvImportPlan = {
   total: number;
   /** Not seen before: will be imported. */
   fresh: number;
-  /** Already imported (an earlier copy of this file, or an overlapping one). */
+  /** Already imported (an earlier copy of this file, an overlapping one, or the same lines from a CSV when this is a PDF, or the other way round). */
   alreadyImported: number;
   /** New rows that look like an existing transaction (same amount, date within a day). */
   possibleDuplicates: number;
@@ -87,10 +88,35 @@ async function plan(bankAccountId: number, inputs: CsvTransactionInput[]) {
     (await db.select({ importedId: importedTransactions.importedId }).from(importedTransactions).where(eq(importedTransactions.bankAccountId, bankAccountId))).map((r) => r.importedId)
   );
 
+  // The same transaction from a different kind of file: a bank's PDF words the
+  // shop differently from its CSV, so the ids above don't line up. A line that
+  // matches an earlier FILE line on date, amount and payee text is that line -
+  // each earlier line absorbs at most one, so two real purchases stay two.
+  // Only lines that came from files are matched this way; a bank-sync line
+  // with the same amount stays a "possible duplicate" for the person to judge.
+  const taken = new Set<number>();
+  const idSet = new Set(ids);
+  const byDayAndAmount = new Map<string, typeof existing>();
+  for (const e of existing) {
+    if (idSet.has(e.importedId)) taken.add(e.id);
+    if (!e.importedId.startsWith("csv:")) continue;
+    const key = `${e.bookingDate}|${e.amountPence}`;
+    byDayAndAmount.set(key, [...(byDayAndAmount.get(key) ?? []), e]);
+  }
+  const sameAsEarlier = new Set<number>();
+  inputs.forEach((t, i) => {
+    if (existingIds.has(ids[i])) return;
+    const hit = (byDayAndAmount.get(`${t.bookingDate}|${t.amountPence}`) ?? []).find((e) => !taken.has(e.id) && samePayeeText(e.payeeRaw, t.payeeRaw));
+    if (hit) {
+      taken.add(hit.id);
+      sameAsEarlier.add(i);
+    }
+  });
+
   const planned: Planned[] = [];
   let alreadyImported = 0;
   inputs.forEach((t, i) => {
-    if (existingIds.has(ids[i])) return void alreadyImported++;
+    if (existingIds.has(ids[i]) || sameAsEarlier.has(i)) return void alreadyImported++;
     const candidates = existing.filter((e) => e.amountPence === t.amountPence && Math.abs(dayMs(e.bookingDate) - dayMs(t.bookingDate)) <= DAY_MS);
     candidates.sort(
       (a, b) =>

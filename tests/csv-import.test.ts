@@ -86,6 +86,60 @@ describe("importing", () => {
   });
 });
 
+describe("the same lines from a CSV and from a PDF", () => {
+  // A bank words a shop differently in its CSV and in its PDF, so the ids never match.
+  const csv = [t("2026-09-25", -1477, "LIDL GB EALING"), t("2026-09-25", -780, "TFL TRAVEL CH"), t("2026-09-26", 800, "MOBILE TOP-UP")];
+  const pdf = [t("2026-09-25", -1477, "Lidl"), t("2026-09-25", -780, "Transport For London (TFL)"), t("2026-09-26", 800, "Mobile top-up")];
+
+  it("a PDF after a CSV: lines that match on date, amount and payee are the same lines", async () => {
+    const acct = await createCsvAccount("NatWest");
+    await importCsvTransactions(acct.id, csv);
+    const plan = await previewCsvImport(acct.id, pdf);
+    // Lidl and Mobile top-up match. The TFL lines share no word, so that one is only a possible duplicate.
+    expect(plan).toMatchObject({ alreadyImported: 2, fresh: 1, possibleDuplicates: 1 });
+    const r = await importCsvTransactions(acct.id, pdf);
+    expect(r).toMatchObject({ imported: 1, alreadyImported: 2 });
+    expect(await rows()).toHaveLength(4);
+  });
+
+  it("a CSV after a PDF, the other way round", async () => {
+    const acct = await createCsvAccount("NatWest");
+    await importCsvTransactions(acct.id, pdf);
+    const r = await importCsvTransactions(acct.id, csv);
+    expect(r).toMatchObject({ alreadyImported: 2, imported: 1 });
+  });
+
+  it("importing the PDF again afterwards still adds nothing", async () => {
+    const acct = await createCsvAccount("NatWest");
+    await importCsvTransactions(acct.id, csv);
+    await importCsvTransactions(acct.id, pdf);
+    const again = await importCsvTransactions(acct.id, pdf);
+    expect(again).toMatchObject({ imported: 0, alreadyImported: 3 });
+  });
+
+  it("each earlier line absorbs only one: two real purchases stay two", async () => {
+    const acct = await createCsvAccount("NatWest");
+    await importCsvTransactions(acct.id, [t("2026-09-25", -300, "COSTA COFFEE LTD")]);
+    const r = await importCsvTransactions(acct.id, [t("2026-09-25", -300, "Costa"), t("2026-09-25", -300, "Costa")]);
+    expect(r).toMatchObject({ alreadyImported: 1, imported: 1 });
+  });
+
+  it("a different day, a different amount or a different shop is not the same line", async () => {
+    const acct = await createCsvAccount("NatWest");
+    await importCsvTransactions(acct.id, [t("2026-09-25", -1477, "LIDL GB EALING")]);
+    const plan = await previewCsvImport(acct.id, [t("2026-09-26", -1477, "Lidl"), t("2026-09-25", -1478, "Lidl"), t("2026-09-25", -1477, "Aldi")]);
+    expect(plan.alreadyImported).toBe(0);
+    expect(plan.fresh).toBe(3);
+  });
+
+  it("never swallows a line against a bank-synced one: that stays a possible duplicate", async () => {
+    const acct = await linked();
+    await stageImportedTransactions(acct.id, [{ importedId: "gc-1", amountPence: -1477, bookingDate: "2026-09-25", payeeRaw: "Lidl" }]);
+    const plan = await previewCsvImport(acct.id, [t("2026-09-25", -1477, "LIDL GB EALING")]);
+    expect(plan).toMatchObject({ alreadyImported: 0, fresh: 1, possibleDuplicates: 1 });
+  });
+});
+
 describe("possible duplicates of a bank-synced transaction", () => {
   it("flags a CSV row with the same amount within a day, keeps it, and holds it in Review (rules do not touch it)", async () => {
     const acct = await linked();

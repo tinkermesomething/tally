@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeSummary, readPdfStatement } from "@/lib/pdf-statement";
+import { MAX_PDF_PAGES, readPdfItemsIsolated } from "@/lib/pdf-run";
 import { parseCsv } from "@/lib/csv";
 import { guessMapping, mapCsvRows } from "@/lib/csv-import";
 import { makePdf, page, right, width, type Line, type Placed } from "./helpers/make-pdf";
@@ -140,5 +141,26 @@ describe("reading a PDF statement", () => {
     expect(describeSummary(r.summary)).toBe(
       "Read 3 lines, 30/07/2026 to 26/09/2026. Money in £68.00. Money out £14.77. This PDF has no balance column, so Tally can't check the lines that way. Compare the totals with your bank.",
     );
+  });
+});
+
+describe("limits on opening a PDF", () => {
+  it("stops reading when it takes too long, says so, and the next file still reads", async () => {
+    const bytes = makePdf([page(BASIC)]);
+    const slow = await readPdfItemsIsolated(bytes, 1);
+    expect(slow).toMatchObject({ ok: false, error: expect.stringMatching(/took more than/) });
+    const next = await readPdfStatement(bytes);
+    expect(next.ok).toBe(true);
+  });
+
+  it("refuses a PDF with too many pages before reading any of them", async () => {
+    const r = await readPdfStatement(makePdf(Array.from({ length: MAX_PDF_PAGES + 1 }, () => [{ s: "x", x: 10, y: 10 }])));
+    expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/more than 200 pages/) });
+  });
+
+  it("reads several files one after another, never at the same time", async () => {
+    const bytes = makePdf([page(BASIC)]);
+    const results = await Promise.all([readPdfStatement(bytes), readPdfStatement(bytes), readPdfStatement(bytes)]);
+    expect(results.every((r) => r.ok)).toBe(true);
   });
 });

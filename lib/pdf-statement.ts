@@ -1,4 +1,5 @@
 import { parseAmount } from "./csv-import";
+import { readPdfItemsIsolated } from "./pdf-run";
 
 /** Reads a bank's PDF statement (the kind you download from online banking,
  * with real text in it, not a scan) into the same CSV text the importer
@@ -284,46 +285,13 @@ export function statementFromPages(pages: PdfItem[][]): PdfResult {
   };
 }
 
-/** The pieces of text on every page, with positions. pdfjs stays lazy so
- * nothing loads it until someone brings a PDF. */
-export async function readPdfItems(bytes: Uint8Array): Promise<PdfItem[][]> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  // pdfjs finds its worker with a computed path, which a build can't follow.
-  // Handing it the module directly keeps the worker in the build.
-  const g = globalThis as { pdfjsWorker?: unknown };
-  if (!g.pdfjsWorker) g.pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
-  try {
-    const pages: PdfItem[][] = [];
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
-      const content = await page.getTextContent();
-      const items: PdfItem[] = [];
-      for (const it of content.items) {
-        if ("str" in it) items.push({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h: it.height });
-      }
-      pages.push(items);
-    }
-    return pages;
-  } finally {
-    await doc.destroy();
-  }
-}
+export { MAX_PDF_PAGES } from "./pdf-run";
 
-export const MAX_PDF_PAGES = 200;
-
+/** Reads a PDF file. The PDF itself is opened in a separate thread with limits (see pdf-run.ts). */
 export async function readPdfStatement(bytes: Uint8Array): Promise<PdfResult> {
   if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) return fail("That file is not a PDF.");
-  let pages: PdfItem[][];
-  try {
-    pages = await readPdfItems(bytes);
-  } catch (err) {
-    const name = (err as { name?: string })?.name;
-    if (name === "PasswordException") return fail("This PDF is locked with a password. Save an unlocked copy from your bank and use that.");
-    return fail("Tally can't open this PDF. It may be damaged.");
-  }
-  if (pages.length > MAX_PDF_PAGES) return fail(`This PDF has more than ${MAX_PDF_PAGES} pages. Download a shorter period from your bank.`);
-  return statementFromPages(pages);
+  const opened = await readPdfItemsIsolated(bytes);
+  return opened.ok ? statementFromPages(opened.pages) : fail(opened.error);
 }
 
 /** One plain sentence for the preview, so the person can compare it with the bank. */
