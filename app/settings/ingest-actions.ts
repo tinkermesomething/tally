@@ -62,7 +62,7 @@ export async function checkIngestNow(): Promise<CheckNowResult> {
 }
 
 /** Loads a waiting file so the person can confirm its columns and pick the account. */
-export async function loadIngestFile(folder: string, name: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+export async function loadIngestFile(folder: string, name: string): Promise<{ ok: true; text: string; note?: string } | { ok: false; error: string }> {
   return requireSession(async (user) => {
     try {
       return await readIngestFile(user.email, String(folder), String(name));

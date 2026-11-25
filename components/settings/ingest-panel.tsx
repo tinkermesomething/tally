@@ -69,7 +69,7 @@ export function IngestPanel({ view, accounts }: { view: IngestView; accounts: Cs
     startTransition(async () => {
       const res = await loadIngestFile(w.folder, w.name);
       if (!res.ok) return setError(res.error);
-      setSetup({ folder: w.folder, name: w.name, text: res.text, accountId: w.setup?.accountId ?? null });
+      setSetup({ folder: w.folder, name: w.name, text: res.text, accountId: w.setup?.accountId ?? null, note: res.note });
     });
   }
 
@@ -78,7 +78,7 @@ export function IngestPanel({ view, accounts }: { view: IngestView; accounts: Cs
   return (
     <div className="space-y-3" data-testid="ingest">
       <p className="text-xs text-muted-foreground">
-        Drop a bank CSV into a subfolder named after the account (for example <code className="rounded bg-muted px-1">Revolut</code>), and Tally imports it. The first file for a new account waits here: click Set up, check the columns once, and Tally takes the rest by itself.
+        Drop a bank CSV or PDF statement into a subfolder named after the account (for example <code className="rounded bg-muted px-1">Revolut</code>), and Tally imports it. The first file for a new account waits here: click Set up, check the columns once, and Tally takes the rest by itself.
         {view.desktop ? " Tally checks when the app opens, and when you click Check now." : " Tally checks every 15 minutes, and when you click Check now."}
       </p>
 

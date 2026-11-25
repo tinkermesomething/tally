@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/session";
+import { readStatement } from "@/lib/statement-file";
 import { inTransaction } from "@/lib/db";
 import { isCsvMapping, type CsvMapping } from "@/lib/csv-import";
 import {
@@ -62,3 +63,20 @@ export async function importCsv(input: {
     }
   });
 }
+
+/** Turns a bank's PDF statement into CSV text, or says why it can't. The
+ * file is read here and never stored. */
+export async function readPdfFile(form: FormData): Promise<{ ok: true; text: string; note?: string } | Failure> {
+  return requireSession(async () => {
+    try {
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new Error("No file was sent.");
+      if (file.size > MAX_PDF_BYTES) throw new Error("That file is over 8 MB. Download a shorter period from your bank.");
+      return await readStatement(new Uint8Array(await file.arrayBuffer()));
+    } catch (err) {
+      return fail(err);
+    }
+  });
+}
+
+const MAX_PDF_BYTES = 8 * 1024 * 1024;

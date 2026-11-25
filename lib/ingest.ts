@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { decodeCsv } from "./csv-decode";
+import { isStatementName, readStatement } from "./statement-file";
 import { layoutStatus, mapCsvRows, ZERO_AMOUNT_REASON, type CsvMapping, type ParsedCsvRow } from "./csv-import";
 
 /** The ingest folder: drop a bank's CSV into <folder>/<account name>/ and
@@ -52,17 +52,16 @@ export function matchAccount(folder: string, accounts: IngestAccount[]): { accou
   return { reason: `No account is called "${folder}" yet.`, none: true };
 }
 
-const isCsv = (name: string) => /\.csv$/i.test(name) && !name.startsWith(".");
 
-/** CSV files one level down (<folder>/<account>/*.csv). Symlinks are never
- * followed. `strays` are CSVs dropped straight into the folder, which have
+/** CSV and PDF files one level down (<folder>/<account>/*.csv). Symlinks are never
+ * followed. `strays` are files dropped straight into the folder, which have
  * no account to go to. Throws if the folder itself can't be read. */
 export function scanFolder(root: string): { files: FoundFile[]; strays: string[] } {
   const files: FoundFile[] = [];
   const strays: string[] = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (entry.name.startsWith(".")) continue;
-    if (entry.isFile() && isCsv(entry.name)) {
+    if (entry.isFile() && isStatementName(entry.name)) {
       strays.push(entry.name);
       continue;
     }
@@ -75,7 +74,7 @@ export function scanFolder(root: string): { files: FoundFile[]; strays: string[]
       continue;
     }
     for (const f of inner) {
-      if (!f.isFile() || !isCsv(f.name)) continue;
+      if (!f.isFile() || !isStatementName(f.name)) continue;
       try {
         const st = fs.lstatSync(path.join(/* turbopackIgnore: true */ dir, f.name));
         files.push({ folder: entry.name, name: f.name, path: path.join(/* turbopackIgnore: true */ dir, f.name), size: st.size, mtimeMs: st.mtimeMs });
@@ -185,11 +184,12 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
       outcomes.push({ folder: file.folder, name: file.name, state: "settling", message: "In use by another program. Checked again next time." });
       continue;
     }
-    const { text } = decodeCsv(buf);
-    if (text.includes("\0")) {
-      outcomes.push(fail(root, file, "That doesn't look like a text CSV file.", now));
+    const read = await readStatement(buf);
+    if (!read.ok) {
+      outcomes.push(fail(root, file, read.error, now));
       continue;
     }
+    const text = read.text;
 
     const layout = layoutStatus(text, verdict.account.mapping!);
     if (layout.state === "changed") {

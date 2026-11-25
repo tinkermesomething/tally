@@ -86,11 +86,11 @@ export const GUIDE: Section[] = [
   },
   {
     id: "import-csv",
-    title: "Import a bank CSV",
+    title: "Import a bank CSV or PDF",
     blocks: [
       {
         steps: [
-          "Download a CSV file from your bank's website.",
+          "Download a CSV file, or a PDF statement, from your bank's website.",
           "Open the Review page (Import & review on desktop) and click Import CSV. On the web app the button is under the To review tab.",
           "Choose the account, or create a new one, then choose the file.",
           "Check the columns: date, amount and payee. A preview shows exactly what will be imported, and nothing is saved until you press Import.",
@@ -103,6 +103,7 @@ export const GUIDE: Section[] = [
       {
         bullets: [
           "Tally reads UTF-8, Windows-1252 (older UK and EU exports) and Excel's Unicode text. Commas, semicolons, tabs and pipes all work.",
+          "A PDF statement works if it has real text in it (the kind you download from online banking, not a scan or a photo). Tally reads the lines from their place on the page, then checks its work. Every date needs one amount, every date must fall inside the period the statement covers, and if the PDF shows a running balance, each balance must follow from the line before it. If a check fails, Tally says why and imports nothing. Many PDFs have no balance column, so Tally shows the money in and money out totals for you to compare with your bank.",
           "A title or account summary above the table is skipped for you. Check the Lines to skip box if the preview looks wrong.",
           "If your bank puts fees in their own column (Revolut does), pick it under Fee column. The fee is taken off the amount.",
           "Some files show spending as positive numbers (credit cards often do). Tally looks at lines like PAYMENT RECEIVED and salary to work out which way round the file is, and tells you what it chose. If it can't tell, it asks you before you can import. Always check the preview: + is money in, − is money out.",
@@ -115,14 +116,14 @@ export const GUIDE: Section[] = [
   },
   {
     id: "ingest",
-    title: "Drop a CSV into a folder",
+    title: "Drop a CSV or PDF into a folder",
     blocks: [
       { p: "Instead of importing each bank file by hand, you can drop it into a folder. Tally picks it up and imports it for you." },
       {
         steps: [
           "Desktop app only: open Settings > Account settings > Ingest folder and click Create folder and switch on. Tally suggests a folder called Tally ingest in your home folder. You can type another full path.",
           "In your ingest folder, make a subfolder named after the account, for example Revolut. The ingest folder is the parent, not the account's folder.",
-          "Drop the bank's CSV file into that subfolder.",
+          "Drop the bank's CSV file or PDF statement into that subfolder.",
           "The first file for an account waits. In Settings > Account settings > Ingest folder, click Set up (or Create and set up, if the account doesn't exist yet). Tally opens the file with the account name filled in from the folder. Check the columns and click Import. Do this once per account.",
           "Wait for the next check, or click Check now in Settings > Account settings > Ingest folder.",
           "The new transactions appear under To review, the same as any import.",
@@ -150,7 +151,7 @@ export const GUIDE: Section[] = [
           "Tally checks that a file looks like the last one you imported by hand for that account. If the bank has moved or renamed the columns Tally reads, the file goes to failed/ with a note saying which column changed. Click Set up, or import it by hand once. Tally then learns the new layout.",
           "Dropping the same file twice is safe. Transactions that already exist are skipped.",
           "Rows that look like a transaction you already have are imported and marked with a warning in To review, the same as a manual import.",
-          "Only .csv files are read, and only one level down (ingest folder/account/file.csv). Files up to 10 MB.",
+          "Only .csv and .pdf files are read, and only one level down (ingest folder/account/file.csv). Files up to 10 MB. A CSV and a PDF are laid out differently, so an account that you set up with a CSV needs its own set-up before it takes PDFs. Use a separate subfolder for each kind, or set the account up again from a PDF.",
         ],
       },
     ],

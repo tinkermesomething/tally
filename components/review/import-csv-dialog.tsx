@@ -15,7 +15,7 @@ import { formatPence } from "@/lib/money";
 import { formatDate } from "@/lib/date-format";
 import { useAppSettings } from "@/components/providers/app-settings-provider";
 import { HelpTip } from "@/components/help-tip";
-import { importCsv, previewCsv } from "@/app/review/csv-actions";
+import { importCsv, previewCsv, readPdfFile } from "@/app/review/csv-actions";
 import type { CsvImportPlan, CsvImportResult, DuplicatePolicy } from "@/lib/db/csv-import";
 
 export type CsvAccountOption = { id: number; name: string; csvOnly: boolean; mapping: CsvMapping | null };
@@ -31,7 +31,7 @@ const colLabel = (headers: string[], i: number) => (headers[i] ? `${i + 1}: ${he
  * preview of exactly what will be imported. */
 /** A file that is already known: from the ingest folder. The dialog opens by
  * itself with it loaded, and the folder's name as the account. */
-export type CsvPreload = { folder: string; name: string; text: string; accountId: number | null };
+export type CsvPreload = { folder: string; name: string; text: string; accountId: number | null; note?: string };
 
 export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvAccountOption[]; preload?: CsvPreload; onClose?: (imported: boolean) => void }) {
   const router = useRouter();
@@ -42,12 +42,15 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
   const [newName, setNewName] = useState(preload && preload.accountId === null ? preload.folder : "");
   const [fileName, setFileName] = useState<string | null>(preload?.name ?? null);
   const [text, setText] = useState<string | null>(preload?.text ?? null);
+  // For a PDF: what Tally read from it, so the person can compare with the bank.
+  const [pdfNote, setPdfNote] = useState<string | null>(preload?.note ?? null);
   const [mapping, setMapping] = useState<CsvMapping | null>(null);
   const [policy, setPolicy] = useState<DuplicatePolicy>("flag");
   const [plan, setPlan] = useState<CsvImportPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [result, setResult] = useState<CsvImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [readingPdf, setReadingPdf] = useState(false);
   const [layoutNote, setLayoutNote] = useState<string | null>(null);
   // What Tally worked out about the sign of the amounts, for a freshly guessed mapping.
   const [signNote, setSignNote] = useState<{ text: string | null; unsure: boolean } | null>(null);
@@ -63,6 +66,7 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
     setNewName("");
     setFileName(null);
     setText(null);
+    setPdfNote(null);
     setMapping(null);
     setPolicy("flag");
     setPlan(null);
@@ -115,9 +119,24 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
     setError(null);
     setPlan(null);
     if (file.size > MAX_BYTES) return setError("That file is over 8 MB. Split it and import in parts.");
-    const content = decodeCsv(new Uint8Array(await file.arrayBuffer())).text;
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    let content: string;
+    let note: string | null = null;
+    if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) {
+      // A PDF is read on the server (it needs the PDF reader), then used like any CSV.
+      const form = new FormData();
+      form.set("file", file);
+      setReadingPdf(true);
+      const res = await readPdfFile(form).finally(() => setReadingPdf(false));
+      if (!res.ok) return setError(res.error);
+      content = res.text;
+      note = res.note ?? null;
+    } else {
+      content = decodeCsv(new Uint8Array(await file.arrayBuffer())).text;
+    }
     if (!content.trim()) return setError("That file is empty.");
     setFileName(file.name);
+    setPdfNote(note);
     setText(content);
     setMapping(chooseMapping(content, account));
   }
@@ -235,7 +254,7 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
         ) : (
           <div className="space-y-4">
             <DialogHeader>
-              <DialogTitle>Import transactions from a CSV</DialogTitle>
+              <DialogTitle>Import transactions from a CSV or PDF</DialogTitle>
               <DialogDescription>
                 {preload
                   ? `From your ingest folder: ${preload.folder}/${preload.name}. Check the account and the columns. After you import, Tally takes this account's later files by itself.`
@@ -260,19 +279,25 @@ export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvA
                 )}
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="csv-file">CSV file</Label>
+                <Label htmlFor="csv-file">CSV or PDF file</Label>
                 <input
                   id="csv-file"
                   ref={fileRef}
                   type="file"
-                  accept=".csv,.txt,text/csv,text/plain"
+                  accept=".csv,.txt,.pdf,text/csv,text/plain,application/pdf"
                   onChange={onFile}
                   className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-2 file:py-1 file:text-sm"
                 />
+                {readingPdf && <p className="text-xs text-muted-foreground">Reading the PDF…</p>}
                 {fileName && <p className="text-xs text-muted-foreground">{fileName}</p>}
               </div>
             </div>
 
+            {pdfNote && (
+              <p className="rounded-lg border border-border bg-secondary p-3 text-sm" data-testid="pdf-note">
+                {pdfNote}
+              </p>
+            )}
             {layoutNote && (
               <p className="rounded-lg border border-border bg-secondary p-3 text-sm" data-testid="csv-layout-changed">
                 {layoutNote}
