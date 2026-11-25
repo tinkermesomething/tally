@@ -77,6 +77,17 @@ const money = (pence: number) => `${pence < 0 ? "-" : ""}${Math.floor(Math.abs(p
 
 const cell = (s: string) => (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
+/** One line of text from its pieces. A PDF can cut a word in two (a "fi" ligature is its own
+ * piece), so pieces that touch are joined and pieces with a gap get a space. */
+function joinLine(line: PdfItem[]): string {
+  let out = "";
+  line.forEach((it, i) => {
+    const prev = line[i - 1];
+    out += prev && it.x - (prev.x + prev.w) >= 1.5 ? ` ${it.str}` : it.str;
+  });
+  return out;
+}
+
 /** Items on one visual line, left to right. */
 function toLines(items: PdfItem[]): PdfItem[][] {
   const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
@@ -147,7 +158,8 @@ function readRows(pages: PdfItem[][]): PdfResult {
     const t = text.replace(/\s+/g, " ").trim();
     if (!t) return;
     leftCount++;
-    if (left.length < LEFT_SHOWN && !left.includes(t.slice(0, LEFT_LENGTH))) left.push(t.slice(0, LEFT_LENGTH));
+    const shown = t.length > LEFT_LENGTH ? `${t.slice(0, LEFT_LENGTH)}…` : t;
+    if (left.length < LEFT_SHOWN && !left.includes(shown)) left.push(shown);
   };
   let columns: Column[] | null = null;
   let hasBalance = false;
@@ -163,7 +175,7 @@ function readRows(pages: PdfItem[][]): PdfResult {
     const body = lines.slice(start).flat();
     if (!header && !body.some((it) => readDateCell(it.str) !== null)) {
       // a cover page or a notes page: nothing to read, but say what was there
-      for (const line of lines) leave(line.map((it) => it.str).join(" "));
+      for (const line of lines) leave(joinLine(line));
       continue;
     }
     if (!columns) return fail(`Page ${p + 1} has dates but no row of column titles above them, so Tally can't tell which number is which.`);
@@ -174,13 +186,15 @@ function readRows(pages: PdfItem[][]): PdfResult {
     if (dateXs.length === 0) continue;
     dateXs.sort((a, b) => b.y - a.y);
 
+    const above: PdfItem[] = [];
     // The table starts at the first date. Text above it (but under the titles) must not hide an amount.
     const firstY = dateXs[0].y;
     for (const it of body) {
       if (it.y > firstY + LINE_TOLERANCE && looksLikeMoney(it.str)) return fail(`Page ${p + 1} has an amount (${it.str.trim()}) above its first date. Tally can't tell which line it belongs to.`);
-      if (it.y > firstY + LINE_TOLERANCE) leave(it.str);
+      if (it.y > firstY + LINE_TOLERANCE) above.push(it);
     }
 
+    for (const line of toLines(above)) leave(joinLine(line));
     const textCols = cols.filter((c) => !isMoneyKind(c.kind));
     const moneyCols = cols.filter((c) => isMoneyKind(c.kind));
     dateXs.forEach((d, i) => {
@@ -190,6 +204,7 @@ function readRows(pages: PdfItem[][]): PdfResult {
       const date = readDateCell(d.str)!;
       const row: Row = { page: p + 1, date, text: new Map(), amounts: [] };
       // Wrapped description lines sit close under the row. Far below it is the page footer.
+      const tail: PdfItem[] = [];
       let lastY = d.y;
       let lastH = Math.max(d.h, 1);
       for (const it of inBand) {
@@ -203,7 +218,7 @@ function readRows(pages: PdfItem[][]): PdfResult {
         }
         if (lastY - it.y > lastH * 2.4) {
           if (isMoney) return fail(`Page ${p + 1}: an amount ("${it.str.trim()}") sits below the ${date.d} ${monthName(date.m)} line but not on a line of its own. Tally can't place it.`);
-          leave(it.str); // footer text
+          tail.push(it); // footer text
           continue;
         }
         const col = [...textCols].reverse().find((c) => c.x <= it.x + 3);
@@ -215,6 +230,7 @@ function readRows(pages: PdfItem[][]): PdfResult {
         lastH = Math.max(lastH, it.h);
       }
       rows.push(row);
+      for (const line of toLines(tail)) leave(joinLine(line));
     });
   }
 

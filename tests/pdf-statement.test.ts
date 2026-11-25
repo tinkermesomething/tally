@@ -152,6 +152,13 @@ describe("reading a PDF statement", () => {
     expect(r.summary.leftCount).toBe(3);
   });
 
+  it("shows left-out text as whole lines, with an ellipsis when it is cut", async () => {
+    const long = "i".repeat(150);
+    const r = await read([[...page(BASIC), { s: "Page", x: 20, y: 300 }, { s: "1 of 2", x: 120, y: 300 }, { s: long, x: 20, y: 270 }]]);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.summary.left).toEqual(["Page 1 of 2", `${"i".repeat(120)}…`]);
+  });
+
   it("shows only the first few left-out lines but counts them all", async () => {
     const r = await read([page(BASIC, { footer: Array.from({ length: 20 }, (_, i) => `Note ${i}`), footerStep: 25 })]);
     if (!r.ok) throw new Error(r.error);
