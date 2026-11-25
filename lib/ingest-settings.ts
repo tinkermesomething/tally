@@ -34,7 +34,7 @@ export function validateDesktopDir(input: unknown): string {
   if (!dir) throw new Error("Enter the folder to watch.");
   if (dir.includes("\0")) throw new Error("That folder isn't valid.");
   if (!path.isAbsolute(dir)) throw new Error("Use a full path (for example /Users/you/Tally ingest, or C:\\Users\\you\\Tally ingest).");
-  const resolved = path.resolve(dir);
+  const resolved = path.normalize(dir); // absolute, checked above
   if (resolved === path.parse(resolved).root) throw new Error("Choose a folder, not the top of the disk.");
   return resolved;
 }
@@ -54,13 +54,13 @@ export type Location =
 /** Where this person's files are looked for. `problem` explains why there is no folder, when that is a fault rather than "not set up". */
 export function resolveLocation(opts: { desktop: boolean; stored: StoredIngestConfig; email: string; env: Record<string, string | undefined> }): Location {
   if (opts.desktop) {
-    return opts.stored.dir ? { dir: path.resolve(opts.stored.dir), problem: null, source: "saved" } : { dir: null, problem: null, source: "none" };
+    return opts.stored.dir ? { dir: path.normalize(opts.stored.dir), problem: null, source: "saved" } : { dir: null, problem: null, source: "none" };
   }
   const root = opts.env.INGEST_DIR?.trim();
   if (!root) return { dir: null, problem: null, source: "none" };
   const name = userFolderName(opts.email);
   if (!name) return { dir: null, problem: "Your email can't be used as a folder name. Ask your administrator.", source: "none" };
-  return { dir: path.join(path.resolve(root), name), problem: null, source: "env" };
+  return { dir: path.join(/* turbopackIgnore: true */ path.resolve(/* turbopackIgnore: true */ root), name), problem: null, source: "env" };
 }
 
 export const isOn = (stored: StoredIngestConfig) => stored.enabled !== false;

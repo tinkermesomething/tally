@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 export function assertWritable(dir: string, message: string) {
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const probe = path.join(dir, `.tally-write-test-${randomBytes(4).toString("hex")}`);
+    const probe = path.join(/* turbopackIgnore: true */ dir, `.tally-write-test-${randomBytes(4).toString("hex")}`);
     fs.writeFileSync(probe, "ok");
     fs.rmSync(probe, { force: true });
   } catch {

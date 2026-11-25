@@ -66,7 +66,7 @@ export function scanFolder(root: string): { files: FoundFile[]; strays: string[]
       continue;
     }
     if (!entry.isDirectory() || RESERVED.has(entry.name.toLowerCase())) continue;
-    const dir = path.join(root, entry.name);
+    const dir = path.join(/* turbopackIgnore: true */ root, entry.name);
     let inner: fs.Dirent[];
     try {
       inner = fs.readdirSync(dir, { withFileTypes: true });
@@ -76,8 +76,8 @@ export function scanFolder(root: string): { files: FoundFile[]; strays: string[]
     for (const f of inner) {
       if (!f.isFile() || !isCsv(f.name)) continue;
       try {
-        const st = fs.lstatSync(path.join(dir, f.name));
-        files.push({ folder: entry.name, name: f.name, path: path.join(dir, f.name), size: st.size, mtimeMs: st.mtimeMs });
+        const st = fs.lstatSync(path.join(/* turbopackIgnore: true */ dir, f.name));
+        files.push({ folder: entry.name, name: f.name, path: path.join(/* turbopackIgnore: true */ dir, f.name), size: st.size, mtimeMs: st.mtimeMs });
       } catch {
         // gone between listing and reading; the next check sees the truth
       }
@@ -128,10 +128,10 @@ function unstamp(name: string, fallbackMs: number): { at: number; name: string }
 /** Moves a file into <root>/<bucket>/<account folder>/, under a name that
  * can't clash with an earlier file. Returns the new path. */
 function moveAway(root: string, bucket: string, file: FoundFile, now: number): string {
-  const dir = path.join(root, bucket, file.folder);
+  const dir = path.join(/* turbopackIgnore: true */ root, bucket, file.folder);
   fs.mkdirSync(dir, { recursive: true });
-  let dest = path.join(dir, `${stamp(now)}-${file.name}`);
-  for (let n = 2; fs.existsSync(dest); n++) dest = path.join(dir, `${stamp(now)}-${n}-${file.name}`);
+  let dest = path.join(/* turbopackIgnore: true */ dir, `${stamp(now)}-${file.name}`);
+  for (let n = 2; fs.existsSync(dest); n++) dest = path.join(/* turbopackIgnore: true */ dir, `${stamp(now)}-${n}-${file.name}`);
   try {
     fs.renameSync(file.path, dest);
   } catch (err) {
@@ -251,24 +251,24 @@ export function recentFiles(root: string, limit = 8): RecentFile[] {
   for (const bucket of [PROCESSED_DIR, FAILED_DIR] as const) {
     let accountDirs: fs.Dirent[];
     try {
-      accountDirs = fs.readdirSync(path.join(root, bucket), { withFileTypes: true });
+      accountDirs = fs.readdirSync(path.join(/* turbopackIgnore: true */ root, bucket), { withFileTypes: true });
     } catch {
       continue;
     }
     for (const d of accountDirs) {
       if (!d.isDirectory()) continue;
-      const dir = path.join(root, bucket, d.name);
+      const dir = path.join(/* turbopackIgnore: true */ root, bucket, d.name);
       for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
         if (!f.isFile() || f.name.endsWith(".txt")) continue;
         let reason: string | null = null;
         if (bucket === FAILED_DIR) {
           try {
-            reason = fs.readFileSync(path.join(dir, `${f.name}.txt`), "utf8").trim();
+            reason = fs.readFileSync(path.join(/* turbopackIgnore: true */ dir, `${f.name}.txt`), "utf8").trim();
           } catch {
             reason = null;
           }
         }
-        const original = unstamp(f.name, fs.lstatSync(path.join(dir, f.name)).mtimeMs);
+        const original = unstamp(f.name, fs.lstatSync(path.join(/* turbopackIgnore: true */ dir, f.name)).mtimeMs);
         out.push({ bucket, folder: d.name, name: original.name, at: original.at, reason });
       }
     }

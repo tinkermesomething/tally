@@ -35,6 +35,13 @@ fs.cpSync(path.join(root, ".next", "static"), path.join(app, ".next", "static"),
 fs.cpSync(path.join(root, "public"), path.join(app, "public"), { recursive: true });
 fs.cpSync(path.join(root, "drizzle"), path.join(app, "drizzle"), { recursive: true });
 
+// A server-side fs call on a runtime path makes Next trace the WHOLE repo into
+// standalone (5.2.0 shipped 380 MB installers and a macOS DMG that timed out).
+// Source folders have no business in the app, so fail the build if they appear.
+for (const stray of ["src-tauri", "tests", "docs", "components", "lib"]) {
+  if (fs.existsSync(path.join(app, stray))) fail(`standalone contains ${stray}/ - a file trace grew too broad. Mark runtime fs paths with /* turbopackIgnore: true */.`);
+}
+
 // Next's optional image library (sharp) installs a native package per OS/CPU
 // (and a musl-Linux one on Linux). Only this platform's can load, and the
 // foreign ones break the Linux AppImage bundler, which tries to resolve every
