@@ -177,6 +177,7 @@ jobs:
         run: |
           gh release download "$TAG" --repo "$REPO" --pattern latest.json --dir .
           jq --arg notes "$BODY" '.notes = $notes' latest.json > latest.new
-          test "$(jq -r .notes latest.new)" = "$BODY"
+          # Compared inside jq: shell $(...) would strip the trailing newline the release text ends with.
+          jq -e --arg notes "$BODY" '.notes == $notes' latest.new > /dev/null
           mv latest.new latest.json
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
