@@ -59,7 +59,7 @@ export const HELP = {
   },
   "settings.ingest": {
     title: "Ingest folder",
-    tip: "Drop a bank CSV into a folder named after the account, and Tally imports it for you. Import one file by hand first, so Tally learns that account's columns.",
+    tip: "Drop a bank CSV into a folder named after the account, and Tally imports it for you. The first file for each account waits for you to confirm its columns once (click Set up in Settings).",
     learnMore: "ingest",
   },
   "review.tabs": {

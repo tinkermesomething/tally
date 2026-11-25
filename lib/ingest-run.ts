@@ -8,7 +8,8 @@ import { getOrOpenUserDb } from "./db/pool";
 import { getIngestStored } from "./db/settings";
 import { listUsers } from "./db/users";
 import { openDek, dekToHex } from "./user-dek";
-import { ingestOnce, inspectFolder, recentFiles, type IngestAccount, type IngestReport } from "./ingest";
+import { decodeCsv } from "./csv-decode";
+import { ingestOnce, inspectFolder, MAX_FILE_BYTES, recentFiles, scanFolder, type IngestAccount, type IngestReport } from "./ingest";
 import { isOn, parseStored, resolveLocation, type Location } from "./ingest-settings";
 
 /** Runs the ingest folder for one person: reads their saved choices, finds
@@ -84,6 +85,19 @@ export async function ingestStatus(email: string) {
   if (folderState(loc.dir) !== "ok") return { ...base, folder: "missing" as const };
   const seen = inspectFolder(loc.dir, await loadAccounts());
   return { ...base, folder: "ok" as const, ...seen, recent: recentFiles(loc.dir) };
+}
+
+/** The text of one waiting file, for the "Set up this account" dialog. Only
+ * a file the folder scan itself lists is read, so the names the browser sends
+ * can't point anywhere else. */
+export async function readIngestFile(email: string, folder: string, name: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const loc: Location = resolveLocation({ ...here(email), stored: parseStored(await getIngestStored()) });
+  if (!loc.dir || folderState(loc.dir) !== "ok") return { ok: false, error: "The ingest folder isn't available." };
+  const found = scanFolder(loc.dir).files.find((f) => f.folder === folder && f.name === name);
+  if (!found) return { ok: false, error: "That file is gone. Click Check now to refresh the list." };
+  if (found.size > MAX_FILE_BYTES) return { ok: false, error: `The file is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB.` };
+  const text = decodeCsv(new Uint8Array(fs.readFileSync(found.path))).text;
+  return text.trim() ? { ok: true, text } : { ok: false, error: "The file is empty." };
 }
 
 /** A starting point for the desktop folder: next to the app's data. */

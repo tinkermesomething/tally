@@ -43,12 +43,13 @@ export const foldName = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-export function matchAccount(folder: string, accounts: IngestAccount[]): { account: IngestAccount } | { reason: string } {
+/** `none: true` means no account has this name yet, so the person can create it from the file. */
+export function matchAccount(folder: string, accounts: IngestAccount[]): { account: IngestAccount } | { reason: string; none?: true } {
   const key = foldName(folder);
   const hits = key ? accounts.filter((a) => a.names.some((n) => foldName(n) === key)) : [];
   if (hits.length === 1) return { account: hits[0] };
   if (hits.length > 1) return { reason: `More than one account is called "${folder}". Rename one of them.` };
-  return { reason: `No account is called "${folder}". Name the folder exactly like the account.` };
+  return { reason: `No account is called "${folder}" yet.`, none: true };
 }
 
 const isCsv = (name: string) => /\.csv$/i.test(name) && !name.startsWith(".");
@@ -86,22 +87,26 @@ export function scanFolder(root: string): { files: FoundFile[]; strays: string[]
   return { files, strays };
 }
 
+/** A waiting file the person can fix on the spot: confirm its columns once.
+ * `accountId` is the account that has the folder's name, or null to create it. */
+export type SetupHint = { accountId: number | null };
+
 export type Verdict =
   | { state: "ready"; account: IngestAccount }
   | { state: "settling" }
-  | { state: "waiting"; reason: string }
+  | { state: "waiting"; reason: string; setup?: SetupHint }
   | { state: "failed"; reason: string };
 
 /** What should happen to one file. Pure. "waiting" files are left where they
  * are until the person fixes the cause; "settling" ones are just too new. */
 export function classify(file: FoundFile, accounts: IngestAccount[], now: number): Verdict {
   const match = matchAccount(file.folder, accounts);
-  if ("reason" in match) return { state: "waiting", reason: match.reason };
+  if ("reason" in match) return match.none ? { state: "waiting", reason: match.reason, setup: { accountId: null } } : { state: "waiting", reason: match.reason };
   if (!match.account.mapping) {
-    return { state: "waiting", reason: `Import one file for "${file.folder}" by hand first (Import CSV on the Review page). Tally then remembers its columns and takes the next ones itself.` };
+    return { state: "waiting", reason: `Tally doesn't know this account's columns yet.`, setup: { accountId: match.account.id } };
   }
   if (!match.account.mapping.headers) {
-    return { state: "waiting", reason: `Import one file for "${file.folder}" by hand again (Import CSV on the Review page). Tally then learns the file's layout, so it can tell if the bank changes it.` };
+    return { state: "waiting", reason: `Confirm the columns once more, so Tally can tell if the bank changes the file later.`, setup: { accountId: match.account.id } };
   }
   if (now - file.mtimeMs < SETTLE_MS) return { state: "settling" };
   if (file.size === 0) return { state: "failed", reason: "The file is empty." };
@@ -233,11 +238,11 @@ export async function ingestOnce(root: string, accounts: IngestAccount[], import
  * the files waiting on the person, and the ones that will be taken. */
 export function inspectFolder(root: string, accounts: IngestAccount[], now: number = Date.now()) {
   const { files, strays } = scanFolder(root);
-  const waiting: { folder: string; name: string; reason: string }[] = [];
+  const waiting: { folder: string; name: string; reason: string; setup?: SetupHint }[] = [];
   let ready = 0;
   for (const f of files) {
     const v = classify(f, accounts, now);
-    if (v.state === "waiting") waiting.push({ folder: f.folder, name: f.name, reason: v.reason });
+    if (v.state === "waiting") waiting.push({ folder: f.folder, name: f.name, reason: v.reason, ...(v.setup && { setup: v.setup }) });
     else ready++;
   }
   return { ready, waiting, strays };

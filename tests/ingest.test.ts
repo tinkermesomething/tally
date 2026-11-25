@@ -40,7 +40,7 @@ describe("account matching", () => {
     expect("account" in matchAccount("monzo", [monzo])).toBe(true);
   });
   it("says why when nothing or too much matches", () => {
-    expect(matchAccount("nope", [monzo])).toMatchObject({ reason: expect.stringContaining("No account is called") });
+    expect(matchAccount("nope", [monzo])).toMatchObject({ reason: expect.stringContaining("No account is called"), none: true });
     expect(matchAccount("monzo", [monzo, { ...monzo, id: 9 }])).toMatchObject({ reason: expect.stringContaining("More than one") });
     expect("reason" in matchAccount("", [monzo])).toBe(true);
   });
@@ -77,7 +77,14 @@ describe("classify", () => {
   });
   it("leaves a file when the account has no saved mapping, and says what to do", () => {
     const v = classify(file({ folder: "Savings" }), [noMap], NOW);
-    expect(v).toMatchObject({ state: "waiting", reason: expect.stringContaining("by hand first") });
+    expect(v).toMatchObject({ state: "waiting", reason: expect.stringContaining("columns"), setup: { accountId: noMap.id } });
+  });
+  it("offers to create the account when the folder name matches none", () => {
+    expect(classify(file({ folder: "Revolut" }), [monzo], NOW)).toMatchObject({ state: "waiting", setup: { accountId: null } });
+  });
+  it("offers no setup when two accounts share the name", () => {
+    const v = classify(file(), [monzo, { ...monzo, id: 9 }], NOW);
+    expect(v.state === "waiting" && v.setup).toBeUndefined();
   });
   it("fails empty and oversized files", () => {
     expect(classify(file({ size: 0 }), [monzo], NOW).state).toBe("failed");
@@ -87,7 +94,7 @@ describe("classify", () => {
     const legacy: IngestAccount = { ...monzo, mapping: guessed };
     const v = classify(file(), [legacy], NOW);
     expect(v).toMatchObject({ state: "waiting" });
-    expect(v.state === "waiting" && v.reason).toContain("by hand again");
+    expect(v).toMatchObject({ state: "waiting", reason: expect.stringContaining("Confirm the columns"), setup: { accountId: legacy.id } });
   });
   it("is ready otherwise", () => expect(classify(file(), [monzo], NOW).state).toBe("ready"));
 });

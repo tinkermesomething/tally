@@ -20,14 +20,14 @@ import { MonthSelect } from "@/components/reports/month-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPence } from "@/lib/money";
-import { accountDisplayName, accountLabels } from "@/lib/accounts";
+import { accountLabels } from "@/lib/accounts";
 import { formatDate } from "@/lib/date-format";
 import type { ReviewRow } from "@/components/review/review-transaction-row";
 import { PencilInButton } from "@/components/review/pencil-in-button";
 import { PencilInIncomeButton } from "@/components/review/pencil-in-income-button";
 import { ImportCsvDialog } from "@/components/review/import-csv-dialog";
+import { toCsvAccounts } from "@/lib/csv-accounts";
 import { CSV_PROVIDER } from "@/lib/db/bank-sync";
-import { isCsvMapping } from "@/lib/csv-import";
 import { formatSyncTime, nextSyncSlot } from "@/lib/sync-schedule";
 import { withCurrentUser } from "@/lib/db/current-user";
 import { getTranslations } from "next-intl/server";
@@ -86,21 +86,6 @@ export default async function ReviewPage({
       {body}
     </div>
   );
-  });
-}
-
-/** What the Import CSV dialog needs to know about each account. */
-function toCsvAccounts(accounts: Awaited<ReturnType<typeof getBankAccounts>>) {
-  const names = new Map(accountLabels(accounts).map((a) => [a.id, a.name]));
-  return accounts.map((a) => {
-    let mapping = null;
-    try {
-      const parsed = a.csvMapping ? JSON.parse(a.csvMapping) : null;
-      mapping = isCsvMapping(parsed) ? parsed : null;
-    } catch {
-      // a damaged saved mapping is ignored: the file is mapped fresh
-    }
-    return { id: a.id, name: names.get(a.id) ?? accountDisplayName(a), csvOnly: a.provider === CSV_PROVIDER, mapping };
   });
 }
 

@@ -120,9 +120,9 @@ export const GUIDE: Section[] = [
       { p: "Instead of importing each bank file by hand, you can drop it into a folder. Tally picks it up and imports it for you." },
       {
         steps: [
-          "Import one file for the account by hand: Review > To review > Import CSV (on desktop: Import & review > Import CSV). This teaches Tally which columns hold the date, amount and payee for that account, and what the file looks like. Do this once per account. If you imported by hand before version 5.2, do it once more.",
-          "In your ingest folder, make a subfolder with the same name as the account, for example Monzo.",
+          "In your ingest folder, make a subfolder named after the account, for example Revolut. The ingest folder is the parent, not the account's folder.",
           "Drop the bank's CSV file into that subfolder.",
+          "The first file for an account waits. In Settings > Account settings > Ingest folder, click Set up (or Create and set up, if the account doesn't exist yet). Tally opens the file with the account name filled in from the folder. Check the columns and click Import. Do this once per account.",
           "Wait for the next check, or click Check now in Settings > Account settings > Ingest folder.",
           "The new transactions appear under To review, the same as any import.",
         ],
@@ -143,10 +143,10 @@ export const GUIDE: Section[] = [
       {
         bullets: [
           "Tally never guesses the account from the file. Only the subfolder name counts. Capital letters and extra spaces don't matter: monzo and Monzo are the same account. If you gave the account a nickname (an alias), use the nickname.",
-          "A file in the wrong place is left alone and is not imported. That means: a CSV dropped straight into the ingest folder, a subfolder with no matching account, or an account you have not imported by hand yet. Settings shows each one as waiting, with the reason.",
+          "A file in the wrong place is left alone and is not imported. That means: a CSV dropped straight into the ingest folder, a subfolder with no matching account yet, or an account whose columns you have not confirmed. Settings shows each one as waiting, with the reason and a Set up button.",
           "Imported files move to processed/. Files Tally can't read move to failed/, with a .txt note next to each that says why. Tally never deletes a file.",
           "A file is all or nothing. If one line can't be read, nothing is imported from that file. Lines with an amount of zero are the only exception: they are skipped and counted.",
-          "Tally checks that a file looks like the last one you imported by hand for that account. If the bank has moved or renamed the columns Tally reads, the file goes to failed/ with a note saying which column changed. Import it by hand once. Tally then learns the new layout.",
+          "Tally checks that a file looks like the last one you imported by hand for that account. If the bank has moved or renamed the columns Tally reads, the file goes to failed/ with a note saying which column changed. Click Set up, or import it by hand once. Tally then learns the new layout.",
           "Dropping the same file twice is safe. Transactions that already exist are skipped.",
           "Rows that look like a transaction you already have are imported and marked with a warning in To review, the same as a manual import.",
           "Only .csv files are read, and only one level down (ingest folder/account/file.csv). Files up to 10 MB.",

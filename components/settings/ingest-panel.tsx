@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { checkIngestNow, saveIngestSettings } from "@/app/settings/ingest-actions";
+import { ImportCsvDialog, type CsvAccountOption, type CsvPreload } from "@/components/review/import-csv-dialog";
+import { checkIngestNow, loadIngestFile, saveIngestSettings } from "@/app/settings/ingest-actions";
 
 export type IngestView = {
   desktop: boolean;
@@ -19,20 +20,21 @@ export type IngestView = {
   problem: string | null;
   folder: "unset" | "missing" | "ok";
   ready: number;
-  waiting: { folder: string; name: string; reason: string }[];
+  waiting: { folder: string; name: string; reason: string; setup?: { accountId: number | null } }[];
   strays: string[];
   recent: { bucket: "processed" | "failed"; folder: string; name: string; at: string; reason: string | null }[];
 };
 
 /** Settings > Account settings > Ingest folder. Drop a CSV in
  * <folder>/<account name>/ and Tally imports it (see lib/ingest.ts). */
-export function IngestPanel({ view }: { view: IngestView }) {
+export function IngestPanel({ view, accounts }: { view: IngestView; accounts: CsvAccountOption[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [on, setOn] = useState(view.on);
   const [dir, setDir] = useState(view.savedDir ?? view.suggestion ?? "");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [setup, setSetup] = useState<CsvPreload | null>(null);
 
   function save(enabled: boolean, nextDir?: string) {
     setError(null);
@@ -60,12 +62,23 @@ export function IngestPanel({ view }: { view: IngestView }) {
     });
   }
 
+  /** Opens the import dialog with a waiting file in it, so the person confirms the account and columns once. */
+  function openSetup(w: IngestView["waiting"][number]) {
+    setError(null);
+    setNote(null);
+    startTransition(async () => {
+      const res = await loadIngestFile(w.folder, w.name);
+      if (!res.ok) return setError(res.error);
+      setSetup({ folder: w.folder, name: w.name, text: res.text, accountId: w.setup?.accountId ?? null });
+    });
+  }
+
   const usable = view.folder === "ok";
 
   return (
     <div className="space-y-3" data-testid="ingest">
       <p className="text-xs text-muted-foreground">
-        Drop a bank CSV into a subfolder named after the account, and Tally imports it. The folder name picks the account.
+        Drop a bank CSV into a subfolder named after the account (for example <code className="rounded bg-muted px-1">Revolut</code>), and Tally imports it. The first file for a new account waits here: click Set up, check the columns once, and Tally takes the rest by itself.
         {view.desktop ? " Tally checks when the app opens, and when you click Check now." : " Tally checks every 15 minutes, and when you click Check now."}
       </p>
 
@@ -130,7 +143,7 @@ export function IngestPanel({ view }: { view: IngestView }) {
           <ul className="space-y-1 text-xs text-muted-foreground">
             {view.strays.map((name) => (
               <li key={`stray-${name}`}>
-                <span className="font-medium text-foreground">{name}</span>: it is in the main folder. Move it into a subfolder named after its account.
+                <span className="font-medium text-foreground">{name}</span>: it is in the main folder. Move it into a subfolder named after its account{view.dir ? `, for example ${view.dir.replace(/[\\/]$/, "")}${view.dir.includes("\\") ? "\\" : "/"}Revolut` : ""}. If this folder is itself the account&apos;s folder, set the ingest folder one level up.
               </li>
             ))}
             {view.waiting.map((w) => (
@@ -139,6 +152,11 @@ export function IngestPanel({ view }: { view: IngestView }) {
                   {w.folder}/{w.name}
                 </span>
                 : {w.reason}
+                {w.setup && (
+                  <Button type="button" size="sm" variant="outline" className="ml-2 h-6 px-2 text-xs" disabled={pending} onClick={() => openSetup(w)}>
+                    {w.setup.accountId === null ? `Create "${w.folder}" and set up` : "Set up"}
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -157,6 +175,17 @@ export function IngestPanel({ view }: { view: IngestView }) {
             ))}
           </ul>
         </div>
+      )}
+      {setup && (
+        <ImportCsvDialog
+          accounts={accounts}
+          preload={setup}
+          onClose={(imported) => {
+            setSetup(null);
+            // The file is now imported by hand; a check files it away and takes anything else waiting.
+            if (imported) check();
+          }}
+        />
       )}
     </div>
   );

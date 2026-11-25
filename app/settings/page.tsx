@@ -53,6 +53,7 @@ import { restorePerson } from "@/app/debt/actions";
 import { withCurrentUser } from "@/lib/db/current-user";
 import { ManualBackup } from "@/components/settings/manual-backup";
 import { AppLockPanel } from "@/components/settings/app-lock-panel";
+import { toCsvAccounts } from "@/lib/csv-accounts";
 import { IngestPanel, type IngestView } from "@/components/settings/ingest-panel";
 import { ingestStatus } from "@/lib/ingest-run";
 import { isLockEnabled } from "@/lib/desktop/lock";
@@ -515,7 +516,7 @@ export default async function SettingsPage({
               Ingest folder
               <span className="ml-1 inline-flex align-middle"><HelpTip id="settings.ingest" /></span>
             </h2>
-            <IngestPanel view={await ingestView(me.email)} />
+            <IngestPanel view={await ingestView(me.email)} accounts={toCsvAccounts(bankAccounts)} />
           </div>
 
           {desktop && (

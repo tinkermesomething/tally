@@ -29,14 +29,19 @@ const colLabel = (headers: string[], i: number) => (headers[i] ? `${i + 1}: ${he
 /** Import a bank's CSV export from the browser. The file never leaves the
  * page until you press Import: it is read and mapped here, with a live
  * preview of exactly what will be imported. */
-export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) {
+/** A file that is already known: from the ingest folder. The dialog opens by
+ * itself with it loaded, and the folder's name as the account. */
+export type CsvPreload = { folder: string; name: string; text: string; accountId: number | null };
+
+export function ImportCsvDialog({ accounts, preload, onClose }: { accounts: CsvAccountOption[]; preload?: CsvPreload; onClose?: (imported: boolean) => void }) {
   const router = useRouter();
   const { currency, dateFormat } = useAppSettings();
-  const [open, setOpen] = useState(false);
-  const [accountId, setAccountId] = useState<string>(accounts[0] ? String(accounts[0].id) : NEW_ACCOUNT);
-  const [newName, setNewName] = useState("");
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [text, setText] = useState<string | null>(null);
+  const startAccount = preload ? (preload.accountId === null ? NEW_ACCOUNT : String(preload.accountId)) : accounts[0] ? String(accounts[0].id) : NEW_ACCOUNT;
+  const [open, setOpen] = useState(!!preload);
+  const [accountId, setAccountId] = useState<string>(startAccount);
+  const [newName, setNewName] = useState(preload && preload.accountId === null ? preload.folder : "");
+  const [fileName, setFileName] = useState<string | null>(preload?.name ?? null);
+  const [text, setText] = useState<string | null>(preload?.text ?? null);
   const [mapping, setMapping] = useState<CsvMapping | null>(null);
   const [policy, setPolicy] = useState<DuplicatePolicy>("flag");
   const [plan, setPlan] = useState<CsvImportPlan | null>(null);
@@ -117,7 +122,8 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     setMapping(chooseMapping(content, account));
   }
 
-  // Changing the account may bring a saved mapping for the already-loaded file.
+  // Changing the account may bring a saved mapping for the already-loaded file
+  // (and on first render, the file that came with `preload`).
   useEffect(() => {
     if (text !== null) setMapping(chooseMapping(text, account));
     // only when the account changes
@@ -180,30 +186,32 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
     });
   }
 
+  /** Every way of closing (Done, Close, Escape, clicking outside) comes through here. */
+  function changeOpen(next: boolean) {
+    setOpen(next);
+    if (next) return;
+    const imported = result !== null;
+    reset();
+    if (imported) router.refresh();
+    onClose?.(imported);
+  }
+
   const needsSign = !!signNote?.unsure && !signChosen;
   const importable = plan ? (policy === "skip" ? plan.fresh - plan.possibleDuplicates : plan.fresh) : 0;
 
   return (
     <span className="inline-flex items-center gap-1">
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) {
-          const imported = result !== null;
-          reset();
-          if (imported) router.refresh();
-        }
-      }}
-    >
-      <DialogTrigger
-        render={
-          <Button size="sm" variant="outline">
-            <FileUp className="size-4 text-chart-1" />
-            Import CSV
-          </Button>
-        }
-      />
+    <Dialog open={open} onOpenChange={changeOpen}>
+      {!preload && (
+        <DialogTrigger
+          render={
+            <Button size="sm" variant="outline">
+              <FileUp className="size-4 text-chart-1" />
+              Import CSV
+            </Button>
+          }
+        />
+      )}
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
         {result ? (
           <div className="space-y-3" data-testid="csv-result">
@@ -221,14 +229,18 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
               )}
             </ul>
             <DialogFooter>
-              <Button onClick={() => setOpen(false)}>Done</Button>
+              <Button onClick={() => changeOpen(false)}>Done</Button>
             </DialogFooter>
           </div>
         ) : (
           <div className="space-y-4">
             <DialogHeader>
               <DialogTitle>Import transactions from a CSV</DialogTitle>
-              <DialogDescription>Pick the account, choose the file, and check the columns. Nothing is saved until you press Import.</DialogDescription>
+              <DialogDescription>
+                {preload
+                  ? `From your ingest folder: ${preload.folder}/${preload.name}. Check the account and the columns. After you import, Tally takes this account's later files by itself.`
+                  : "Pick the account, choose the file, and check the columns. Nothing is saved until you press Import."}
+              </DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -241,10 +253,10 @@ export function ImportCsvDialog({ accounts }: { accounts: CsvAccountOption[] }) 
                       {a.csvOnly ? " (CSV only)" : ""}
                     </option>
                   ))}
-                  <option value={NEW_ACCOUNT}>New CSV-only account…</option>
+                  <option value={NEW_ACCOUNT}>New account…</option>
                 </select>
                 {accountId === NEW_ACCOUNT && (
-                  <Input aria-label="New account name" placeholder="e.g. Old credit card" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                  <Input aria-label="New account name" placeholder="e.g. Revolut" value={newName} onChange={(e) => setNewName(e.target.value)} />
                 )}
               </div>
               <div className="space-y-1.5">

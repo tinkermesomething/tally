@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { bankAccounts, importedTransactions } from "@/lib/db/schema";
 import { createCsvAccount, importCsvTransactions } from "@/lib/db/csv-import";
 import { setIngestStored } from "@/lib/db/settings";
-import { runIngest, ingestStatus } from "@/lib/ingest-run";
+import { runIngest, ingestStatus, readIngestFile } from "@/lib/ingest-run";
 import { guessMapping, layoutOf, mapCsvRows } from "@/lib/csv-import";
 import { SETTLE_MS } from "@/lib/ingest";
 
@@ -139,5 +139,38 @@ describe("0042_ingest_config", () => {
     sqlite.exec("INSERT INTO app_settings (currency) VALUES ('EUR')");
     migrate(drizzle(sqlite), { migrationsFolder: path.join(process.cwd(), "drizzle") });
     expect(sqlite.prepare("SELECT currency, ingest_config FROM app_settings").all()).toEqual([{ currency: "EUR", ingest_config: null }]);
+  });
+});
+
+describe("setting up an account from a waiting file", () => {
+  beforeEach(async () => {
+    await setIngestStored(JSON.stringify({ enabled: true, dir: root }));
+  });
+
+  it("offers to create an account that does not exist, and reads the file for the dialog", async () => {
+    drop("Revolut", "jan.csv");
+    const s = await ingestStatus("x@y.z");
+    expect(s.folder === "ok" && s.waiting).toEqual([expect.objectContaining({ folder: "Revolut", name: "jan.csv", setup: { accountId: null } })]);
+    expect(await readIngestFile("x@y.z", "Revolut", "jan.csv")).toEqual({ ok: true, text: CSV });
+  });
+
+  it("points at the existing account when it has no saved columns yet", async () => {
+    const account = await createCsvAccount("Monzo");
+    drop("monzo", "jan.csv");
+    const s = await ingestStatus("x@y.z");
+    expect(s.folder === "ok" && s.waiting[0].setup).toEqual({ accountId: account.id });
+  });
+
+  it("reads only files the scan lists, never a path the browser made up", async () => {
+    drop("Revolut", "jan.csv");
+    fs.writeFileSync(path.join(root, "secret.csv"), "x");
+    for (const [folder, name] of [["..", "secret.csv"], ["Revolut", "../secret.csv"], ["Revolut", "nope.csv"], ["", "secret.csv"]]) {
+      expect((await readIngestFile("x@y.z", folder, name)).ok).toBe(false);
+    }
+  });
+
+  it("refuses when the folder is switched off or gone", async () => {
+    fs.rmSync(root, { recursive: true, force: true });
+    expect((await readIngestFile("x@y.z", "Revolut", "jan.csv")).ok).toBe(false);
   });
 });

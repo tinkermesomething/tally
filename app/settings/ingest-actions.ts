@@ -8,7 +8,7 @@ import { audit } from "@/lib/audit";
 import { assertWritable } from "@/lib/assert-writable";
 import { isDesktopMode } from "@/lib/desktop/mode";
 import { getIngestStored, setIngestStored } from "@/lib/db/settings";
-import { runIngest } from "@/lib/ingest-run";
+import { readIngestFile, runIngest } from "@/lib/ingest-run";
 import { parseStored, validateDesktopDir, type StoredIngestConfig } from "@/lib/ingest-settings";
 
 async function requestIp(): Promise<string> {
@@ -57,6 +57,17 @@ export async function checkIngestNow(): Promise<CheckNowResult> {
       return { ok: true, message: [`${done} imported`, failed ? `${failed} failed` : "", waiting ? `${waiting} waiting` : ""].filter(Boolean).join(", ") + "." };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "The check failed." };
+    }
+  });
+}
+
+/** Loads a waiting file so the person can confirm its columns and pick the account. */
+export async function loadIngestFile(folder: string, name: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  return requireSession(async (user) => {
+    try {
+      return await readIngestFile(user.email, String(folder), String(name));
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : "Could not read the file." };
     }
   });
 }
