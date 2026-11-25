@@ -26,7 +26,7 @@ pub const MARKER_FILE: &str = ".tally-data-folder";
 
 /// Top-level names that belong to the launcher, not the data: never copied,
 /// never compared. (They live in the default folder only.)
-const LAUNCHER_FILES: [&str; 2] = [LOCATION_FILE, "server.log"];
+const LAUNCHER_FILES: [&str; 3] = [LOCATION_FILE, "server.log", crate::update::SKIPPED_FILE];
 
 /// The folder named in location.json, else `default_dir`.
 ///
@@ -359,9 +359,11 @@ mod tests {
     fn launcher_files_do_not_travel() {
         let (src, dst) = (tmp(), tmp());
         sample(src.path());
+        fs::write(src.path().join(crate::update::SKIPPED_FILE), "5.2.3").unwrap();
         copy_and_verify(src.path(), dst.path()).unwrap();
         assert!(!dst.path().join("server.log").exists());
         assert!(!dst.path().join("location.json").exists());
+        assert!(!dst.path().join(crate::update::SKIPPED_FILE).exists());
     }
 
     #[cfg(unix)]

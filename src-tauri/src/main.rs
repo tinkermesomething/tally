@@ -1,17 +1,25 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{ffi::OsStr, io, process::Command, sync::Mutex};
+use std::{
+    ffi::OsStr,
+    io,
+    process::Command,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+};
 
 mod datadir;
 mod secrets;
 mod sidecar;
+mod update;
 
 use sidecar::Sidecar;
 use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-#[cfg(not(debug_assertions))]
 use tauri_plugin_updater::UpdaterExt;
 
 /// Opens a file, folder or link with the system's own handler.
@@ -91,45 +99,119 @@ fn show_data_folder(app: &tauri::AppHandle) {
     }
 }
 
-/// Checks GitHub Releases for a newer signed build, once per launch. The
-/// update's signature is verified against the public key in tauri.conf.json
-/// before anything is installed. Failures (offline, no release yet) are
-/// silent: an update check must never get in the way of opening the app.
-#[cfg(not(debug_assertions))]
-fn check_for_update(app: tauri::AppHandle) {
+/// Looks on GitHub Releases for a newer signed build and, if there is one, asks
+/// in the update window (release notes; Update now, Later, Skip this version).
+/// The signature is verified against the public key in tauri.conf.json before
+/// anything is installed.
+///
+/// `manual` is the Updates menu: it ignores a skipped version, and says so
+/// when there is nothing new or the check fails. The launch check is silent
+/// about both: an update check must never get in the way of opening the app.
+fn check_for_update(app: tauri::AppHandle, manual: bool) {
+    // One check at a time: a second click on the menu item just brings the window forward.
+    static BUSY: AtomicBool = AtomicBool::new(false);
+    if BUSY.swap(true, Ordering::SeqCst) {
+        if let Some(window) = app.get_webview_window("update") {
+            let _ = window.set_focus();
+        }
+        return;
+    }
     std::thread::spawn(move || {
-        let Ok(updater) = app.updater() else { return };
-        let update = match tauri::async_runtime::block_on(updater.check()) {
-            Ok(Some(update)) => update,
-            Ok(None) => return,
-            Err(e) => {
-                eprintln!("update check failed: {e}");
-                return;
+        run_update_check(&app, manual);
+        BUSY.store(false, Ordering::SeqCst);
+    });
+}
+
+fn run_update_check(app: &tauri::AppHandle, manual: bool) {
+    let title = "Check for updates";
+    let Ok(updater) = app.updater() else { return };
+    let update = match tauri::async_runtime::block_on(updater.check()) {
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            if manual {
+                tell(app, MessageDialogKind::Info, title, format!("Tally {} is the newest version.", app.package_info().version));
             }
-        };
-        let wanted = app
-            .dialog()
-            .message(format!("Tally {} is available (you have {}). Install it now? Tally will restart.", update.version, update.current_version))
-            .title("Update available")
-            .buttons(MessageDialogButtons::OkCancelCustom("Update".into(), "Later".into()))
-            .blocking_show();
-        if !wanted {
             return;
         }
-        let bytes = match tauri::async_runtime::block_on(update.download(|_, _| {}, || {})) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                app.dialog().message(format!("The update couldn't be downloaded: {e}")).kind(MessageDialogKind::Error).blocking_show();
-                return;
+        Err(e) => {
+            eprintln!("update check failed: {e}");
+            if manual {
+                tell(app, MessageDialogKind::Error, title, format!("Tally couldn't check for updates: {e}"));
             }
-        };
-        // Stop the server first: on Windows its files can't be replaced while it runs.
-        sidecar::stop(&app);
-        if let Err(e) = update.install(bytes) {
-            app.dialog().message(format!("The update couldn't be installed: {e}\n\nTally will reopen.")).kind(MessageDialogKind::Error).blocking_show();
+            return;
         }
-        // Restart either way: the server was stopped, so a failed install must not leave a window on a dead one.
-        app.restart();
+    };
+    let launcher_dir = app.path().app_data_dir().ok();
+    let skipped = launcher_dir.as_deref().and_then(update::skipped_version);
+    if !update::should_offer(&update.version, skipped.as_deref(), manual) {
+        return;
+    }
+    let (choice, window) = match update::ask(app, &update.version, &update.current_version, update.body.as_deref()) {
+        Ok(asked) => asked,
+        Err(e) => return tell(app, MessageDialogKind::Error, title, e),
+    };
+    match choice {
+        update::Choice::Later => {
+            let _ = window.destroy();
+            return;
+        }
+        update::Choice::Skip => {
+            if let Some(dir) = &launcher_dir {
+                if let Err(e) = update::skip_version(dir, &update.version) {
+                    eprintln!("can't remember the skipped version: {e}");
+                }
+            }
+            let _ = window.destroy();
+            return;
+        }
+        update::Choice::Install => {
+            let _ = window.eval("window.__busy && window.__busy()");
+        }
+    }
+    let bytes = match tauri::async_runtime::block_on(update.download(|_, _| {}, || {})) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let _ = window.destroy();
+            tell(app, MessageDialogKind::Error, title, format!("The update couldn't be downloaded: {e}"));
+            return;
+        }
+    };
+    // Stop the server first: on Windows its files can't be replaced while it runs.
+    sidecar::stop(app);
+    if let Err(e) = update.install(bytes) {
+        let _ = window.destroy();
+        tell(app, MessageDialogKind::Error, title, format!("The update couldn't be installed: {e}\n\nTally will reopen."));
+    }
+    // Restart either way: the server was stopped, so a failed install must not leave a window on a dead one.
+    app.restart();
+}
+
+/// Debug builds only (compiled out of releases): shows the update window with
+/// the offer in a JSON file ({version, current, notes}) and prints the choice,
+/// without starting the server or touching any data. TALLY_PREVIEW_PICK=
+/// install|later|skip clicks that link by itself after a moment.
+#[cfg(debug_assertions)]
+fn preview_update(app: tauri::AppHandle, file: String) {
+    std::thread::spawn(move || {
+        let offer: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).expect("preview file")).expect("preview json");
+        let text = |key: &str| offer[key].as_str().unwrap_or("").to_string();
+        if let Ok(pick) = std::env::var("TALLY_PREVIEW_PICK") {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(4));
+                if let Some(window) = handle.get_webview_window("update") {
+                    let _ = window.eval(&format!("location.href = 'https://tally-update.invalid/{pick}'"));
+                }
+            });
+        }
+        let (choice, window) = update::ask(&app, &text("version"), &text("current"), offer["notes"].as_str()).expect("update window");
+        if choice == update::Choice::Skip {
+            let dir = app.path().app_data_dir().expect("app data dir");
+            update::skip_version(&dir, &text("version")).expect("skip file");
+        }
+        println!("CHOICE: {choice:?}");
+        let _ = window.destroy();
+        app.exit(0);
     });
 }
 
@@ -149,6 +231,7 @@ fn main() {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "change-data-folder" => change_data_folder(app.clone()),
             "show-data-folder" => show_data_folder(app),
+            "check-for-updates" => check_for_update(app.clone(), true),
             _ => {}
         })
         .setup(|app| {
@@ -164,7 +247,15 @@ fn main() {
                 ],
             )?;
             menu.append(&data)?;
+            let updates = Submenu::with_items(app, "Updates", true, &[&MenuItem::with_id(app, "check-for-updates", "Check for updates…", true, None::<&str>)?])?;
+            menu.append(&updates)?;
             app.set_menu(menu)?;
+
+            #[cfg(debug_assertions)]
+            if let Ok(file) = std::env::var("TALLY_PREVIEW_UPDATE") {
+                preview_update(app.handle().clone(), file);
+                return Ok(());
+            }
 
             match sidecar::start(app.handle()) {
                 Ok(sidecar::Started { child, port, launch_token }) => {
@@ -185,7 +276,7 @@ fn main() {
                         .min_inner_size(420.0, 600.0)
                         .build()?;
                     #[cfg(not(debug_assertions))]
-                    check_for_update(app.handle().clone());
+                    check_for_update(app.handle().clone(), false);
                     Ok(())
                 }
                 Err(message) => {
